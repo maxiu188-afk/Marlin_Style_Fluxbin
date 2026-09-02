@@ -156,6 +156,16 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 - Hybrid-s8 logs:
   `logs/qwen3-32b-single-linear-s8/fluxbin2-s8-q32-6250990.{out,err}` in the
   Isambard checkout.
-- Full-model reconstruction: implementation prepared; not yet submitted.
+- Full-model reconstruction job `6253233` was submitted on 2026-09-02 from
+  clean revision `5234079df1807cab8b9c8633070c9fe78a17c963`; the bounded
+  startup check observed `RUNNING` on `nid010224` after config, GH200 runtime,
+  and CUDA packed-sign round-trip preflight passed. It was entering the 14-test
+  stage at the last observation.
+- Full-model result directory:
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-full-two-base-rank1-s8-v1/`.
+- Full-model resumable artifacts:
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/artifacts/qwen3-32b-full-two-base-rank1-s8-v1/decompositions/`.
+- Full-model logs:
+  `logs/qwen3-32b-full-two-base-rank1-s8-v1/fluxbin-full-q32-s8-6253233.{out,err}`.
 - PPL: not launched.
 - Backend: not implemented.
