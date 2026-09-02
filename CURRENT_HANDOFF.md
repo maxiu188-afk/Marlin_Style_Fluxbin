@@ -114,7 +114,12 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 - Local static checks for hybrid-s8: Python compilation, JSON validation,
   Slurm shell syntax, and `git diff --check` passed. The Mac has no project
   PyTorch environment, so tensor tests remain an Isambard preflight gate.
-- Hybrid-s8 real-Linear job: not yet submitted.
+- Hybrid-s8 real-Linear Slurm job `6250990` was submitted on 2026-09-02 from
+  clean revision `33d559091350d14d0510102cda6e0b4151874dba`; last bounded
+  observation was `PENDING` with no failure reason immediately after submission.
+- Hybrid-s8 logs:
+  `logs/qwen3-32b-single-linear-s8/fluxbin2-s8-q32-6250990.{out,err}` in the
+  Isambard checkout.
 - Full-model reconstruction: not launched.
 - PPL: not launched.
 - Backend: not implemented.
