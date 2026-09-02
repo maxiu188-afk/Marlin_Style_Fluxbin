@@ -187,5 +187,15 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   `7.6108390395557874` from job `6154681`.
 - PPL materialization is dense BF16 fake quantization from the packed algorithm
   payload; it is not packed backend or speed evidence.
-- PPL: prepared, not yet submitted.
+- PPL job `6259037` was submitted on 2026-09-02 from clean revision
+  `59fe6e7080eee720321c653fdc6102f4c6a5d5e1`. Server preflight passed all
+  15 unit tests, Python compilation, Slurm shell syntax, and the previously
+  recorded real-protocol validation. The one bounded startup snapshot observed
+  `PENDING (Priority)` with 1 GH200 GPU, 16 CPUs, and a 1-hour time limit.
+- PPL result directory:
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-two-base-rank1-s8-ppl-v1/`.
+- PPL logs:
+  `logs/qwen3-32b-two-base-rank1-s8-ppl/fluxbin-ppl-q32-s8-6259037.{out,err}`.
+- PPL acceptance remains pending; scheduler state alone is not evidence that
+  the three PPL arms completed or passed their provenance and metric gates.
 - Backend: not implemented.
