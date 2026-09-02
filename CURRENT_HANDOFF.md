@@ -7,7 +7,31 @@ retaining a pure two-base arm and adding a sparse `s=8` residual-refinement arm.
 Only after algorithm-quality acceptance should the project implement a
 Marlin-style packed CUDA backend and measure real deployment speed.
 
-## Frozen algorithm contract
+The historical v1 weight-only full-model/PPL evidence remains preserved, but
+its quality result is negative. The active v2 path now aligns the major missing
+algorithm settings from the FluxBin algorithms before any backend work.
+
+## Active v2 calibrated algorithm contract
+
+- C4 calibration with 256 sequences, as stated by the paper.
+- Project-frozen 2048-token sequence length and seed `20260902`; the paper does
+  not specify either detail.
+- Accumulate the scalar-normalized equivalent of `H = 2 X^T X`, then use a
+  damped Cholesky inverse. Damping is frozen at 1% of the mean Hessian diagonal,
+  a documented project choice because the paper does not state it.
+- Exactly two binary bases, group size 128, independent row/column scales, and
+  exact four-pattern sign assignment remain unchanged.
+- Pure two-base remains an independent full arm with no residual refinement.
+- Hybrid-s8 selects 8 group-local columns before global decomposition using
+  `sum_i(W_ij^2) / Hinv_jj^2`, with stable lower-index tie breaking.
+- After quantizing each group, update every unprocessed column using that
+  arm's group error and inverse-Hessian blocks.
+- Pure and hybrid do not share a global payload: refinement changes the group
+  error, therefore later propagated working weights and global blocks differ.
+- The existing greedy initialization and 50-step ALS limits remain unchanged.
+- No Shared-C, distillation, CUDA kernel, or serving integration.
+
+## Historical v1 weight-only contract
 
 - Exactly two binary bases in `{-1,+1}`.
 - Group size 128 along the Linear input dimension.
@@ -29,15 +53,35 @@ Marlin-style packed CUDA backend and measure real deployment speed.
 
 ## Evidence gates
 
-1. Local/static and synthetic algebra checks.
-2. One real Qwen3-32B Linear pure two-base reconstruction on Isambard GH200.
-3. One real Qwen3-32B Linear hybrid-s8 reconstruction on Isambard GH200.
-4. Full-model reconstruction emitting pure two-base and hybrid-s8 together,
+1. Local/static plus synthetic Hessian, saliency and OBQ algebra checks.
+2. Pinned C4 256x2048 calibration token artifact with hashes and sample ledger.
+3. One real Qwen3-32B Linear emitting independent pure two-base OBQ and
+   Hessian-salient hybrid-s8 OBQ outputs on Isambard GH200.
+4. Layer-sequential full-model quantization emitting both independent arms,
    manually authorized after gate 3 review.
 5. Dense fake-quantized WikiText-2 PPL, manually authorized after gate 4.
 6. Packed backend correctness and performance in separate later phases.
 
 No runner automatically launches its successor.
+
+## Active v2 implementation status
+
+- `src/fluxbin_style/hessian_obq.py` implements normalized Hessian
+  accumulation, relative damping plus Cholesky inversion, Hessian saliency,
+  block OBQ propagation, and independent pure/hybrid groupwise quantizers.
+- The original initializer and 50-step solver are reused without changes.
+- Isambard CPU numerical tests pass 21/21, including six new Hessian/OBQ tests.
+- A tiny Qwen3 decoder smoke test captured the expected o-projection Hessian
+  through the actual Transformers 5.14.1 forward API.
+- Calibration config:
+  `configs/calibration/qwen3_32b_c4_256x2048_v1.json`.
+- Single-Linear v2 config:
+  `configs/experiments/qwen3_32b_single_linear_hessian_obq_s8_v2.json`.
+- The target remains `model.layers.0.self_attn.o_proj.weight`, shape
+  `[5120,8192]`. Both arms are written into the same result payload but have
+  separate global signs/scales.
+- Full-model, PPL and backend stages remain unlaunched pending manual review of
+  the calibrated single-Linear result.
 
 ## First real-Linear gate
 

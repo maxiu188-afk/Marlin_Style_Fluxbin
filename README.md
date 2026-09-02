@@ -5,6 +5,29 @@ after algorithm-quality acceptance, a separate CUDA deployment backend.
 
 ## Algorithm arms
 
+The active v2 accuracy path adds the three calibration-dependent mechanisms
+that were absent from the first experiment:
+
+- 256 C4 calibration sequences produce `H = 2 X^T X` (stored internally in
+  its scalar-normalized equivalent form) and a damped Cholesky inverse;
+- hybrid-s8 selects 8 columns per 128-column group using
+  `sum_i(W_ij^2) / Hinv_jj^2` before decomposing that group;
+- after each group, both arms update all unprocessed columns from the current
+  quantization error and the relevant inverse-Hessian blocks.
+
+Pure two-base remains a complete independent arm. It has no residual
+refinement, but it does use its own Hessian error-propagation trajectory. The
+hybrid arm has a different per-group error after refinement, so its later
+global blocks cannot share the pure arm's payload.
+
+The paper specifies C4 and 256 calibration samples but not sequence length or
+inverse-Hessian damping. The project freezes those otherwise unspecified
+choices at 2048 tokens and 1% mean-diagonal damping and records them explicitly
+in the v2 artifacts. Initialization and both ALS iteration limits remain
+unchanged at the current greedy initializer and 50 steps.
+
+## Historical v1 weight-only path
+
 The retained global arm approximates each grouped Linear weight block
 `W[o,g,j]` as
 
@@ -15,7 +38,7 @@ W_hat[o,g,j] = sum_b row[b,o,g] * column[b,g,j] * base[b,o,g,j],
 with exactly two `{-1,+1}` bases and group size 128. Each base has its own row
 and column factors.
 
-The hybrid arm keeps that complete two-base payload and adds sparse residual
+The historical hybrid arm keeps that complete two-base payload and adds sparse residual
 refinement. Within every 128-column group, it ranks columns by the global arm's
 residual squared error over output rows, selects the stable top 8, and fits a
 second independent two-base rank-one decomposition to those residual columns.
@@ -23,17 +46,17 @@ The selected indices are stored group-locally in ascending order. This is a
 weight-only rule: there is no Shared-C, Hessian propagation, calibration data,
 distillation, or deployment kernel at this stage.
 
-FluxBin supplies only the two-base row-column decomposition idea. Its reported
-accuracy, calibration, kernel, and end-to-end claims are not acceptance targets
-for this project.
+Those v1 artifacts remain immutable evidence of the earlier weight-only test;
+they are not mixed with v2 calibrated artifacts.
 
 ## Evidence ladder
 
-1. Synthetic algebra, determinism, monotonicity, and payload tests.
-2. One real Qwen3-32B Linear pure two-base reconstruction gate.
-3. One real Qwen3-32B Linear hybrid-s8 reconstruction gate.
-4. Full-model reconstruction with both pure two-base and hybrid-s8 outputs,
-   only after manual review of stage 3.
+1. Synthetic Hessian, saliency, OBQ propagation, rank-one, and payload tests.
+2. Materialize and hash the pinned 256x2048 C4 calibration token artifact.
+3. One real Qwen3-32B Linear with independent pure two-base OBQ and
+   Hessian-salient hybrid-s8 OBQ outputs.
+4. Layer-sequential full-model quantization with both arms, only after manual
+   review of stage 3.
 5. Dense fake-quantized PPL, only after full-model acceptance.
 6. Packed CUDA deployment, separately gated after algorithm-quality acceptance.
 
