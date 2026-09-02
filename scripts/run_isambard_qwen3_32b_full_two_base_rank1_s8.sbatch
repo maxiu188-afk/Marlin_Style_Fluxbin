@@ -7,7 +7,7 @@
 #SBATCH --nodes=1
 #SBATCH --gpus=1
 #SBATCH --cpus-per-task=8
-#SBATCH --time=16:00:00
+#SBATCH --time=12:00:00
 #SBATCH --output=logs/qwen3-32b-full-two-base-rank1-s8-v1/%x-%j.out
 #SBATCH --error=logs/qwen3-32b-full-two-base-rank1-s8-v1/%x-%j.err
 

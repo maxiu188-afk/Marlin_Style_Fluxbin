@@ -161,6 +161,11 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   startup check observed `RUNNING` on `nid010224` after config, GH200 runtime,
   and CUDA packed-sign round-trip preflight passed. It was entering the 14-test
   stage at the last observation.
+- Its time limit was reduced from 16 hours to 12 hours after submission. The
+  closest QBB-New 448-Linear Qwen3-32B reconstruction took
+  `30897.34031198197` seconds (8h34m57s), so 12 hours keeps about 40% margin
+  while avoiding an unnecessarily long resource request. The checked end time
+  is `2026-09-03T01:46:28+00:00`.
 - Full-model result directory:
   `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-full-two-base-rank1-s8-v1/`.
 - Full-model resumable artifacts:
