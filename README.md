@@ -39,6 +39,12 @@ for this project.
 
 No stage launches the next stage automatically.
 
+The single-Linear convergence diagnostic also supports a strictly matched
+50-versus-200 iteration comparison. It binds the accepted 50-step result by
+SHA-256 and changes only `max_iters`; the output records whether the additional
+optimization improves SSE beyond the declared `1e-6` relative comparison
+tolerance.
+
 The full-model reconstruction is resumable at one payload per Linear. Its
 two-base signs use the lossless `fluxbin-two-base-interleaved-2bit-v1` artifact
 format, while FP32 scales and group-local `int16` refinement indices remain

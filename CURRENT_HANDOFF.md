@@ -94,6 +94,21 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   `logs/qwen3-32b-single-linear/fluxbin2-q32-linear-6249838.{out,err}` in the
   Isambard checkout.
 
+## Prepared pure two-base 50-versus-200 convergence check
+
+- The accepted job `6249838` exhausted all 50 iterations with stop reason
+  `max_iters`; its final iteration still reported relative improvement
+  `2.3623791e-6`, above the solver threshold `1e-6`.
+- The diagnostic keeps the same target tensor/hash, seed, initializer,
+  algorithm, grouping, FP32 scale math, convergence patience, tolerance, and
+  assignment chunking. Only `max_iters` changes from 50 to 200.
+- The accepted baseline JSON is bound by SHA-256
+  `a8030dfcc7dc23a82825dc8d5b142211e63f2cd135e0c001e692dc0d52792ab8`.
+- “50 steps was too small” means the 200-step final SSE is below the 50-step
+  final SSE by more than the frozen `1e-6` relative comparison tolerance. A
+  negative or very small effect remains a valid diagnostic result.
+- No full-model, PPL, or backend follow-up is launched automatically.
+
 ## Prepared hybrid-s8 gate
 
 - Parent: the hash-pinned accepted payload from job `6249838`; the global arm

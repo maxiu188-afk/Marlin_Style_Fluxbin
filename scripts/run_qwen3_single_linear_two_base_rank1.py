@@ -36,6 +36,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--payload", type=Path, required=True)
     parser.add_argument("--source-manifest", type=Path, required=True)
+    parser.add_argument("--baseline-result", type=Path)
     return parser.parse_args()
 
 
@@ -69,6 +70,21 @@ def validate_config(config: dict[str, Any], snapshot_root: Path) -> None:
         raise ValueError("execution device contract drifted")
     if config["decision"]["full_model_launch"] != "manual_review_only":
         raise ValueError("automatic follow-up is forbidden")
+    comparison = config.get("comparison")
+    if comparison is not None:
+        expected_keys = {
+            "baseline_job_id",
+            "baseline_max_iters",
+            "baseline_result_sha256",
+            "comparison_tolerance_relative",
+            "question",
+        }
+        if set(comparison) != expected_keys:
+            raise ValueError("comparison contract drifted")
+        if int(comparison["baseline_max_iters"]) >= int(config["solver"]["max_iters"]):
+            raise ValueError("comparison must raise the iteration limit")
+        if float(comparison["comparison_tolerance_relative"]) <= 0:
+            raise ValueError("comparison tolerance must be positive")
 
 
 def timed_cuda(callable_value):
@@ -98,6 +114,30 @@ def main() -> None:
         raise FileNotFoundError(args.source_manifest)
     config = json.loads(args.config.read_text(encoding="utf-8"))
     validate_config(config, args.snapshot_root)
+    comparison_config = config.get("comparison")
+    if (comparison_config is None) != (args.baseline_result is None):
+        raise ValueError("comparison config and --baseline-result must be provided together")
+    baseline_result = None
+    if args.baseline_result is not None:
+        if not args.baseline_result.is_file():
+            raise FileNotFoundError(args.baseline_result)
+        if sha256_file(args.baseline_result) != comparison_config["baseline_result_sha256"]:
+            raise ValueError("baseline result hash drifted")
+        baseline_result = json.loads(args.baseline_result.read_text(encoding="utf-8"))
+        if baseline_result["status"] != "passed":
+            raise ValueError("baseline result was not accepted")
+        if baseline_result["solver"]["config"]["max_iters"] != comparison_config["baseline_max_iters"]:
+            raise ValueError("baseline iteration limit drifted")
+        current_solver_without_limit = {
+            key: value for key, value in config["solver"].items() if key != "max_iters"
+        }
+        baseline_solver_without_limit = {
+            key: value
+            for key, value in baseline_result["solver"]["config"].items()
+            if key != "max_iters"
+        }
+        if current_solver_without_limit != baseline_solver_without_limit:
+            raise ValueError("solver changed beyond max_iters")
     model = config["model"]
     execution = config["execution"]
     target_name = model["target_tensor"]
@@ -174,6 +214,74 @@ def main() -> None:
     if final_sse > initial_sse + allowed:
         raise RuntimeError("optimized decomposition regressed from greedy parent")
 
+    out_features, in_features = model["target_shape"]
+    num_groups = in_features // group_size
+    weight_count = out_features * in_features
+    row_scale_count = NUM_BASES * out_features * num_groups
+    column_scale_count = NUM_BASES * num_groups * group_size
+    scale_count = row_scale_count + column_scale_count
+    algorithm_bits = NUM_BASES + scale_count * 32 / weight_count
+    projected_fp16_bits = NUM_BASES + scale_count * 16 / weight_count
+    relative_reduction = (initial_sse - final_sse) / initial_sse
+    strict_improvement = final_sse < initial_sse
+    comparison = None
+    if baseline_result is not None:
+        baseline_target_hash = baseline_result["model"]["target_tensor_sha256"]
+        if baseline_target_hash != model["target_tensor_sha256"]:
+            raise ValueError("baseline target tensor drifted")
+        if baseline_result["contract"] != config["algorithm"]:
+            raise ValueError("baseline algorithm contract drifted")
+        baseline_initial_sse = baseline_result["reconstruction"]["greedy_two_base"][
+            "squared_error"
+        ]
+        baseline_final_sse = baseline_result["reconstruction"][
+            "optimized_two_base_rank_one"
+        ]["squared_error"]
+        comparison_tolerance_relative = float(
+            comparison_config["comparison_tolerance_relative"]
+        )
+        initial_allowed = comparison_tolerance_relative * max(
+            abs(baseline_initial_sse), torch.finfo(torch.float32).eps
+        )
+        if abs(initial_sse - baseline_initial_sse) > initial_allowed:
+            raise RuntimeError("greedy initialization did not reproduce the baseline")
+        baseline_allowed = comparison_tolerance_relative * max(
+            abs(baseline_final_sse), torch.finfo(torch.float32).eps
+        )
+        non_regressive = final_sse <= baseline_final_sse + baseline_allowed
+        if (
+            config["decision"].get("require_non_regression_vs_50_step", False)
+            and not non_regressive
+        ):
+            raise RuntimeError("200-step result regressed beyond comparison tolerance")
+        materially_improved = final_sse < baseline_final_sse - baseline_allowed
+        baseline_hit_limit = (
+            baseline_result["solver"]["converged_reason"] == "max_iters"
+            and len(baseline_result["solver"]["iterations"])
+            == comparison_config["baseline_max_iters"]
+        )
+        comparison = {
+            **comparison_config,
+            "baseline_result_path": str(args.baseline_result),
+            "baseline_initial_sse": baseline_initial_sse,
+            "reproduced_initial_sse": initial_sse,
+            "baseline_final_sse": baseline_final_sse,
+            "extended_final_sse": final_sse,
+            "additional_sse_reduction": baseline_final_sse - final_sse,
+            "relative_sse_reduction_vs_baseline": (
+                baseline_final_sse - final_sse
+            )
+            / baseline_final_sse,
+            "allowed_sse_delta": baseline_allowed,
+            "baseline_hit_iteration_limit": baseline_hit_limit,
+            "extended_iterations": len(optimization.iterations),
+            "extended_converged_reason": optimization.converged_reason,
+            "non_regressive_within_tolerance": non_regressive,
+            "materially_improved_beyond_tolerance": materially_improved,
+            "fifty_step_limit_was_too_small": baseline_hit_limit
+            and materially_improved,
+        }
+
     decomposition = optimization.decomposition
     payload_tensors = {
         "two_base_signs": decomposition.bases,
@@ -191,16 +299,6 @@ def main() -> None:
             if tensor_sha256(reopened.get_tensor(name)) != expected_hash:
                 raise RuntimeError(f"payload tensor hash drifted: {name}")
 
-    out_features, in_features = model["target_shape"]
-    num_groups = in_features // group_size
-    weight_count = out_features * in_features
-    row_scale_count = NUM_BASES * out_features * num_groups
-    column_scale_count = NUM_BASES * num_groups * group_size
-    scale_count = row_scale_count + column_scale_count
-    algorithm_bits = NUM_BASES + scale_count * 32 / weight_count
-    projected_fp16_bits = NUM_BASES + scale_count * 16 / weight_count
-    relative_reduction = (initial_sse - final_sse) / initial_sse
-    strict_improvement = final_sse < initial_sse
     result = {
         "schema_version": 1,
         "status": "passed",
@@ -256,6 +354,7 @@ def main() -> None:
             "converged_reason": optimization.converged_reason,
             "iterations": [asdict(item) for item in optimization.iterations],
         },
+        "comparison": comparison,
         "payload": {
             "path": str(args.payload),
             "bytes": args.payload.stat().st_size,
@@ -278,6 +377,14 @@ def main() -> None:
         f"initial_sse={initial_sse:.9f} final_sse={final_sse:.9f} "
         f"relative_reduction={relative_reduction:.9f}"
     )
+    if comparison is not None:
+        print(
+            "FLUXBIN2_SINGLE_LINEAR_50_VS_200="
+            f"baseline_final_sse={comparison['baseline_final_sse']:.9f} "
+            f"extended_final_sse={comparison['extended_final_sse']:.9f} "
+            f"fifty_step_limit_was_too_small="
+            f"{comparison['fifty_step_limit_was_too_small']}"
+        )
     print("FLUXBIN2_SINGLE_LINEAR_PASSED")
 
 
