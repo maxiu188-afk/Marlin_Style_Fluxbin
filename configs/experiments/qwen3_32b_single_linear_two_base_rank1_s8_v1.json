@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "seed": 20260902,
+  "scope": "one real Qwen3-32B Linear; accepted global two-base rank-one arm plus sparse residual two-base refinement on 8 columns per 128-column group",
+  "algorithm": {
+    "global_num_bases": 2,
+    "global_group_size": 128,
+    "base_values": [-1, 1],
+    "row_column_scales_independent_per_base": true,
+    "scale_dtype": "torch.float32",
+    "joint_sign_pattern_count": 4,
+    "residual_refinement": true,
+    "residual_selection_metric": "column_squared_error",
+    "residual_columns_per_group": 8,
+    "residual_selection_ties": "stable_lower_index_first",
+    "stored_indices_order": "ascending_within_group",
+    "refinement_num_bases": 2,
+    "refinement_group_size": 8,
+    "hessian_error_propagation": false,
+    "distillation": false
+  },
+  "global_reference": {
+    "job_id": "6249838",
+    "result_sha256": "a8030dfcc7dc23a82825dc8d5b142211e63f2cd135e0c001e692dc0d52792ab8",
+    "payload_sha256": "54d83c27214ba91a9b1ce3dbb60e234db19e741b803bb4c4414bec967732f37c",
+    "source_manifest_sha256": "9f4d4678fd7b0f238c6cb3972a0549673807acacb683806494d3cf26b849cb6d",
+    "optimized_squared_error": 2325.262335431492,
+    "target_tensor_sha256": "af8343c70597ac417bf2daa550282fdc9639a23b3496506df99d9f168fc6adec"
+  },
+  "model": {
+    "repo_id": "Qwen/Qwen3-32B",
+    "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+    "model_type": "qwen3",
+    "checkpoint_dtype": "torch.bfloat16",
+    "target_tensor": "model.layers.0.self_attn.o_proj.weight",
+    "target_shape": [5120, 8192],
+    "target_shard": "model-00001-of-00017.safetensors",
+    "target_tensor_sha256": "af8343c70597ac417bf2daa550282fdc9639a23b3496506df99d9f168fc6adec"
+  },
+  "refinement_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-6,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-6,
+    "assignment_chunk_rows": 16,
+    "denominator_epsilon": 1e-12
+  },
+  "execution": {
+    "environment": "Isambard GH200",
+    "device_name": "NVIDIA GH200 120GB",
+    "compute_capability": [9, 0],
+    "torch": "2.11.0+cu129",
+    "transformers": "5.14.1",
+    "safetensors": "0.8.0"
+  },
+  "decision": {
+    "require_finite_metrics": true,
+    "require_strict_improvement_vs_global_two_base": true,
+    "require_exact_zero_outside_selected_columns": true,
+    "full_model_launch": "manual_review_only"
+  }
+}

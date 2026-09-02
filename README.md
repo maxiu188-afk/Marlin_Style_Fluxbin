@@ -3,18 +3,25 @@
 This repository develops a two-base rank-one binary weight representation and,
 after algorithm-quality acceptance, a separate CUDA deployment backend.
 
-## Frozen phase-1 algorithm
+## Algorithm arms
 
-For each grouped Linear weight block `W[o,g,j]`, phase 1 approximates
+The retained global arm approximates each grouped Linear weight block
+`W[o,g,j]` as
 
 ```text
 W_hat[o,g,j] = sum_b row[b,o,g] * column[b,g,j] * base[b,o,g,j],
 ```
 
 with exactly two `{-1,+1}` bases and group size 128. Each base has its own row
-and column factors. There is no shared column, salient-column refinement,
-compensation matrix, distillation, Hessian propagation, or deployment kernel in
-this phase.
+and column factors.
+
+The hybrid arm keeps that complete two-base payload and adds sparse residual
+refinement. Within every 128-column group, it ranks columns by the global arm's
+residual squared error over output rows, selects the stable top 8, and fits a
+second independent two-base rank-one decomposition to those residual columns.
+The selected indices are stored group-locally in ascending order. This is a
+weight-only rule: there is no Shared-C, Hessian propagation, calibration data,
+distillation, or deployment kernel at this stage.
 
 FluxBin supplies only the two-base row-column decomposition idea. Its reported
 accuracy, calibration, kernel, and end-to-end claims are not acceptance targets
@@ -23,10 +30,12 @@ for this project.
 ## Evidence ladder
 
 1. Synthetic algebra, determinism, monotonicity, and payload tests.
-2. One real Qwen3-32B Linear reconstruction gate.
-3. Full-model reconstruction, only after manual review of stage 2.
-4. Dense fake-quantized PPL, only after stage 3 acceptance.
-5. Packed CUDA deployment, separately gated after algorithm-quality acceptance.
+2. One real Qwen3-32B Linear pure two-base reconstruction gate.
+3. One real Qwen3-32B Linear hybrid-s8 reconstruction gate.
+4. Full-model reconstruction with both pure two-base and hybrid-s8 outputs,
+   only after manual review of stage 3.
+5. Dense fake-quantized PPL, only after full-model acceptance.
+6. Packed CUDA deployment, separately gated after algorithm-quality acceptance.
 
 No stage launches the next stage automatically.
 
