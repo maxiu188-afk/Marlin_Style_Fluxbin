@@ -62,10 +62,18 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 
 ## Current status
 
-- Two-base reference implementation: prepared locally, validation pending.
-- Synthetic tests: not yet executed because the Mac has no project PyTorch
-  environment; the Slurm gate runs them before reading the real tensor.
-- First real-Linear Slurm job: not yet submitted.
+- Two-base reference implementation: revision
+  `e94c751971e05c5dd1aa72723d8b59b8a59c2168`, pushed to `origin/main`.
+- Local static checks: Python compilation, JSON validation, Slurm shell syntax,
+  and `git diff --check` passed. The Mac has no project PyTorch environment.
+- First real-Linear Slurm job: `6249838`, submitted from the clean revision
+  above on 2026-09-02; last observed `PENDING` immediately after submission.
+- The job runs the six synthetic tests before loading the real tensor.
+- Result directory:
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-single-linear-two-base-rank1-v1/`.
+- Logs:
+  `logs/qwen3-32b-single-linear/fluxbin2-q32-linear-6249838.{out,err}` in the
+  Isambard checkout.
 - Full-model reconstruction: not launched.
 - PPL: not launched.
 - Compensation branch: not implemented.
