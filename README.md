@@ -58,6 +58,12 @@ transitions. It evaluates BF16, pure global two-base, and hybrid-s8 sequentially
 with BF16 model weights materialized in place. This is dense fake-quant PPL,
 not packed-kernel execution.
 
+The accepted execution from job `6259037` reproduced BF16 PPL `7.61084`. Pure
+global two-base rank-one produced PPL `147.53152`; hybrid-s8 improved it to
+`24.21529`, but remained `3.18x` the BF16 PPL. The run and provenance are valid,
+while the algorithm-quality result is negative; these weights do not authorize
+the packed-backend stage.
+
 ## Local checks
 
 ```bash

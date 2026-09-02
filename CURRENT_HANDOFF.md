@@ -211,21 +211,33 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   `bf412e333e7ffe761c0627fecc6b2159ae19faa60f3dc48a125713fcd802084c`.
 - Full-model source-manifest SHA-256:
   `6c418d7453565a784ecf3f2d83e9dd4a5cbe2abbb546e6de539d373538cac06a`.
-- PPL gate is prepared for matched BF16, pure global two-base, and hybrid-s8.
-  It reuses the accepted QBB-New protocol of 146 non-overlapping 2048-token
-  blocks and 298,862 scored transitions, and binds BF16 reference PPL
+- PPL job `6259037` completed all three arms on 2026-09-02 from clean revision
+  `59fe6e7080eee720321c653fdc6102f4c6a5d5e1`. It reused the accepted QBB-New
+  protocol of 146 non-overlapping 2048-token blocks and 298,862 scored
+  transitions, and exactly reproduced BF16 reference PPL
   `7.6108390395557874` from job `6154681`.
 - PPL materialization is dense BF16 fake quantization from the packed algorithm
   payload; it is not packed backend or speed evidence.
-- PPL job `6259037` was submitted on 2026-09-02 from clean revision
-  `59fe6e7080eee720321c653fdc6102f4c6a5d5e1`. Server preflight passed all
-  15 unit tests, Python compilation, Slurm shell syntax, and the previously
-  recorded real-protocol validation. The one bounded startup snapshot observed
-  `PENDING (Priority)` with 1 GH200 GPU, 16 CPUs, and a 1-hour time limit.
+- Pure global two-base rank-one PPL is `147.53151938752475` (`19.3844x` BF16).
+  Hybrid-s8 PPL is `24.215285155527635`: an `83.5864%` PPL reduction versus
+  the pure arm, but still `3.18168x` BF16.
+- The application path completed all 448/448 materializations per quantized
+  arm and 146/146 scoring blocks per arm in `238.8073` seconds. All metrics are
+  finite and each arm scored exactly 298,862 transitions.
+- Independent audit accepted execution and provenance: 15 non-shard files were
+  rehashed, all 17 model-shard hashes matched the independently accepted
+  full-reconstruction manifest, BF16 reproduced with zero difference, and the
+  stored NLL/PPL relationships were recomputed successfully.
+- Result SHA-256:
+  `1c379ef97c39959dab59bcf5108b2e95e32456e6e4251b801d5d6788bbb810bc`.
+- Source-manifest SHA-256:
+  `a4f5f2321283f32d94476fe0c821de1196467d1eef3ce07482046e16448851d1`.
 - PPL result directory:
   `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-two-base-rank1-s8-ppl-v1/`.
 - PPL logs:
   `logs/qwen3-32b-two-base-rank1-s8-ppl/fluxbin-ppl-q32-s8-6259037.{out,err}`.
-- PPL acceptance remains pending; scheduler state alone is not evidence that
-  the three PPL arms completed or passed their provenance and metric gates.
-- Backend: not implemented.
+- Acceptance boundary: the PPL execution evidence is accepted, but the
+  algorithm-quality conclusion is negative. No numeric quality threshold was
+  predeclared, yet hybrid-s8 PPL `24.22` versus BF16 `7.61` is not sufficient
+  evidence to proceed to deployment optimization.
+- Backend: not implemented and not authorized by the current quality result.
