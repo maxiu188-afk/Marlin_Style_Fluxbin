@@ -109,17 +109,53 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 - Result directory:
   `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-single-linear-two-base-rank1-s8-v1/`.
 
+## Accepted hybrid-s8 single-Linear result
+
+- Job `6250990` completed the application path and all 9 tests; SlurmDBD did
+  not expose its scheduler accounting record, so scheduler `State/ExitCode`
+  remains independently unavailable.
+- Pure global SSE: `2325.262335431492`; hybrid-s8 SSE:
+  `2142.084815168282`, a `7.8777142%` reduction.
+- Relative Frobenius error: `0.3381925903` -> `0.3245984495`.
+- Selected columns contained `8.3860997%` of global residual energy and the
+  refinement removed `93.9377595%` of their SSE.
+- Result SHA-256:
+  `c4eb7effe1ad89a05689f8abbc713d65392c78fea68a699d20d72bdb0de31390`.
+- Payload SHA-256:
+  `bc1e69b788d4cdccaf8c5f186fe32d87182ab4d8c7a7859b763bba2b6bf59fee`.
+
+## Full-model reconstruction contract
+
+- Scope: all 448 transformer-block Linears across 64 Qwen3-32B layers,
+  totalling 31,205,621,760 weights. Embeddings, output head and non-matrix
+  tensors are excluded by a fail-closed inventory.
+- Each Linear computes both the pure global two-base arm and hybrid-s8 in one
+  pass. The hybrid reuses that exact global payload and stores only refinement
+  signs/scales/indices in addition.
+- One metadata JSON and one payload per Linear provide bounded restart. Resume
+  requires matching target, config, implementation and payload hashes.
+- Both global and refinement signs are losslessly stored in
+  `fluxbin-two-base-interleaved-2bit-v1`. This is an algorithm artifact format,
+  not a CUDA backend format or performance claim.
+- Expected packed payload is about 12,222,480,384 bytes (11.38 GiB), excluding
+  small safetensors/JSON overhead. Aggregate algorithm cost is about 2.5078 bpw
+  for pure global and 3.1334 bpw for hybrid-s8 with FP32 scales.
+- Required gates include 448/448 inventory, exact single-Linear reproduction,
+  strict hybrid SSE improvement for every tensor, zero delta outside selected
+  columns, packed-sign round trips, finite/monotonic solver records, complete
+  896-file artifact inventory, and aggregate metrics.
+- PPL and backend jobs are not launched automatically.
+
 ## Current status
 
 - Local static checks for hybrid-s8: Python compilation, JSON validation,
   Slurm shell syntax, and `git diff --check` passed. The Mac has no project
   PyTorch environment, so tensor tests remain an Isambard preflight gate.
-- Hybrid-s8 real-Linear Slurm job `6250990` was submitted on 2026-09-02 from
-  clean revision `33d559091350d14d0510102cda6e0b4151874dba`; last bounded
-  observation was `PENDING` with no failure reason immediately after submission.
+- Hybrid-s8 real-Linear job `6250990`: application-level accepted as documented
+  above.
 - Hybrid-s8 logs:
   `logs/qwen3-32b-single-linear-s8/fluxbin2-s8-q32-6250990.{out,err}` in the
   Isambard checkout.
-- Full-model reconstruction: not launched.
+- Full-model reconstruction: implementation prepared; not yet submitted.
 - PPL: not launched.
 - Backend: not implemented.

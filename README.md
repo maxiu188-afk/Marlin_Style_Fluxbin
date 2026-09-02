@@ -39,6 +39,13 @@ for this project.
 
 No stage launches the next stage automatically.
 
+The full-model reconstruction is resumable at one payload per Linear. Its
+two-base signs use the lossless `fluxbin-two-base-interleaved-2bit-v1` artifact
+format, while FP32 scales and group-local `int16` refinement indices remain
+explicit. The hybrid payload shares the global arm with the pure result rather
+than storing it twice. This compact artifact is for algorithm evaluation and is
+not evidence of a Marlin-compatible CUDA layout or runtime speed.
+
 ## Local checks
 
 ```bash

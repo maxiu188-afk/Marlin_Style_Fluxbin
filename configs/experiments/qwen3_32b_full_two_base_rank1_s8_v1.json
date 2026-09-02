@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "seed": 20260902,
+  "scope": "all 448 Qwen3-32B transformer-block Linear weights; pure two-base rank-one and shared-global hybrid-s8 reconstruction in one resumable run",
+  "model": {
+    "repo_id": "Qwen/Qwen3-32B",
+    "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+    "model_type": "qwen3",
+    "checkpoint_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 64,
+    "expected_tensor_count": 448,
+    "expected_parameter_count": 31205621760,
+    "expected_weight_shards": 17,
+    "expected_checkpoint_bytes": 65524246528
+  },
+  "algorithm": {
+    "global_num_bases": 2,
+    "global_group_size": 128,
+    "base_values": [-1, 1],
+    "row_column_scales_independent_per_base": true,
+    "scale_dtype": "torch.float32",
+    "joint_sign_pattern_count": 4,
+    "residual_refinement": true,
+    "residual_selection_metric": "column_squared_error",
+    "residual_columns_per_group": 8,
+    "residual_selection_ties": "stable_lower_index_first",
+    "stored_indices_order": "ascending_within_group",
+    "refinement_num_bases": 2,
+    "refinement_group_size": 8,
+    "hessian_error_propagation": false,
+    "distillation": false
+  },
+  "global_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-6,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-6,
+    "assignment_chunk_rows": 16,
+    "denominator_epsilon": 1e-12
+  },
+  "refinement_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-6,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-6,
+    "assignment_chunk_rows": 16,
+    "denominator_epsilon": 1e-12
+  },
+  "single_linear_gate": {
+    "job_id": "6250990",
+    "result_sha256": "c4eb7effe1ad89a05689f8abbc713d65392c78fea68a699d20d72bdb0de31390",
+    "payload_sha256": "bc1e69b788d4cdccaf8c5f186fe32d87182ab4d8c7a7859b763bba2b6bf59fee",
+    "target_tensor": "model.layers.0.self_attn.o_proj.weight",
+    "target_tensor_sha256": "af8343c70597ac417bf2daa550282fdc9639a23b3496506df99d9f168fc6adec",
+    "global_squared_error": 2325.262335431492,
+    "hybrid_squared_error": 2142.084815168282,
+    "outcome": "go_full_model"
+  },
+  "artifact_policy": {
+    "artifact_id": "qwen3-32b-full-two-base-rank1-s8-v1",
+    "payload_format": "fluxbin-two-base-interleaved-2bit-v1",
+    "one_payload_per_tensor": true,
+    "resumable": true,
+    "share_global_arm_between_pure_and_hybrid": true,
+    "stored_arms": ["global_two_base_rank_one", "sparse_residual_refinement_s8"]
+  },
+  "execution": {
+    "environment": "Isambard GH200",
+    "device_name": "NVIDIA GH200 120GB",
+    "compute_capability": [9, 0],
+    "torch": "2.11.0+cu129",
+    "transformers": "5.14.1",
+    "safetensors": "0.8.0"
+  },
+  "decision": {
+    "require_every_tensor_strict_hybrid_improvement": true,
+    "require_exact_zero_outside_selected_columns": true,
+    "ppl_auto_launch": false,
+    "backend_auto_launch": false
+  }
+}
