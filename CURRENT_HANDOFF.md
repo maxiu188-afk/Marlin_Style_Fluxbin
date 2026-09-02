@@ -94,7 +94,7 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   `logs/qwen3-32b-single-linear/fluxbin2-q32-linear-6249838.{out,err}` in the
   Isambard checkout.
 
-## Prepared pure two-base 50-versus-200 convergence check
+## Submitted pure two-base 50-versus-200 convergence check
 
 - The accepted job `6249838` exhausted all 50 iterations with stop reason
   `max_iters`; its final iteration still reported relative improvement
@@ -107,6 +107,21 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 - “50 steps was too small” means the 200-step final SSE is below the 50-step
   final SSE by more than the frozen `1e-6` relative comparison tolerance. A
   negative or very small effect remains a valid diagnostic result.
+- Job `6261256` was submitted on 2026-09-02 from clean revision
+  `3e641e5be1213fcb5fd8daea122d93b2617c9b39`. The server preflight passed all
+  15 unit tests, Python compilation, Slurm syntax, and the baseline-result hash
+  and iteration-history checks. The bounded startup snapshot observed
+  `PENDING (Priority)` with 1 GH200 GPU, 8 CPUs, and a 15-minute limit.
+- It uses the isolated server checkout
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/repo-single-linear-i200` so the
+  already queued PPL job keeps its original source checkout unchanged.
+- Result directory:
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-single-linear-two-base-rank1-max-iters-200-v1/`.
+- Logs:
+  `logs/qwen3-32b-single-linear-i200/fluxbin2-q32-i200-6261256.{out,err}` in
+  the isolated checkout.
+- Acceptance and the answer to the 50-step question remain pending structured
+  result review; the scheduler state alone is not evidence.
 - No full-model, PPL, or backend follow-up is launched automatically.
 
 ## Prepared hybrid-s8 gate
