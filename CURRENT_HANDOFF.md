@@ -66,6 +66,9 @@ No runner automatically launches its successor.
 
 ## Active v2 implementation status
 
+- Implementation revision `549394b470b5772851728f53960f91092d140518`
+  is pushed to `origin/main` and was fast-forwarded into the clean Isambard
+  main checkout before submission.
 - `src/fluxbin_style/hessian_obq.py` implements normalized Hessian
   accumulation, relative damping plus Cholesky inversion, Hessian saliency,
   block OBQ propagation, and independent pure/hybrid groupwise quantizers.
@@ -80,8 +83,19 @@ No runner automatically launches its successor.
 - The target remains `model.layers.0.self_attn.o_proj.weight`, shape
   `[5120,8192]`. Both arms are written into the same result payload but have
   separate global signs/scales.
+- C4 materialization job `6262354` was submitted with a 30-minute limit. The
+  bounded startup snapshot observed `PENDING (Priority)`. Its logs are
+  `logs/qwen3-32b-c4-calibration/fluxbin-c4-q32-6262354.{out,err}` and its
+  canonical artifact directory is
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/calibration/qwen3-32b-c4-calibration-256x2048-v1/`.
+- Calibrated single-Linear job `6262355` was submitted with dependency
+  `afterok:6262354` and a one-hour limit. The bounded startup snapshot observed
+  `PENDING (Dependency)`. Its logs are
+  `logs/qwen3-32b-single-linear-hessian-obq-s8/fluxbin-obq-q32-s8-6262355.{out,err}`
+  and its result directory is
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-single-linear-hessian-obq-s8-v2/`.
 - Full-model, PPL and backend stages remain unlaunched pending manual review of
-  the calibrated single-Linear result.
+  the calibrated single-Linear structured result.
 
 ## First real-Linear gate
 
