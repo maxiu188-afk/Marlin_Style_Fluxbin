@@ -172,5 +172,20 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   `${PROJECTDIR}/${USER}/marlin-style-fluxbin/artifacts/qwen3-32b-full-two-base-rank1-s8-v1/decompositions/`.
 - Full-model logs:
   `logs/qwen3-32b-full-two-base-rank1-s8-v1/fluxbin-full-q32-s8-6253233.{out,err}`.
-- PPL: not launched.
+- Full-model application and independent artifact audit accepted: 448/448
+  tensors strictly improved, 896/896 files and all packed decoded-sign hashes
+  passed. Aggregate pure/hybrid SSE is
+  `1907722.585722923/1762887.8386713415` (`7.5920235%` lower); relative
+  Frobenius error is `0.3406372032/0.3274513676`.
+- Full-model result SHA-256:
+  `bf412e333e7ffe761c0627fecc6b2159ae19faa60f3dc48a125713fcd802084c`.
+- Full-model source-manifest SHA-256:
+  `6c418d7453565a784ecf3f2d83e9dd4a5cbe2abbb546e6de539d373538cac06a`.
+- PPL gate is prepared for matched BF16, pure global two-base, and hybrid-s8.
+  It reuses the accepted QBB-New protocol of 146 non-overlapping 2048-token
+  blocks and 298,862 scored transitions, and binds BF16 reference PPL
+  `7.6108390395557874` from job `6154681`.
+- PPL materialization is dense BF16 fake quantization from the packed algorithm
+  payload; it is not packed backend or speed evidence.
+- PPL: prepared, not yet submitted.
 - Backend: not implemented.

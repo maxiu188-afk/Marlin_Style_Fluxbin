@@ -46,6 +46,12 @@ explicit. The hybrid payload shares the global arm with the pure result rather
 than storing it twice. This compact artifact is for algorithm evaluation and is
 not evidence of a Marlin-compatible CUDA layout or runtime speed.
 
+The model-quality gate reuses the accepted QBB-New WikiText-2 token artifact:
+146 non-overlapping 2048-token blocks and 298,862 scored next-token
+transitions. It evaluates BF16, pure global two-base, and hybrid-s8 sequentially
+with BF16 model weights materialized in place. This is dense fake-quant PPL,
+not packed-kernel execution.
+
 ## Local checks
 
 ```bash
