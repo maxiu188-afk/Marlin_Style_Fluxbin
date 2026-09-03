@@ -165,6 +165,22 @@ No runner automatically launches its successor.
 - Each arm requests one GH200 for 8 hours. This is intentionally resumable
   rather than requesting a larger monolithic window. No job automatically
   launches PPL or backend work.
+- Implementation revision `82f3765845b1955681ec611e4bdd28f5a8cc4db7`
+  was pushed and fast-forwarded into the clean Isambard checkout. The server
+  preflight passed all 23 tests, Python compilation, shell syntax, accepted
+  calibration/single-result hash gates, and available-space checks.
+- Pure full-model job `6272553` and hybrid-s8 full-model job `6272554` were
+  submitted independently on 2026-09-03. The bounded startup snapshot observed
+  both as `PENDING (None)` with one GH200, 8 CPUs, and an 8-hour limit each.
+- Logs are
+  `logs/qwen3-32b-full-hessian-obq-s8-v2/fluxbin-full-pure-6272553.{out,err}`
+  and
+  `logs/qwen3-32b-full-hessian-obq-s8-v2/fluxbin-full-hybrid-6272554.{out,err}`.
+- Resumable layer artifacts are under
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/artifacts/qwen3-32b-full-hessian-obq-s8-v2/{pure,hybrid_s8}/`.
+- Final structured results, if the jobs complete within this allocation, are
+  written under
+  `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-full-hessian-obq-s8-v2/{pure,hybrid_s8}/`.
 
 ## First real-Linear gate
 
