@@ -62,6 +62,29 @@ they are not mixed with v2 calibrated artifacts.
 
 No stage launches the next stage automatically.
 
+## Calibrated single-Linear v2 result
+
+Jobs `6271395` and `6271396` completed successfully on Isambard GH200. The
+first materialized the pinned 256x2048 C4 token artifact; the second captured
+524,288 activation rows for `model.layers.0.self_attn.o_proj.weight` and ran
+the two independent calibrated arms.
+
+- Pure two-base OBQ: weight SSE `3088.66483`, calibration output loss
+  `2.73732155`.
+- Hessian-salient hybrid-s8 OBQ: weight SSE `2819.43539`, calibration output
+  loss `1.89756616`.
+- Hybrid reduces weight SSE by `8.71669%` and the Hessian-weighted calibration
+  loss by `30.67800%` relative to the matched pure arm.
+- The two global payloads differ as required, all metrics are finite, packed
+  tensor hashes round-trip, and the refinement delta outside selected columns
+  is exactly zero.
+
+The calibrated single-Linear execution and artifacts are accepted. Its higher
+ordinary weight SSE than historical v1 is not itself a regression verdict:
+OBQ changes later working groups to reduce activation-weighted output loss.
+Full-model PPL remains the quality gate, and no downstream stage was launched
+automatically.
+
 The single-Linear convergence diagnostic also supports a strictly matched
 50-versus-200 iteration comparison. It binds the accepted 50-step result by
 SHA-256 and changes only `max_iters`; the output records whether the additional

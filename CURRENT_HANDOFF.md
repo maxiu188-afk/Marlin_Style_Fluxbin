@@ -102,11 +102,42 @@ No runner automatically launches its successor.
   revision, file, sampling, tokenizer, seed, sample count and sequence length
   are unchanged. The server checkout was clean and all 21 tests passed again.
 - Retry calibration job `6271395` was submitted with a 30-minute limit; the
-  bounded startup snapshot observed `PENDING (None)`. Retry single-Linear job
-  `6271396` depends on `afterok:6271395`; its bounded snapshot observed
-  `PENDING (Dependency)` with a one-hour limit.
-- Full-model, PPL and backend stages remain unlaunched pending manual review of
-  the calibrated single-Linear structured result.
+  job completed `0:0` in 36 seconds on `nid011157`. Retry single-Linear job
+  `6271396`, dependent on `afterok:6271395`, completed `0:0` in 9m45s on
+  `nid010005`.
+- Both jobs passed all 21 tests. The independent artifact audit rehashed the
+  calibration manifest/token file, result/source manifest, and every payload
+  tensor; reconstructed both arms directly from packed signs and scales;
+  reloaded and hash-checked the original checkpoint tensor; and reproduced the
+  stored weight SSE values.
+- Calibration artifact: 256 sequences x 2048 tokens, 524,288 activation rows,
+  Hessian shape `[8192,8192]`, token tensor SHA-256
+  `f504da4f8b7fa56aa0d7c8971556c52eaee1395619a7fc4b10c2b4c04bb28599`,
+  token file SHA-256
+  `a31bfd489dccd7f4ea2cdc04e245f4d47229ca0fe788c4690d061a17fe47e2e2`,
+  and manifest SHA-256
+  `a89c967136a9d7964cfad3dcfc956dee2f6cae360ccb5858d254333a4d352675`.
+- Pure two-base OBQ weight SSE is `3088.664830435032`; its calibration output
+  loss is `2.7373215457945603`.
+- Hessian-salient hybrid-s8 weight SSE is `2819.435390792252`, an `8.7166933%`
+  reduction; its calibration output loss is `1.8975661604505283`, a
+  `30.6779957%` reduction versus pure.
+- Pure and hybrid global packed signs differ, confirming branch-independent
+  propagated targets. Hybrid indices are `[64,8]`, sorted, unique and in range;
+  the maximum refinement delta outside selected columns is exactly `0.0`.
+- Result SHA-256:
+  `93a3ae5ab0cf8ec6484e6019c1a3f0edb8cc8defa27ef4d3b5b627e6f25407a1`.
+- Payload SHA-256:
+  `bcddf5b77fb679f6784129c20bcd54e734a40369cccf78fbff5bc370d369583f`.
+- Source-manifest SHA-256:
+  `25141a0899e8f5668bf3f2ebbad3925cfd037b9bc22f94070cdb86b35589256e`.
+- Acceptance: calibration and calibrated single-Linear execution/artifacts are
+  accepted. The result clears the bounded implementation gate because hybrid
+  improves both matched metrics while preserving the pure arm and sparse
+  support contract. It does not establish full-model quality.
+- Full-model, PPL and backend stages remain unlaunched. The next step is a
+  layer-sequential full-model implementation with independently propagated
+  pure and hybrid arms, followed by matched dense fake-quant PPL.
 
 ## First real-Linear gate
 
