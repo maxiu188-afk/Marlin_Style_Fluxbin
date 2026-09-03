@@ -108,23 +108,28 @@ chunk executes about 10.24 million and 17.29 million synchronizing `.item()`
 calls per completed pure and hybrid layer respectively. Continuation jobs
 `6281717` and `6281718` were therefore cancelled before allocation.
 
-The first semantics-preserving runtime repair is now implemented locally. New
-v2 runs choose assignment row chunks from a 1 GiB temporary-memory budget, so
+The first semantics-preserving runtime repair is implemented and accepted on
+Isambard GH200. New v2 runs choose assignment row chunks from a 1 GiB
+temporary-memory budget, so
 the active group-local OBQ fit (`G=1`) processes the whole output dimension in
 one chunk, while the legacy full-weight path remains bounded. Assignment-change
 counts accumulate on device and synchronize once per assignment rather than
 once per chunk. Fixed row chunking remains available as an explicit legacy and
-test override. All 26 local tests pass, including bit-exact adaptive-versus-
-single-row regression; an Apple MPS diagnostic reduced a 4096x128, three-step
-fit from 256 to one chunk per assignment and from 0.638 to 0.066 seconds. This
-is local implementation evidence, not NVIDIA performance evidence. The next
-gate is a matched Isambard GH200 rerun against the retained oracle before
-restarting full-model quantization.
+test override. Regression job `6282732` passed all 26 tests and reproduced the
+accepted job-`6271396` payload bit-for-bit: all 10 tensors match and the complete
+payload SHA-256 remains `bcddf5b77fb679f6784129c20bcd54e734a40369cccf78fbff5bc370d369583f`.
+The application elapsed time fell from `571.1411166` to `27.7813934` seconds
+(`20.5584x`), while Slurm wall time fell from `00:09:45` to `00:00:51`
+(`11.4706x`). Peak allocated GPU memory was unchanged at `71,720,856,576`
+bytes. This accepts the assignment-overhead repair for the retained
+single-Linear scope; it is not yet a seven-Linear layer or full-model runtime
+result.
 
 The non-reconstructable v2 evidence has been exported locally into the
-Git-ignored `server_results/` directory before Isambard access ends. The bundle
-contains 49 files and occupies 393,680 KiB; its 48-entry SHA-256 manifest has
-hash `ef427616d9c57d45d53d1e75b76ec9f2e62e4f89444f3f0d44ede11c8c7614db`.
+Git-ignored `server_results/` directory before Isambard access ends. With the
+accepted runtime-regression JSON, manifest and logs, the bundle contains 53
+files and occupies 393,760 KiB; its 52-entry SHA-256 manifest has hash
+`2144952e30cb72f4f81e9df0d9c1997b3036a1653ede4fc043ce7984ee2b78f0`.
 It excludes the downloadable Qwen3-32B checkpoint, all v1 payloads, virtual
 environments, caches, and non-layer-0 partial v2 payloads.
 
@@ -172,6 +177,6 @@ python3 -m compileall -q src scripts tests
 The current macOS host has a local CPU/MPS project environment but no NVIDIA
 GPU. Historical formal tensor evidence came from Isambard GH200. Access remains
 available through 2026-09-05 and is expected to end from 2026-09-06. Bounded
-single-Linear regression job `6282732` is queued from implementation revision
-`eef867dfa37ad2b5e2cd848eb4330bd99c46d313`; it does not launch a downstream
-full-model, PPL, or backend job.
+single-Linear regression job `6282732` completed and was accepted from
+implementation revision `eef867dfa37ad2b5e2cd848eb4330bd99c46d313`; it did
+not launch a downstream full-model, PPL, or backend job.

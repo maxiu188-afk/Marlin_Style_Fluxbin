@@ -244,10 +244,11 @@ No runner automatically launches its successor.
   It must compare against the retained layer-0 payloads before any new
   full-model run.
 
-### Local assignment-overhead repair
+### Accepted assignment-overhead repair
 
-- The first repair is implemented in the current local working tree but is not
-  yet committed, published, or validated on NVIDIA hardware.
+- The first repair is committed and published at
+  `eef867dfa37ad2b5e2cd848eb4330bd99c46d313`, and its retained single-Linear
+  scope is accepted on Isambard GH200.
 - `TwoBaseRankOneOptimizationConfig` now defaults to a 1 GiB assignment
   temporary-memory budget. The active v2 configs use that budget explicitly;
   `assignment_chunk_rows` remains an optional fixed-size override for legacy
@@ -268,40 +269,54 @@ No runner automatically launches its successor.
   classes bit-exact. This is directional local evidence only, not a GH200 or
   full-layer performance result.
 - The implementation and active-v2 config identities changed, so the existing
-  partial layer artifacts must not be resumed under the new code. Before any
-  new full-model run, use Isambard GH200 to rerun a retained oracle scope and
-  compare every payload tensor against the exported oracle;
-  also collect matched stage timing and peak memory. Do not infer the earlier
-  100x estimate or full-model completion time from the local MPS diagnostic.
+  partial layer artifacts must not be resumed under the new code. The retained
+  single-Linear oracle comparison below validates the implementation change;
+  a fresh full-model run still requires a new artifact root.
 - The clean Isambard checkout was fast-forwarded by verified Git bundle to
   revision `eef867dfa37ad2b5e2cd848eb4330bd99c46d313` because the server has no
   GitHub HTTPS credentials. The retained job-`6271396` result and payload still
   match their accepted SHA-256 values.
-- Bounded single-Linear regression job `6282732` was submitted with one GH200,
-  eight CPUs and a one-hour limit. The first snapshot observed
-  `PENDING (Priority)` with no dependency; `sbatch --test-only` estimated a
-  2026-09-05 start. It runs all 26 tests before the same layer-0 o-projection
-  pure/hybrid application path and refuses to launch full-model, PPL, or
+- Bounded single-Linear regression job `6282732` completed `0:0` on
+  `nid010566` in 51 seconds after passing all 26 tests. It ran the same layer-0
+  o-projection pure/hybrid application path and launched no full-model, PPL or
   backend work. Its logs are
   `logs/qwen3-32b-single-linear-hessian-obq-s8/fluxbin-obq-q32-s8-6282732.{out,err}`.
-- When complete, acceptance requires the structured result, payload inventory,
-  finite metrics, exact tensor comparison with accepted job `6271396`, source
-  manifest, peak memory and matched elapsed-time review. Scheduler completion
-  alone is not acceptance.
+- The new 10-tensor payload is bit-for-bit identical to accepted job `6271396`;
+  the complete payload SHA-256 remains
+  `bcddf5b77fb679f6784129c20bcd54e734a40369cccf78fbff5bc370d369583f`.
+  Solver summaries, every group iteration count and convergence reason,
+  reconstruction metrics, calibration identity, model identity and algorithm
+  contract are also identical.
+- The application elapsed time improved from `571.1411165629979` to
+  `27.78139341797214` seconds (`20.558404x`). Slurm wall time improved from
+  `00:09:45` to `00:00:51` (`11.470588x`). Peak allocated GPU memory is exactly
+  unchanged at `71,720,856,576` bytes.
+- New result/source-manifest SHA-256 values are
+  `17b594c373c80ec0e16ce4f259857d066cc521c5c7eaf7d3c5377f73eea0190e`
+  and `9514e4f4037224ef6072f39c7b4e592a03b24e9fa6759e57c826815c4cd04b12`.
+  The result status is `completed_pending_review`, all metrics are finite, the
+  source-manifest field rehashes correctly, and manual review accepts this
+  bounded runtime repair.
+- This is single-Linear algorithm-runtime evidence. It does not directly prove
+  seven-Linear layer time, 64-layer completion time, PPL, packed deployment or
+  serving performance. The next performance gate is a fresh, bounded layer-0
+  run with stage timing before any 64-layer resubmission.
 
 ## Portable v2 server-result export
 
 - Before Isambard access ends, the non-reconstructable v2 evidence was copied
-  to the local Git-ignored `server_results/` directory. It contains 49 files
-  and occupies 393,680 KiB.
+  to the local Git-ignored `server_results/` directory. After adding the
+  accepted runtime-regression JSON, source manifest and logs, it contains 53
+  files and occupies 393,760 KiB.
 - Retained contents are the accepted 256x2048 C4 calibration artifact, the
   accepted calibrated single-Linear result and payload, both full-v2 source
   manifests, all 17 completed-layer metadata files, complete pure/hybrid-s8
   layer-0 payloads, the exact WikiText-2 protocol and BF16 reference, relevant
   v2 logs, Slurm accounting, runtime package versions, and transfer provenance.
-- All 11 selected remote trees passed a post-transfer `rsync --checksum` dry
-  run. The local 48-entry `provenance/SHA256SUMS` file has SHA-256
-  `ef427616d9c57d45d53d1e75b76ec9f2e62e4f89444f3f0d44ede11c8c7614db`.
+- All original 11 selected remote trees passed a post-transfer
+  `rsync --checksum` dry run. The extended local 52-entry
+  `provenance/SHA256SUMS` file passes in full and has SHA-256
+  `2144952e30cb72f4f81e9df0d9c1997b3036a1653ede4fc043ce7984ee2b78f0`.
 - Qwen3-32B model files, v1 payloads/results/logs, virtual environments, caches,
   source checkouts, and non-layer-0 partial-v2 payloads were deliberately not
   copied because the user classified them as reconstructable or unnecessary.
@@ -336,12 +351,12 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   when a local project environment exists.
 - Isambard GH200 supplied the historical real-weight results and remains
   accessible through 2026-09-05. Access is expected to end from 2026-09-06.
-  Bounded single-Linear regression job `6282732` is currently queued there;
-  the cancelled full-model continuation jobs remain inactive.
-- Complete the bounded regression evidence there before access ends. Any later
-  full-model, PPL, or backend validation requires a replacement NVIDIA
-  environment with the same model revision, runtime contract, artifacts,
-  hashes, and acceptance gates.
+  Bounded single-Linear regression job `6282732` is accepted; the cancelled
+  full-model continuation jobs remain inactive.
+- A fresh bounded layer-0 run may still be completed there before access ends.
+  Any later full-model, PPL, or backend validation requires a replacement
+  NVIDIA environment with the same model revision, runtime contract,
+  artifacts, hashes, and acceptance gates.
 - Scheduler `COMPLETED` is not acceptance; review structured JSON, provenance,
   hashes, payload inventory, finite metrics, and the gate contract.
 
