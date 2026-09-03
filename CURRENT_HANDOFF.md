@@ -203,6 +203,12 @@ No runner automatically launches its successor.
   (hybrid-s8) were submitted from the clean implementation revision
   `82f3765845b1955681ec611e4bdd28f5a8cc4db7`. The initial bounded snapshot
   observed both pending; they will resume at layers 11 and 6 respectively.
+- Both continuation jobs were cancelled by the user before allocation after
+  the first-window runtime diagnosis. Slurm records both as `CANCELLED` with
+  `00:00:00` elapsed and no assigned node, so they produced no additional or
+  partial layer artifacts. Full-model v2 execution is paused at the previously
+  audited 11 pure and 6 hybrid-s8 layers pending a one-layer stage profile and
+  runtime redesign.
 - Continuation logs are
   `logs/qwen3-32b-full-hessian-obq-s8-v2/fluxbin-full-pure-r2-6281717.{out,err}`
   and
