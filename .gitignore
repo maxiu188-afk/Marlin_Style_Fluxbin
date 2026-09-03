@@ -8,5 +8,6 @@ dist/
 logs/
 results/
 artifacts/
+server_results/
 tmp/
 .DS_Store

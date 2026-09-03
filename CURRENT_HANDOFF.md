@@ -218,6 +218,51 @@ No runner automatically launches its successor.
   resumptions will be required; this is a runtime estimate, not accepted
   full-model evidence.
 
+### Common-scope partial result and runtime diagnosis
+
+- Both arms completed layers 0--5: 42 Linears, 2,925,527,040 weights and
+  2,784 sequential 128-column groups per arm. All 42 target-weight hashes match
+  between arms.
+- Pure aggregate weight SSE is `191072.7887040316`; hybrid-s8 is
+  `144583.16664755723`, a `24.33084395%` reduction. Hybrid-s8 improves every
+  individual Linear's weight SSE in this common scope.
+- Pure aggregate branch-calibrated output loss is `46464.67755112283`;
+  hybrid-s8 is `5778.682172360981`, an `87.56327930%` reduction, and all 42
+  individual values improve. Layers after zero use different arm-propagated
+  inputs and therefore different Hessians, so this aggregate is a
+  protocol-level diagnostic, not a same-Hessian comparison or PPL result.
+- Pure required 117,793 global ALS iterations over the common six layers.
+  Hybrid-s8 required 117,930 global and 71,847 refinement iterations. Mean
+  pre-write time was 2,593.999 seconds per pure layer and 4,662.264 seconds per
+  hybrid-s8 layer over this matched scope.
+- With `assignment_chunk_rows=16`, the observed solver records imply about
+  10.24 million synchronizing assignment-chunk `.item()` calls per pure layer
+  and 17.29 million per hybrid-s8 layer. This is the leading static bottleneck
+  hypothesis, not yet a profiler attribution.
+- The next implementation gate is a stage-timed layer-0 run, followed first by
+  a semantics-preserving larger-row/GPU-accumulated assignment implementation.
+  It must compare against the retained layer-0 payloads before any new
+  full-model run.
+
+## Portable v2 server-result export
+
+- Before Isambard access ends, the non-reconstructable v2 evidence was copied
+  to the local Git-ignored `server_results/` directory. It contains 49 files
+  and occupies 393,680 KiB.
+- Retained contents are the accepted 256x2048 C4 calibration artifact, the
+  accepted calibrated single-Linear result and payload, both full-v2 source
+  manifests, all 17 completed-layer metadata files, complete pure/hybrid-s8
+  layer-0 payloads, the exact WikiText-2 protocol and BF16 reference, relevant
+  v2 logs, Slurm accounting, runtime package versions, and transfer provenance.
+- All 11 selected remote trees passed a post-transfer `rsync --checksum` dry
+  run. The local 48-entry `provenance/SHA256SUMS` file has SHA-256
+  `ef427616d9c57d45d53d1e75b76ec9f2e62e4f89444f3f0d44ede11c8c7614db`.
+- Qwen3-32B model files, v1 payloads/results/logs, virtual environments, caches,
+  source checkouts, and non-layer-0 partial-v2 payloads were deliberately not
+  copied because the user classified them as reconstructable or unnecessary.
+- The local bundle is not a resumable full-model checkpoint. It is a compact
+  accepted-evidence and numerical-oracle package for private cloud storage.
+
 ## First real-Linear gate
 
 - Model: `Qwen/Qwen3-32B`.
@@ -244,8 +289,11 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 
 - macOS/Apple Silicon: source review, static compilation, and small CPU tests
   when a local project environment exists.
-- Isambard GH200: real weights, reconstruction, PPL, and future performance.
-- Submit durable work through Slurm and perform one bounded startup check.
+- Isambard GH200 supplied the historical real-weight results, but future access
+  is not assumed. No continuation job remains active there.
+- Future full-model, PPL, or backend validation requires a replacement NVIDIA
+  environment. Preserve the same model revision, runtime contract, artifacts,
+  hashes, and acceptance gates when that environment is chosen.
 - Scheduler `COMPLETED` is not acceptance; review structured JSON, provenance,
   hashes, payload inventory, finite metrics, and the gate contract.
 

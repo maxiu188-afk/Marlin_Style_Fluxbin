@@ -85,6 +85,39 @@ OBQ changes later working groups to reduce activation-weighted output loss.
 Full-model PPL remains the quality gate, and no downstream stage was launched
 automatically.
 
+## Partial full-model v2 result and offline handoff
+
+Pure job `6272553` and hybrid-s8 job `6272554` each reached their eight-hour
+Slurm limit without an algorithm or out-of-memory error. Atomic checkpoint
+validation accepted pure layers 0--10 and hybrid-s8 layers 0--5. The common
+layers 0--5 cover 42 Linears and 2,925,527,040 weights with identical target
+weight hashes between arms.
+
+- Aggregate weight SSE is `191072.7887040316` for pure and
+  `144583.16664755723` for hybrid-s8, a `24.33084395%` reduction. Hybrid-s8
+  improves all 42 individual Linear SSE values.
+- Aggregate branch-calibrated output loss is `46464.67755112283` for pure and
+  `5778.682172360981` for hybrid-s8, an `87.56327930%` reduction. Later-layer
+  Hessians use each arm's propagated inputs, so this is a protocol-level
+  diagnostic rather than a same-Hessian comparison.
+- These incomplete layers establish neither full-model PPL nor deployability.
+
+Observed quantization time was about 42.3 minutes per pure layer and 77.7
+minutes per hybrid-s8 layer. Static diagnosis found that the 16-row assignment
+chunk executes about 10.24 million and 17.29 million synchronizing `.item()`
+calls per completed pure and hybrid layer respectively. Continuation jobs
+`6281717` and `6281718` were therefore cancelled before allocation. The next
+implementation step is a one-layer stage profile followed by a larger-row,
+GPU-accumulated assignment path, with the retained layer-0 payloads as exact
+regression oracles.
+
+The non-reconstructable v2 evidence has been exported locally into the
+Git-ignored `server_results/` directory before Isambard access ends. The bundle
+contains 49 files and occupies 393,680 KiB; its 48-entry SHA-256 manifest has
+hash `ef427616d9c57d45d53d1e75b76ec9f2e62e4f89444f3f0d44ede11c8c7614db`.
+It excludes the downloadable Qwen3-32B checkpoint, all v1 payloads, virtual
+environments, caches, and non-layer-0 partial v2 payloads.
+
 The v2 full-model runner executes pure and hybrid as separate branch-specific
 jobs. Each branch propagates its quantized hidden states into the next layer.
 Within a layer, one calibration pass captures four exact-input Hessians:
@@ -127,4 +160,6 @@ python3 -m compileall -q src scripts tests
 ```
 
 The current macOS host has no project PyTorch environment and no NVIDIA GPU.
-Formal tensor experiments run on Isambard GH200 through Slurm.
+Historical formal tensor evidence came from Isambard GH200. Future full-model
+or backend validation requires a replacement NVIDIA environment; no Isambard
+continuation job remains active.
