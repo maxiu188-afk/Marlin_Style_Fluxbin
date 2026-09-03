@@ -97,6 +97,14 @@ No runner automatically launches its successor.
   `logs/qwen3-32b-single-linear-hessian-obq-s8/fluxbin-obq-q32-s8-6262355.{out,err}`
   and its result directory is
   `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-single-linear-hessian-obq-s8-v2/`.
+- Revision `903744789a201c32efbbad0390df5858ab577fa4` fixes only the bounded
+  single-shard loader by setting `verification_mode=no_checks`; the pinned C4
+  revision, file, sampling, tokenizer, seed, sample count and sequence length
+  are unchanged. The server checkout was clean and all 21 tests passed again.
+- Retry calibration job `6271395` was submitted with a 30-minute limit; the
+  bounded startup snapshot observed `PENDING (None)`. Retry single-Linear job
+  `6271396` depends on `afterok:6271395`; its bounded snapshot observed
+  `PENDING (Dependency)` with a one-hour limit.
 - Full-model, PPL and backend stages remain unlaunched pending manual review of
   the calibrated single-Linear structured result.
 
