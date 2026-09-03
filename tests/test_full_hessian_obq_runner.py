@@ -128,6 +128,13 @@ class FullHessianOBQRunnerTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             runner.execution_layer_count(64, 64)
 
+    def test_execution_layers_returns_the_exact_bounded_view(self) -> None:
+        runner = load_runner()
+        layers = list(range(64))
+        self.assertEqual(runner.execution_layers(layers, 5), list(range(6)))
+        self.assertEqual(runner.execution_layers(layers, 10), list(range(11)))
+        self.assertEqual(runner.execution_layers(layers, None), layers)
+
     def test_first_pass_and_resumed_payload_weights_are_identical(self) -> None:
         try:
             from transformers import Qwen3Config, Qwen3ForCausalLM

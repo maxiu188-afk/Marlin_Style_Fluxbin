@@ -89,6 +89,11 @@ def execution_layer_count(total_layers: int, stop_after_layer: int | None) -> in
     return stop_after_layer + 1
 
 
+def execution_layers(layers: Any, stop_after_layer: int | None) -> Any:
+    """Return the single bounded layer view used by validation and execution."""
+    return layers[: execution_layer_count(len(layers), stop_after_layer)]
+
+
 def synchronize(device: torch.device) -> None:
     if device.type == "cuda":
         torch.cuda.synchronize(device)
@@ -543,11 +548,9 @@ def main() -> None:
         raise ValueError("model type drifted")
     if len(model.model.layers) != config["model"]["expected_hidden_layers"]:
         raise ValueError("model layer count drifted")
-    layer_count = execution_layer_count(
-        len(model.model.layers),
-        args.stop_after_layer,
-    )
-    for layer_index, layer in enumerate(model.model.layers[:layer_count]):
+    layers_to_execute = execution_layers(model.model.layers, args.stop_after_layer)
+    layer_count = len(layers_to_execute)
+    for layer_index, layer in enumerate(layers_to_execute):
         for module_name in QWEN3_LINEAR_MODULES:
             module = layer.get_submodule(module_name)
             if not isinstance(module, torch.nn.Linear):
@@ -573,7 +576,7 @@ def main() -> None:
     layer_metadata: list[dict[str, Any]] = []
     resumed_layers = 0
     newly_quantized_layers = 0
-    for layer_index, layer in enumerate(model.model.layers):
+    for layer_index, layer in enumerate(layers_to_execute):
         layer_started = time.monotonic()
         layer.to(device)
         layer_dir = args.artifact_dir / f"layer-{layer_index:03d}"
