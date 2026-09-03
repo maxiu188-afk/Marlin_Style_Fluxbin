@@ -244,6 +244,36 @@ No runner automatically launches its successor.
   It must compare against the retained layer-0 payloads before any new
   full-model run.
 
+### Local assignment-overhead repair
+
+- The first repair is implemented in the current local working tree but is not
+  yet committed, published, or validated on NVIDIA hardware.
+- `TwoBaseRankOneOptimizationConfig` now defaults to a 1 GiB assignment
+  temporary-memory budget. The active v2 configs use that budget explicitly;
+  `assignment_chunk_rows` remains an optional fixed-size override for legacy
+  reproduction and targeted tests.
+- Chunk sizing accounts conservatively for four sign patterns and four live
+  candidate-sized temporaries. For an active OBQ block `[5120,1,128]`, it
+  selects all 5120 rows. For a legacy full grouped tensor `[5120,200,128]`, it
+  selects 655 rows rather than removing the memory guard.
+- Assignment-change counts now accumulate in a device scalar and call
+  `.item()` once after the chunk loop. This removes the per-chunk device-host
+  synchronization without changing the integer count or convergence metric.
+- The local Python 3.11 environment passes all 26 tests. New tests require
+  exact equality of bases, row scales, column scales, and assignment-change
+  fractions between adaptive whole-block and one-row chunking.
+- A bounded Apple MPS diagnostic on a synthetic `[4096,128]`, `G=1`, three-step
+  fit reduced chunks per assignment from 256 to 1 and elapsed time from
+  `0.637911` to `0.065836` seconds (about 9.7x), with all three payload tensor
+  classes bit-exact. This is directional local evidence only, not a GH200 or
+  full-layer performance result.
+- The implementation and active-v2 config identities changed, so the existing
+  partial layer artifacts must not be resumed under the new code. Before any
+  new full-model run, use Isambard GH200 to rerun a retained oracle scope and
+  compare every payload tensor against the exported oracle;
+  also collect matched stage timing and peak memory. Do not infer the earlier
+  100x estimate or full-model completion time from the local MPS diagnostic.
+
 ## Portable v2 server-result export
 
 - Before Isambard access ends, the non-reconstructable v2 evidence was copied
@@ -289,11 +319,13 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
 
 - macOS/Apple Silicon: source review, static compilation, and small CPU tests
   when a local project environment exists.
-- Isambard GH200 supplied the historical real-weight results, but future access
-  is not assumed. No continuation job remains active there.
-- Future full-model, PPL, or backend validation requires a replacement NVIDIA
-  environment. Preserve the same model revision, runtime contract, artifacts,
-  hashes, and acceptance gates when that environment is chosen.
+- Isambard GH200 supplied the historical real-weight results and remains
+  accessible through 2026-09-05. Access is expected to end from 2026-09-06.
+  No continuation job remains active there at this documented point.
+- Complete the bounded regression evidence there before access ends. Any later
+  full-model, PPL, or backend validation requires a replacement NVIDIA
+  environment with the same model revision, runtime contract, artifacts,
+  hashes, and acceptance gates.
 - Scheduler `COMPLETED` is not acceptance; review structured JSON, provenance,
   hashes, payload inventory, finite metrics, and the gate contract.
 

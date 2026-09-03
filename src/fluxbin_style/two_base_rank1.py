@@ -9,6 +9,8 @@ import torch
 
 
 NUM_BASES = 2
+DEFAULT_ASSIGNMENT_MEMORY_BUDGET_BYTES = 1 << 30
+_ASSIGNMENT_LIVE_CANDIDATE_TENSORS = 4
 
 
 def _validate_weight(weight: torch.Tensor) -> None:
@@ -192,7 +194,8 @@ class TwoBaseRankOneOptimizationConfig:
     relative_tolerance: float = 1e-6
     convergence_patience: int = 3
     monotonicity_tolerance: float = 1e-6
-    assignment_chunk_rows: int = 16
+    assignment_chunk_rows: int | None = None
+    assignment_memory_budget_bytes: int = DEFAULT_ASSIGNMENT_MEMORY_BUDGET_BYTES
     denominator_epsilon: float = 1e-12
 
     def __post_init__(self) -> None:
@@ -202,8 +205,10 @@ class TwoBaseRankOneOptimizationConfig:
             raise ValueError("tolerances must be non-negative")
         if self.convergence_patience <= 0:
             raise ValueError("convergence_patience must be positive")
-        if self.assignment_chunk_rows <= 0:
-            raise ValueError("assignment_chunk_rows must be positive")
+        if self.assignment_chunk_rows is not None and self.assignment_chunk_rows <= 0:
+            raise ValueError("assignment_chunk_rows must be positive when provided")
+        if self.assignment_memory_budget_bytes <= 0:
+            raise ValueError("assignment_memory_budget_bytes must be positive")
         if self.denominator_epsilon <= 0:
             raise ValueError("denominator_epsilon must be positive")
 
@@ -237,6 +242,26 @@ def _normalize_column_gauge(
     return row * safe.unsqueeze(0), column / safe.unsqueeze(-1)
 
 
+def _assignment_chunk_rows(
+    target: torch.Tensor,
+    config: TwoBaseRankOneOptimizationConfig,
+) -> int:
+    """Choose a row chunk that bounds the live four-pattern temporaries."""
+
+    if config.assignment_chunk_rows is not None:
+        return min(target.shape[0], config.assignment_chunk_rows)
+    pattern_count = 1 << NUM_BASES
+    bytes_per_row = (
+        pattern_count
+        * target.shape[1]
+        * target.shape[2]
+        * target.element_size()
+        * _ASSIGNMENT_LIVE_CANDIDATE_TENSORS
+    )
+    budgeted_rows = config.assignment_memory_budget_bytes // bytes_per_row
+    return max(1, min(target.shape[0], budgeted_rows))
+
+
 def _joint_assignment(
     target: torch.Tensor,
     row_scales: torch.Tensor,
@@ -248,7 +273,7 @@ def _joint_assignment(
     patterns = sign_pattern_matrix(device=target.device, dtype=target.dtype)
     new_bases = torch.empty_like(old_bases)
     approximation = torch.empty_like(target)
-    changed = 0
+    changed = torch.zeros((), dtype=torch.int64, device=target.device)
     for start in range(0, target.shape[0], chunk_rows):
         stop = min(start + chunk_rows, target.shape[0])
         magnitudes = (
@@ -265,8 +290,8 @@ def _joint_assignment(
         approximation[start:stop] = (
             selected * magnitudes.permute(1, 2, 3, 0)
         ).sum(dim=-1)
-        changed += int((chunk_bases != old_bases[:, start:stop]).sum().item())
-    return new_bases, approximation, changed / old_bases.numel()
+        changed.add_((chunk_bases != old_bases[:, start:stop]).sum())
+    return new_bases, approximation, float(changed.item() / old_bases.numel())
 
 
 def optimize_two_base_rank_one(
@@ -345,7 +370,7 @@ def optimize_two_base_rank_one(
             row,
             column,
             bases,
-            chunk_rows=config.assignment_chunk_rows,
+            chunk_rows=_assignment_chunk_rows(grouped_target, config),
         )
         mse = float((grouped_target - approximation).square().mean().item())
         if mse > scale_mse + allowed:

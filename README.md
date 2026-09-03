@@ -106,10 +106,20 @@ Observed quantization time was about 42.3 minutes per pure layer and 77.7
 minutes per hybrid-s8 layer. Static diagnosis found that the 16-row assignment
 chunk executes about 10.24 million and 17.29 million synchronizing `.item()`
 calls per completed pure and hybrid layer respectively. Continuation jobs
-`6281717` and `6281718` were therefore cancelled before allocation. The next
-implementation step is a one-layer stage profile followed by a larger-row,
-GPU-accumulated assignment path, with the retained layer-0 payloads as exact
-regression oracles.
+`6281717` and `6281718` were therefore cancelled before allocation.
+
+The first semantics-preserving runtime repair is now implemented locally. New
+v2 runs choose assignment row chunks from a 1 GiB temporary-memory budget, so
+the active group-local OBQ fit (`G=1`) processes the whole output dimension in
+one chunk, while the legacy full-weight path remains bounded. Assignment-change
+counts accumulate on device and synchronize once per assignment rather than
+once per chunk. Fixed row chunking remains available as an explicit legacy and
+test override. All 26 local tests pass, including bit-exact adaptive-versus-
+single-row regression; an Apple MPS diagnostic reduced a 4096x128, three-step
+fit from 256 to one chunk per assignment and from 0.638 to 0.066 seconds. This
+is local implementation evidence, not NVIDIA performance evidence. The next
+gate is a matched Isambard GH200 rerun against the retained oracle before
+restarting full-model quantization.
 
 The non-reconstructable v2 evidence has been exported locally into the
 Git-ignored `server_results/` directory before Isambard access ends. The bundle
@@ -159,7 +169,7 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m compileall -q src scripts tests
 ```
 
-The current macOS host has no project PyTorch environment and no NVIDIA GPU.
-Historical formal tensor evidence came from Isambard GH200. Future full-model
-or backend validation requires a replacement NVIDIA environment; no Isambard
-continuation job remains active.
+The current macOS host has a local CPU/MPS project environment but no NVIDIA
+GPU. Historical formal tensor evidence came from Isambard GH200. Access remains
+available through 2026-09-05 and is expected to end from 2026-09-06; no
+Isambard continuation job remains active at this documented point.

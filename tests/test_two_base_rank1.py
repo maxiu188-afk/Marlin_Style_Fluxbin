@@ -2,6 +2,8 @@ import unittest
 
 import torch
 
+from fluxbin_style.two_base_rank1 import _assignment_chunk_rows
+
 from fluxbin_style import (
     NUM_BASES,
     TwoBaseRankOne,
@@ -13,6 +15,26 @@ from fluxbin_style import (
 
 
 class TwoBaseRankOneTests(unittest.TestCase):
+    def test_assignment_chunk_rows_adapts_to_candidate_memory(self) -> None:
+        config = TwoBaseRankOneOptimizationConfig(
+            assignment_memory_budget_bytes=1 << 30,
+        )
+        obq_block = torch.empty(5120, 1, 128, dtype=torch.float32, device="meta")
+        full_weight = torch.empty(
+            5120,
+            200,
+            128,
+            dtype=torch.float32,
+            device="meta",
+        )
+        self.assertEqual(_assignment_chunk_rows(obq_block, config), 5120)
+        self.assertEqual(_assignment_chunk_rows(full_weight, config), 655)
+
+    def test_explicit_assignment_chunk_rows_remains_available(self) -> None:
+        target = torch.empty(9, 3, 4, dtype=torch.float32)
+        config = TwoBaseRankOneOptimizationConfig(assignment_chunk_rows=3)
+        self.assertEqual(_assignment_chunk_rows(target, config), 3)
+
     def test_pattern_table_has_exactly_four_unique_sign_pairs(self) -> None:
         patterns = sign_pattern_matrix()
         self.assertEqual(tuple(patterns.shape), (4, 2))
@@ -104,6 +126,48 @@ class TwoBaseRankOneTests(unittest.TestCase):
             target,
             rtol=0,
             atol=1e-6,
+        )
+
+    def test_adaptive_and_single_row_assignment_are_bit_exact(self) -> None:
+        torch.manual_seed(29)
+        target = torch.randn(13, 24)
+        initial = initialize_two_base_rank_one(target, group_size=6)
+        common = {
+            "max_iters": 8,
+            "relative_tolerance": 0,
+            "convergence_patience": 8,
+        }
+        single_row = optimize_two_base_rank_one(
+            target,
+            initial,
+            TwoBaseRankOneOptimizationConfig(**common, assignment_chunk_rows=1),
+        )
+        adaptive = optimize_two_base_rank_one(
+            target,
+            initial,
+            TwoBaseRankOneOptimizationConfig(
+                **common,
+                assignment_memory_budget_bytes=1 << 20,
+            ),
+        )
+        self.assertTrue(
+            torch.equal(single_row.decomposition.bases, adaptive.decomposition.bases)
+        )
+        self.assertTrue(
+            torch.equal(
+                single_row.decomposition.row_scales,
+                adaptive.decomposition.row_scales,
+            )
+        )
+        self.assertTrue(
+            torch.equal(
+                single_row.decomposition.column_scales,
+                adaptive.decomposition.column_scales,
+            )
+        )
+        self.assertEqual(
+            [item.assignment_changed_fraction for item in single_row.iterations],
+            [item.assignment_changed_fraction for item in adaptive.iterations],
         )
 
 

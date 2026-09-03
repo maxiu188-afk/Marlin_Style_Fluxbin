@@ -69,7 +69,7 @@
     "relative_tolerance": 1e-6,
     "convergence_patience": 3,
     "monotonicity_tolerance": 1e-6,
-    "assignment_chunk_rows": 16,
+    "assignment_memory_budget_bytes": 1073741824,
     "denominator_epsilon": 1e-12
   },
   "refinement_solver": {
@@ -77,7 +77,7 @@
     "relative_tolerance": 1e-6,
     "convergence_patience": 3,
     "monotonicity_tolerance": 1e-6,
-    "assignment_chunk_rows": 16,
+    "assignment_memory_budget_bytes": 1073741824,
     "denominator_epsilon": 1e-12
   },
   "artifact_policy": {
