@@ -30,11 +30,36 @@ snapshot="${qbb_artifact_root}/huggingface/hub/models--Qwen--Qwen3-32B/snapshots
 calibration_dir="${artifact_root}/calibration/qwen3-32b-c4-calibration-256x2048-v1"
 calibration_manifest="${calibration_dir}/manifest.json"
 calibration_tokens="${calibration_dir}/token_ids.safetensors"
+config_name="${FLUXBIN_OBQ_CONFIG_NAME:-qwen3_32b_full_hessian_obq_s8_v2.json}"
+if [[ "${config_name}" == */* ]]; then
+    echo "FLUXBIN_FULL_INVALID_CONFIG_NAME=${config_name}" >&2
+    exit 1
+fi
+config="${project_root}/configs/experiments/${config_name}"
+mapfile -t config_values < <("${model_env}/bin/python" - "${config}" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+config = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+print(config["artifact_policy"]["artifact_id"])
+print(config["accepted_single_linear_gate"]["job_id"])
+PY
+)
+if [[ "${#config_values[@]}" -ne 2 ]]; then
+    echo "FLUXBIN_FULL_CONFIG_VALUES_INVALID=${#config_values[@]}" >&2
+    exit 1
+fi
+artifact_id="${config_values[0]}"
+single_gate_job="${config_values[1]}"
 single_dir="${artifact_root}/results/qwen3-32b-single-linear-hessian-obq-s8-v2"
-single_result="${single_dir}/fluxbin-obq-qwen3-32b-single-linear-s8-v2-6271396.json"
-single_payload="${single_dir}/fluxbin-obq-qwen3-32b-single-linear-s8-v2-6271396.safetensors"
-config="${project_root}/configs/experiments/qwen3_32b_full_hessian_obq_s8_v2.json"
-artifact_id="qwen3-32b-full-hessian-obq-s8-v2"
+single_result="${single_dir}/fluxbin-obq-qwen3-32b-single-linear-s8-v2-${single_gate_job}.json"
+single_payload="${single_dir}/fluxbin-obq-qwen3-32b-single-linear-s8-v2-${single_gate_job}.safetensors"
+stop_after_layer="${FLUXBIN_OBQ_STOP_AFTER_LAYER:-}"
+if [[ -n "${stop_after_layer}" && ! "${stop_after_layer}" =~ ^[0-9]+$ ]]; then
+    echo "FLUXBIN_FULL_INVALID_STOP_AFTER_LAYER=${stop_after_layer}" >&2
+    exit 1
+fi
 arm_artifact_dir="${artifact_root}/artifacts/${artifact_id}/${arm}"
 results_dir="${artifact_root}/results/${artifact_id}/${arm}"
 stem="fluxbin-full-${arm}-qwen3-32b-v2-${SLURM_JOB_ID}"
@@ -125,7 +150,8 @@ echo "FLUXBIN_FULL_STAGE=source_manifest arm=${arm}"
     printf 'artifact_id=%s\n' "${artifact_id}"
     printf 'artifact_dir=%s\n' "${arm_artifact_dir}"
     printf 'calibration_job=6271395\n'
-    printf 'single_linear_gate_job=6271396\n'
+    printf 'single_linear_gate_job=%s\n' "${single_gate_job}"
+    printf 'stop_after_layer=%s\n' "${stop_after_layer:-none}"
     printf 'ppl_auto_launch=false\n'
     printf 'backend_auto_launch=false\n'
     sha256sum \
@@ -150,20 +176,26 @@ echo "FLUXBIN_FULL_STAGE=source_manifest arm=${arm}"
 } > "${source_manifest}"
 
 echo "FLUXBIN_FULL_STAGE=execute arm=${arm}"
-"${model_env}/bin/python" "${project_root}/scripts/run_qwen3_full_hessian_obq_s8.py" \
-    --arm "${arm}" \
-    --config "${config}" \
-    --snapshot-root "${snapshot}" \
-    --calibration-manifest "${calibration_manifest}" \
-    --calibration-tokens "${calibration_tokens}" \
-    --single-linear-result "${single_result}" \
-    --single-linear-payload "${single_payload}" \
-    --artifact-dir "${arm_artifact_dir}" \
-    --source-manifest "${source_manifest}" \
-    --project-root "${project_root}" \
+runner_args=(
+    "${project_root}/scripts/run_qwen3_full_hessian_obq_s8.py"
+    --arm "${arm}"
+    --config "${config}"
+    --snapshot-root "${snapshot}"
+    --calibration-manifest "${calibration_manifest}"
+    --calibration-tokens "${calibration_tokens}"
+    --single-linear-result "${single_result}"
+    --single-linear-payload "${single_payload}"
+    --artifact-dir "${arm_artifact_dir}"
+    --source-manifest "${source_manifest}"
+    --project-root "${project_root}"
     --output "${result}"
+)
+if [[ -n "${stop_after_layer}" ]]; then
+    runner_args+=(--stop-after-layer "${stop_after_layer}")
+fi
+"${model_env}/bin/python" "${runner_args[@]}"
 
-"${model_env}/bin/python" - "${result}" "${arm}" <<'PY'
+"${model_env}/bin/python" - "${result}" "${arm}" "${config}" "${stop_after_layer}" <<'PY'
 import json
 import math
 import sys
@@ -171,17 +203,35 @@ from pathlib import Path
 
 result = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
 arm = sys.argv[2]
-assert result["status"] == "completed_pending_review", result
+config = json.loads(Path(sys.argv[3]).read_text(encoding="utf-8"))
+stop_after_layer = int(sys.argv[4]) if sys.argv[4] else None
+expected_layers = (
+    config["model"]["expected_hidden_layers"]
+    if stop_after_layer is None
+    else stop_after_layer + 1
+)
+is_partial = expected_layers < config["model"]["expected_hidden_layers"]
+expected_status = (
+    "partial_completed_pending_review" if is_partial else "completed_pending_review"
+)
+assert result["status"] == expected_status, result
 assert result["arm"] == arm, result
-assert result["aggregate"]["layer_count"] == 64, result
-assert result["aggregate"]["tensor_count"] == 448, result
-assert result["aggregate"]["parameter_count"] == 31_205_621_760, result
+assert result["aggregate"]["layer_count"] == expected_layers, result
+assert result["aggregate"]["tensor_count"] == 7 * expected_layers, result
+assert result["aggregate"]["parameter_count"] == (
+    config["model"]["expected_parameter_count"]
+    * expected_layers
+    // config["model"]["expected_hidden_layers"]
+), result
 assert math.isfinite(result["aggregate"]["squared_error"]), result
 assert math.isfinite(result["aggregate"]["calibration_total_output_squared_error"]), result
-assert len(result["artifacts"]) == 64, result
+assert len(result["artifacts"]) == expected_layers, result
+assert result["execution"]["requested_stop_after_layer"] == stop_after_layer, result
 assert result["decision"]["ppl_auto_launch"] is False, result
 assert result["decision"]["backend_auto_launch"] is False, result
-assert result["next_stage"] == "not_launched", result
+assert result["next_stage"] == (
+    "resume_same_artifact_dir" if is_partial else "not_launched"
+), result
 print("FLUXBIN_FULL_STRUCTURED_RESULT_READY_FOR_REVIEW")
 PY
 

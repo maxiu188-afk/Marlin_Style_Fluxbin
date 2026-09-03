@@ -1,14 +1,20 @@
 import importlib.util
+import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 import torch
+from safetensors.torch import save_file
 
 from fluxbin_style import (
     capture_first_layer_inputs,
     capture_layer_hessians,
     invert_hessian,
+    sha256_file,
+    tensor_sha256,
 )
 
 
@@ -22,7 +28,106 @@ def load_runner():
     return module
 
 
+def load_comparator():
+    path = Path(__file__).resolve().parents[1] / "scripts/compare_full_hessian_obq_artifacts.py"
+    spec = importlib.util.spec_from_file_location("full_hessian_obq_comparator", path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("could not load full-model artifact comparator")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class FullHessianOBQRunnerTests(unittest.TestCase):
+    def test_bounded_artifact_comparator_accepts_only_bit_exact_payloads(self) -> None:
+        comparator = load_comparator()
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            reference = root / "reference" / "layer-000"
+            candidate = root / "candidate" / "layer-000"
+            reference.mkdir(parents=True)
+            candidate.mkdir(parents=True)
+            tensor = torch.arange(12, dtype=torch.float32).reshape(3, 4)
+            for layer_dir in (reference, candidate):
+                save_file({"module.value": tensor}, layer_dir / "payload.safetensors")
+            payload_hash = sha256_file(reference / "payload.safetensors")
+            common = {
+                "schema_version": 2,
+                "status": "passed",
+                "arm": "pure",
+                "layer_index": 0,
+                "model_revision": "model",
+                "calibration_manifest_sha256": "calibration",
+                "hessians": {"qkv": {"diagonal_sha256": "hessian"}},
+                "linears": [{"module": "module", "solver": {"global_iterations": 1}}],
+                "payload": {
+                    "sha256": payload_hash,
+                    "tensor_sha256": {"module.value": tensor_sha256(tensor)},
+                },
+            }
+            reference_metadata = {
+                **common,
+                "config_sha256": "old-config",
+                "implementation_sha256": "old-implementation",
+            }
+            candidate_metadata = {
+                **common,
+                "config_sha256": "new-config",
+                "implementation_sha256": "new-implementation",
+                "stage_elapsed_seconds": {
+                    "hessian_capture": 1.0,
+                    "hessian_inversion": {"qkv": 2.0},
+                    "linear_quantization": {"module": 3.0},
+                },
+            }
+            (reference / "metadata.json").write_text(
+                json.dumps(reference_metadata),
+                encoding="utf-8",
+            )
+            (candidate / "metadata.json").write_text(
+                json.dumps(candidate_metadata),
+                encoding="utf-8",
+            )
+            output = root / "comparison.json"
+            arguments = [
+                "compare",
+                "--arm",
+                "pure",
+                "--reference-root",
+                str(reference.parent),
+                "--candidate-root",
+                str(candidate.parent),
+                "--last-layer",
+                "0",
+                "--output",
+                str(output),
+            ]
+            with mock.patch.object(sys, "argv", arguments):
+                comparator.main()
+            result = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(result["status"], "passed")
+            self.assertTrue(result["all_payloads_bit_exact"])
+            save_file(
+                {"module.value": tensor + 1},
+                candidate / "payload.safetensors",
+            )
+            with self.assertRaises(ValueError):
+                comparator.compare_payloads(
+                    reference / "payload.safetensors",
+                    candidate / "payload.safetensors",
+                    layer_index=0,
+                )
+
+    def test_execution_layer_count_supports_bounded_resume_runs(self) -> None:
+        runner = load_runner()
+        self.assertEqual(runner.execution_layer_count(64, None), 64)
+        self.assertEqual(runner.execution_layer_count(64, 0), 1)
+        self.assertEqual(runner.execution_layer_count(64, 10), 11)
+        with self.assertRaises(ValueError):
+            runner.execution_layer_count(64, -1)
+        with self.assertRaises(ValueError):
+            runner.execution_layer_count(64, 64)
+
     def test_first_pass_and_resumed_payload_weights_are_identical(self) -> None:
         try:
             from transformers import Qwen3Config, Qwen3ForCausalLM

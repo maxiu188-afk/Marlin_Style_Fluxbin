@@ -75,7 +75,23 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--source-manifest", type=Path, required=True)
     parser.add_argument("--project-root", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--stop-after-layer", type=int)
     return parser.parse_args()
+
+
+def execution_layer_count(total_layers: int, stop_after_layer: int | None) -> int:
+    if total_layers <= 0:
+        raise ValueError("total_layers must be positive")
+    if stop_after_layer is None:
+        return total_layers
+    if not 0 <= stop_after_layer < total_layers:
+        raise ValueError("stop_after_layer must identify an existing layer")
+    return stop_after_layer + 1
+
+
+def synchronize(device: torch.device) -> None:
+    if device.type == "cuda":
+        torch.cuda.synchronize(device)
 
 
 def validate_runtime(config: dict[str, Any]) -> torch.device:
@@ -527,7 +543,11 @@ def main() -> None:
         raise ValueError("model type drifted")
     if len(model.model.layers) != config["model"]["expected_hidden_layers"]:
         raise ValueError("model layer count drifted")
-    for layer_index, layer in enumerate(model.model.layers):
+    layer_count = execution_layer_count(
+        len(model.model.layers),
+        args.stop_after_layer,
+    )
+    for layer_index, layer in enumerate(model.model.layers[:layer_count]):
         for module_name in QWEN3_LINEAR_MODULES:
             module = layer.get_submodule(module_name)
             if not isinstance(module, torch.nn.Linear):
@@ -571,15 +591,27 @@ def main() -> None:
             resumed_layers += 1
             print(f"FLUXBIN_FULL_RESUMED_LAYER={layer_index}", flush=True)
         else:
+            synchronize(device)
+            capture_started = time.monotonic()
             capture = capture_layer_hessians(layer, inputs, forward_kwargs)
+            synchronize(device)
+            capture_elapsed = time.monotonic() - capture_started
             payload: dict[str, torch.Tensor] = {}
             linear_records: list[dict[str, Any]] = []
             hessian_records: dict[str, Any] = {}
+            inversion_elapsed: dict[str, float] = {}
+            linear_elapsed: dict[str, float] = {}
             for hessian_group, module_names in HESSIAN_GROUP_MODULES.items():
                 hessian = capture.hessians.pop(hessian_group)
+                synchronize(device)
+                inversion_started = time.monotonic()
                 inverse = invert_hessian(
                     hessian,
                     damp_percent=config["algorithm"]["damp_percent"],
+                )
+                synchronize(device)
+                inversion_elapsed[hessian_group] = (
+                    time.monotonic() - inversion_started
                 )
                 hessian_records[hessian_group] = {
                     "shape": list(hessian.shape),
@@ -588,6 +620,8 @@ def main() -> None:
                     "damping": inverse.damping,
                 }
                 for module_name in module_names:
+                    synchronize(device)
+                    linear_started = time.monotonic()
                     module = layer.get_submodule(module_name)
                     linear_records.append(
                         add_quantized_module(
@@ -600,6 +634,8 @@ def main() -> None:
                             payload=payload,
                         )
                     )
+                    synchronize(device)
+                    linear_elapsed[module_name] = time.monotonic() - linear_started
                     print(
                         f"FLUXBIN_FULL_QUANTIZED={args.arm}:"
                         f"{layer_index}:{module_name}",
@@ -620,6 +656,11 @@ def main() -> None:
                 ],
                 "hessians": hessian_records,
                 "linears": linear_records,
+                "stage_elapsed_seconds": {
+                    "hessian_capture": capture_elapsed,
+                    "hessian_inversion": inversion_elapsed,
+                    "linear_quantization": linear_elapsed,
+                },
                 "elapsed_seconds_before_write": time.monotonic() - layer_started,
             }
             layer_dir, metadata = write_completed_layer(
@@ -638,15 +679,23 @@ def main() -> None:
         torch.cuda.empty_cache()
         print(
             f"FLUXBIN_FULL_LAYER_COMPLETE={args.arm}:{layer_index + 1}/"
-            f"{len(model.model.layers)} elapsed={time.monotonic() - layer_started:.3f}",
+            f"{layer_count} elapsed={time.monotonic() - layer_started:.3f}",
             flush=True,
         )
 
     aggregate = aggregate_records(layer_metadata)
     expected = config["model"]
-    if aggregate["tensor_count"] != expected["expected_tensor_count"]:
+    expected_tensor_count = (
+        expected["expected_tensor_count"] * layer_count
+        // expected["expected_hidden_layers"]
+    )
+    expected_parameter_count = (
+        expected["expected_parameter_count"] * layer_count
+        // expected["expected_hidden_layers"]
+    )
+    if aggregate["tensor_count"] != expected_tensor_count:
         raise RuntimeError("full-model tensor count drifted")
-    if aggregate["parameter_count"] != expected["expected_parameter_count"]:
+    if aggregate["parameter_count"] != expected_parameter_count:
         raise RuntimeError("full-model parameter count drifted")
     layer_artifacts = []
     for layer_index, metadata in enumerate(layer_metadata):
@@ -661,9 +710,14 @@ def main() -> None:
                 "payload_bytes": metadata["payload"]["bytes"],
             }
         )
+    is_partial = layer_count < expected["expected_hidden_layers"]
     result = {
         "schema_version": 2,
-        "status": "completed_pending_review",
+        "status": (
+            "partial_completed_pending_review"
+            if is_partial
+            else "completed_pending_review"
+        ),
         "created_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         "arm": args.arm,
         "config_sha256": config_hash,
@@ -677,6 +731,7 @@ def main() -> None:
         "execution": {
             "resumed_layers": resumed_layers,
             "newly_quantized_layers": newly_quantized_layers,
+            "requested_stop_after_layer": args.stop_after_layer,
             "elapsed_seconds": time.monotonic() - started,
             "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
             "host": platform.node(),
@@ -691,7 +746,7 @@ def main() -> None:
             "ppl_auto_launch": False,
             "backend_auto_launch": False,
         },
-        "next_stage": "not_launched",
+        "next_stage": "resume_same_artifact_dir" if is_partial else "not_launched",
     }
     atomic_json(args.output, result)
     print(f"FLUXBIN_FULL_RESULT={args.output}")
