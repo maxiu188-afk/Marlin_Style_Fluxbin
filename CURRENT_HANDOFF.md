@@ -139,6 +139,33 @@ No runner automatically launches its successor.
   layer-sequential full-model implementation with independently propagated
   pure and hybrid arms, followed by matched dense fake-quant PPL.
 
+## Prepared calibrated full-model v2 run
+
+- Config: `configs/experiments/qwen3_32b_full_hessian_obq_s8_v2.json`.
+- Runner: `scripts/run_qwen3_full_hessian_obq_s8.py`; Slurm entrypoint:
+  `scripts/run_isambard_qwen3_32b_full_hessian_obq_s8.sbatch`.
+- Pure and hybrid-s8 are separate jobs and artifact directories. Each starts
+  from the pinned BF16 checkpoint and propagates its own quantized layer output
+  into the next layer; global payloads are never shared across arms.
+- Within each current layer, one pre-quantization pass captures four
+  exact-input Hessians: q/k/v, o, gate/up, and down. Sharing is restricted to
+  modules whose Linear input tensors are exactly the same.
+- Each completed layer is committed as one atomic directory containing one
+  seven-Linear payload and metadata. Resume validates config, implementation,
+  model revision, payload file and every tensor hash, applies the stored BF16
+  materialization, propagates calibration inputs, and continues at the first
+  missing layer.
+- Initial execution also materializes weights through the packed artifact path;
+  a tiny-Qwen test requires exact equality between first-pass and resumed BF16
+  weights. This prevents floating-expression-order drift at resume/PPL time.
+- The full preflight now passes 23 tests, including Qwen3 input/Hessian capture,
+  layer propagation, both arm payload formats, atomic layer write, and exact
+  resume replay. The accepted calibration/single-Linear hashes are bound in the
+  full config.
+- Each arm requests one GH200 for 8 hours. This is intentionally resumable
+  rather than requesting a larger monolithic window. No job automatically
+  launches PPL or backend work.
+
 ## First real-Linear gate
 
 - Model: `Qwen/Qwen3-32B`.

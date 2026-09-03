@@ -1,0 +1,107 @@
+{
+  "schema_version": 2,
+  "seed": 20260902,
+  "scope": "all 448 Qwen3-32B transformer-block Linears; separate resumable pure two-base OBQ and Hessian-salient hybrid-s8 OBQ runs",
+  "model": {
+    "repo_id": "Qwen/Qwen3-32B",
+    "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+    "model_type": "qwen3",
+    "checkpoint_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 64,
+    "expected_tensor_count": 448,
+    "expected_parameter_count": 31205621760,
+    "expected_weight_shards": 17,
+    "expected_checkpoint_bytes": 65524246528
+  },
+  "accepted_calibration": {
+    "artifact_id": "qwen3-32b-c4-calibration-256x2048-v1",
+    "manifest_sha256": "a89c967136a9d7964cfad3dcfc956dee2f6cae360ccb5858d254333a4d352675",
+    "token_file_sha256": "a31bfd489dccd7f4ea2cdc04e245f4d47229ca0fe788c4690d061a17fe47e2e2",
+    "token_tensor_sha256": "f504da4f8b7fa56aa0d7c8971556c52eaee1395619a7fc4b10c2b4c04bb28599",
+    "dataset_revision": "1588ec454efa1a09f29cd18ddd04fe05fc8653a2",
+    "sequences": 256,
+    "sequence_length": 2048
+  },
+  "accepted_single_linear_gate": {
+    "job_id": "6271396",
+    "result_sha256": "93a3ae5ab0cf8ec6484e6019c1a3f0edb8cc8defa27ef4d3b5b627e6f25407a1",
+    "payload_sha256": "bcddf5b77fb679f6784129c20bcd54e734a40369cccf78fbff5bc370d369583f",
+    "pure_calibration_loss": 2.7373215457945603,
+    "hybrid_calibration_loss": 1.8975661604505283,
+    "outcome": "go_full_model"
+  },
+  "algorithm": {
+    "global_num_bases": 2,
+    "global_group_size": 128,
+    "row_column_scales_independent_per_base": true,
+    "joint_sign_pattern_count": 4,
+    "hessian_definition": "2 * X^T X / activation_rows",
+    "inverse_method": "damped_cholesky",
+    "damp_percent": 0.01,
+    "pure": {
+      "residual_refinement": false,
+      "hessian_error_propagation": true
+    },
+    "hybrid_s8": {
+      "residual_refinement": true,
+      "residual_columns_per_group": 8,
+      "selection_metric": "sum_i(W_ij^2) / inverse_hessian_jj^2",
+      "selection_before_global_decomposition": true,
+      "hessian_error_propagation": true
+    },
+    "arms_share_global_payload": false,
+    "distillation": false
+  },
+  "layerwise_calibration": {
+    "branch_specific_inputs_from_quantized_preceding_layers": true,
+    "capture_current_layer_before_its_weights_are_quantized": true,
+    "one_forward_capture_per_layer": true,
+    "exact_input_hessian_groups": {
+      "qkv": ["self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"],
+      "o": ["self_attn.o_proj"],
+      "gate_up": ["mlp.gate_proj", "mlp.up_proj"],
+      "down": ["mlp.down_proj"]
+    },
+    "calibration_batch_size": 1
+  },
+  "global_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-6,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-6,
+    "assignment_chunk_rows": 16,
+    "denominator_epsilon": 1e-12
+  },
+  "refinement_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-6,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-6,
+    "assignment_chunk_rows": 16,
+    "denominator_epsilon": 1e-12
+  },
+  "artifact_policy": {
+    "artifact_id": "qwen3-32b-full-hessian-obq-s8-v2",
+    "one_atomic_payload_per_layer_per_arm": true,
+    "resumable_at_completed_layer_boundary": true,
+    "store_hessian_diagonal_hash_not_full_hessian": true,
+    "payload_format": "fluxbin-two-base-interleaved-2bit-v1"
+  },
+  "execution": {
+    "environment": "Isambard GH200",
+    "device_name": "NVIDIA GH200 120GB",
+    "compute_capability": [9, 0],
+    "torch": "2.11.0+cu129",
+    "transformers": "5.14.1",
+    "datasets": "5.0.0",
+    "safetensors": "0.8.0"
+  },
+  "decision": {
+    "require_448_tensors": true,
+    "require_finite_metrics": true,
+    "require_payload_round_trip": true,
+    "ppl_auto_launch": false,
+    "backend_auto_launch": false,
+    "manual_review_required": true
+  }
+}

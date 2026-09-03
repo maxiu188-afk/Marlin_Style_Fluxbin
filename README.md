@@ -85,6 +85,15 @@ OBQ changes later working groups to reduce activation-weighted output loss.
 Full-model PPL remains the quality gate, and no downstream stage was launched
 automatically.
 
+The v2 full-model runner executes pure and hybrid as separate branch-specific
+jobs. Each branch propagates its quantized hidden states into the next layer.
+Within a layer, one calibration pass captures four exact-input Hessians:
+q/k/v share one, gate/up share one, and o/down each use their own. Every layer
+is committed as one atomic payload plus metadata directory, so a time-limited
+rerun validates and replays complete layers before continuing. First-pass,
+resumed, and later PPL weights all use the same packed-payload materialization
+path and are required to match bit-exactly after BF16 conversion.
+
 The single-Linear convergence diagnostic also supports a strictly matched
 50-versus-200 iteration comparison. It binds the accepted 50-step result by
 SHA-256 and changes only `max_iters`; the output records whether the additional
