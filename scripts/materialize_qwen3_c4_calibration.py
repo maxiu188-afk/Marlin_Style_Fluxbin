@@ -84,6 +84,10 @@ def main() -> None:
         split=dataset_config["split"],
         data_files=dataset_config["data_files"],
         revision=dataset_config["revision"],
+        # The pinned experiment intentionally loads one train shard rather
+        # than the complete C4 train+validation inventory. Dataset-level split
+        # verification would therefore reject this valid bounded subset.
+        verification_mode="no_checks",
     )
     if len(dataset) <= 0:
         raise RuntimeError("C4 dataset shard is empty")
