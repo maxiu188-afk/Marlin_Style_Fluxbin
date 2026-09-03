@@ -182,6 +182,36 @@ No runner automatically launches its successor.
   written under
   `${PROJECTDIR}/${USER}/marlin-style-fluxbin/results/qwen3-32b-full-hessian-obq-s8-v2/{pure,hybrid_s8}/`.
 
+### First timeout and resume
+
+- Jobs `6272553` and `6272554` both reached the requested `08:00:00` Slurm
+  limit and ended `TIMEOUT` after `08:00:02`; neither log contains an
+  algorithm or out-of-memory failure. Peak batch RSS was about 17.3 GB for
+  pure and 12.5 GB for hybrid-s8.
+- The atomic checkpoint audit accepted pure layers 0--10 (11/64) and
+  hybrid-s8 layers 0--5 (6/64). It rechecked the shared config and
+  implementation identities, all 17 payload-file hashes, all 525 tensor
+  hashes, finite reconstruction metrics, and contiguous layer numbering.
+  There were no incomplete temporary layer directories.
+- Pure layer 10 metadata/payload SHA-256 values are
+  `0f0cfe6191dcb95721cf207eb0dfebad1d1f3bfc341d455f7f106b9a3c56a374`
+  and `eef5924f0aa1a55174d134910c168c39d8210e99617294edc43fb767c8d11446`.
+  Hybrid-s8 layer 5 values are
+  `f4157a3e6fd63c7caabe6a9c40634648f4fc9e07315d065eea852a05c77782d4`
+  and `e5e29d3aeec97ad66200eb9f5a86782ea6d17aec410ca508c8b434045a9b18d7`.
+- Unchanged 8-hour continuation jobs `6281717` (pure) and `6281718`
+  (hybrid-s8) were submitted from the clean implementation revision
+  `82f3765845b1955681ec611e4bdd28f5a8cc4db7`. The initial bounded snapshot
+  observed both pending; they will resume at layers 11 and 6 respectively.
+- Continuation logs are
+  `logs/qwen3-32b-full-hessian-obq-s8-v2/fluxbin-full-pure-r2-6281717.{out,err}`
+  and
+  `logs/qwen3-32b-full-hessian-obq-s8-v2/fluxbin-full-hybrid-r2-6281718.{out,err}`.
+- The observed first-window throughput was about 11 pure or 6 hybrid-s8
+  completed layers per eight hours. If it remains stable, several further
+  resumptions will be required; this is a runtime estimate, not accepted
+  full-model evidence.
+
 ## First real-Linear gate
 
 - Model: `Qwen/Qwen3-32B`.
