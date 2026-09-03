@@ -171,5 +171,7 @@ python3 -m compileall -q src scripts tests
 
 The current macOS host has a local CPU/MPS project environment but no NVIDIA
 GPU. Historical formal tensor evidence came from Isambard GH200. Access remains
-available through 2026-09-05 and is expected to end from 2026-09-06; no
-Isambard continuation job remains active at this documented point.
+available through 2026-09-05 and is expected to end from 2026-09-06. Bounded
+single-Linear regression job `6282732` is queued from implementation revision
+`eef867dfa37ad2b5e2cd848eb4330bd99c46d313`; it does not launch a downstream
+full-model, PPL, or backend job.

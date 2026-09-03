@@ -273,6 +273,21 @@ No runner automatically launches its successor.
   compare every payload tensor against the exported oracle;
   also collect matched stage timing and peak memory. Do not infer the earlier
   100x estimate or full-model completion time from the local MPS diagnostic.
+- The clean Isambard checkout was fast-forwarded by verified Git bundle to
+  revision `eef867dfa37ad2b5e2cd848eb4330bd99c46d313` because the server has no
+  GitHub HTTPS credentials. The retained job-`6271396` result and payload still
+  match their accepted SHA-256 values.
+- Bounded single-Linear regression job `6282732` was submitted with one GH200,
+  eight CPUs and a one-hour limit. The first snapshot observed
+  `PENDING (Priority)` with no dependency; `sbatch --test-only` estimated a
+  2026-09-05 start. It runs all 26 tests before the same layer-0 o-projection
+  pure/hybrid application path and refuses to launch full-model, PPL, or
+  backend work. Its logs are
+  `logs/qwen3-32b-single-linear-hessian-obq-s8/fluxbin-obq-q32-s8-6282732.{out,err}`.
+- When complete, acceptance requires the structured result, payload inventory,
+  finite metrics, exact tensor comparison with accepted job `6271396`, source
+  manifest, peak memory and matched elapsed-time review. Scheduler completion
+  alone is not acceptance.
 
 ## Portable v2 server-result export
 
@@ -321,7 +336,8 @@ ${PROJECTDIR}/${USER}/qbb-new/huggingface/hub/
   when a local project environment exists.
 - Isambard GH200 supplied the historical real-weight results and remains
   accessible through 2026-09-05. Access is expected to end from 2026-09-06.
-  No continuation job remains active there at this documented point.
+  Bounded single-Linear regression job `6282732` is currently queued there;
+  the cancelled full-model continuation jobs remain inactive.
 - Complete the bounded regression evidence there before access ends. Any later
   full-model, PPL, or backend validation requires a replacement NVIDIA
   environment with the same model revision, runtime contract, artifacts,
