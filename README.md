@@ -1,171 +1,147 @@
 # Marlin-Style FluxBin
 
-This repository develops a two-base rank-one binary weight representation and,
-after algorithm-quality acceptance, a separate CUDA deployment backend.
+This repository studies a calibrated two-base rank-one binary weight
+representation for Qwen3-32B. Algorithm quality is evaluated first; a packed
+CUDA backend is a separate later phase and is not implemented or authorized by
+the current results.
 
-## Algorithm arms
+## Current accepted result
 
-The active v2 accuracy path adds the three calibration-dependent mechanisms
-that were absent from the first experiment:
+The assignment-overhead repair, the complete 64-layer v3 reconstruction, and
+the matched WikiText-2 PPL execution have been accepted after structured-result,
+provenance, hash, inventory, and finite-metric checks.
 
-- 256 C4 calibration sequences produce `H = 2 X^T X` (stored internally in
-  its scalar-normalized equivalent form) and a damped Cholesky inverse;
-- hybrid-s8 selects 8 columns per 128-column group using
-  `sum_i(W_ij^2) / Hinv_jj^2` before decomposing that group;
-- after each group, both arms update all unprocessed columns from the current
-  quantization error and the relevant inverse-Hessian blocks.
+| Arm | Weight SSE | Relative Frobenius | WikiText-2 PPL | Relative to BF16 |
+| --- | ---: | ---: | ---: | ---: |
+| BF16 | - | - | `7.6108390396` | `1.0000x` |
+| Pure two-base OBQ | `2,337,870.7642` | `0.3770897414` | `17.7447067662` | `2.3315x` |
+| Hybrid-s8 OBQ | `2,117,499.2845` | `0.3588773950` | `10.4338730735` | `1.3709x` |
 
-Pure two-base remains a complete independent arm. It has no residual
-refinement, but it does use its own Hessian error-propagation trajectory. The
-hybrid arm has a different per-group error after refinement, so its later
-global blocks cannot share the pure arm's payload.
+Hybrid-s8 reduces full-model weight SSE by `9.4262%` and PPL by `41.2001%`
+relative to pure. It is the better of the two calibrated arms, but its PPL is
+still `37.0923%` above BF16. The execution evidence is accepted; the result is
+not BF16-equivalent and does not yet justify packed-backend or serving work.
 
-The paper specifies C4 and 256 calibration samples but not sequence length or
-inverse-Hessian damping. The project freezes those otherwise unspecified
-choices at 2048 tokens and 1% mean-diagonal damping and records them explicitly
-in the v2 artifacts. Initialization and both ALS iteration limits remain
-unchanged at the current greedy initializer and 50 steps.
+The PPL path materializes the packed algorithm payload into dense BF16 weights.
+It is algorithm-quality evidence, not packed-kernel correctness, latency,
+throughput, or serving evidence.
 
-## Historical v1 weight-only path
+## Calibrated algorithm contract
 
-The retained global arm approximates each grouped Linear weight block
-`W[o,g,j]` as
+- Model: `Qwen/Qwen3-32B`, revision
+  `9216db5781bf21249d130ec9da846c4624c16137`.
+- Calibration: 256 C4 sequences, project-frozen at 2048 tokens and seed
+  `20260902`.
+- Hessian: scalar-normalized equivalent of `H = 2 X^T X`, with Cholesky
+  inversion and 1% mean-diagonal damping.
+- Representation: exactly two `{-1,+1}` bases, group size 128, independent row
+  and column scales, and exact four-pattern assignment.
+- Pure is a complete independent OBQ arm with no residual refinement.
+- Hybrid-s8 selects 8 columns per 128-column group using
+  `sum_i(W_ij^2) / Hinv_jj^2`, then fits sparse residual refinement.
+- Both arms propagate their own quantization error and hidden states; they do
+  not share global payloads.
+- The greedy initializer and 50-step ALS limits are unchanged.
+- No Shared-C, distillation, CUDA kernel, or serving integration is included.
 
-```text
-W_hat[o,g,j] = sum_b row[b,o,g] * column[b,g,j] * base[b,o,g,j],
-```
+The paper fixes C4 and 256 calibration samples but not sequence length, seed,
+or inverse-Hessian damping; those values are explicit project choices.
 
-with exactly two `{-1,+1}` bases and group size 128. Each base has its own row
-and column factors.
+## Runtime repair
 
-The historical hybrid arm keeps that complete two-base payload and adds sparse residual
-refinement. Within every 128-column group, it ranks columns by the global arm's
-residual squared error over output rows, selects the stable top 8, and fits a
-second independent two-base rank-one decomposition to those residual columns.
-The selected indices are stored group-locally in ascending order. This is a
-weight-only rule: there is no Shared-C, Hessian propagation, calibration data,
-distillation, or deployment kernel at this stage.
+The original 16-row assignment loop synchronized millions of `.item()` calls
+per layer. Revision `eef867dfa37ad2b5e2cd848eb4330bd99c46d313` replaced it
+with memory-budgeted adaptive row chunks and one device-to-host synchronization
+per assignment.
 
-Those v1 artifacts remain immutable evidence of the earlier weight-only test;
-they are not mixed with v2 calibrated artifacts.
+Single-Linear GH200 regression job `6282732` reproduced all 10 payload tensors
+bit-for-bit against accepted job `6271396`; payload SHA-256 remained
+`bcddf5b77fb679f6784129c20bcd54e734a40369cccf78fbff5bc370d369583f`.
+Application time fell from `571.1411` to `27.7814` seconds (`20.5584x`) and
+Slurm wall time from `00:09:45` to `00:00:51` (`11.4706x`), with unchanged peak
+allocated GPU memory.
+
+The bounded v3 replays then averaged `48.4748` seconds per pure layer and
+`69.5044` seconds per hybrid layer, versus `2593.999` and `4662.264` seconds in
+the matched pre-repair runs. The corresponding application-time improvements
+are approximately `53.51x` and `67.08x`.
+
+## Complete v3 full-model reconstruction
+
+Config: `configs/experiments/qwen3_32b_full_hessian_obq_s8_v3.json`.
+
+Artifact id: `qwen3-32b-full-hessian-obq-s8-v3-assignment-optimized`.
+
+Execution revision: `412764e04cc5c997e7bc135ed52b128d08897a61`
+
+The accepted scope is all 64 transformer layers, 448 Linears, and
+31,205,621,760 weights per arm. Embeddings, output head, and non-matrix tensors
+remain outside the contract.
+
+- Bounded replay jobs `6283506` (pure layers 0-10) and `6283507` (hybrid layers
+  0-5) completed in `00:11:57` and `00:10:12`.
+- Exact gate job `6283508` proved both payload and algorithm metadata equality
+  against the retained pre-repair layers: 231 tensors / 1,681,334,512 bytes for
+  pure, and 294 tensors / 1,145,889,312 bytes for hybrid.
+- Resume jobs `6283509` and `6283510` completed the remaining pure and hybrid
+  layers in `00:45:14` and `01:06:45`.
+- The independent server audit rehashed all 128 layer metadata/payload pairs,
+  checked every Safetensors inventory and internal tensor hash, and found no
+  non-finite metrics.
+
+Final result SHA-256 values:
+
+- pure: `4b9f5ab5c41bf7e266fc8a4c52072db9fb7869437bb871d3c55c14d243078e08`
+- hybrid-s8: `9a8753cdb99efc224651c5ca270efe050e44c58d4c1ccd66133c5d132924746a`
+- exact replay gate: `b3a97237f5352ecbdf786cf0f90230b4d470c3bc2c5c5357f3556e7ee723fe25`
+
+Hybrid's branch-calibrated output SSE is `394,157.5089`, `65.8819%` below
+pure's `1,155,273.3217`. Because later layers use arm-specific propagated
+inputs and Hessians, this is a branch-specific protocol diagnostic, not a
+same-Hessian comparison.
+
+## Accepted WikiText-2 PPL
+
+Config: `configs/evaluation/qwen3_32b_wikitext2_full_hessian_obq_s8_v3.json`.
+
+Execution revision: `e6921426e8e2249268f0861505556c12adc603e0`.
+
+GH200 job: `6296175`, `COMPLETED 0:0`, `00:06:04`
+
+The gate reused the accepted 146-block, 2048-token WikiText-2 artifact:
+299,078 tokens and 298,862 scored transitions, with token SHA-256
+`c7a8c41e587561b93c8dd0b17224e6f20aa4270c9dab62151357cca88651ad9e`.
+All three arms scored exactly the same transitions with finite metrics and no
+non-finite blocks. The accepted BF16 PPL from job `6154681` was reproduced with
+zero difference.
+
+Result SHA-256:
+`83b682aae91bbbde1b39b1b31c56716f2497501d220751b322ce6fb4dd861325`.
+
+## Evidence and retention
+
+The private, Git-ignored `server_results/` bundle contains the accepted v3
+result JSON, source manifests, exact-gate outputs, PPL output, logs, calibration
+inputs, and provenance. The v3 full-model weights were deliberately not
+downloaded. The obsolete partial full-model v2 artifacts/results/logs were
+removed from both Isambard and the local bundle; the accepted calibration and
+single-Linear oracle remain because v3 provenance depends on them.
+
+The bundle's `provenance/SHA256SUMS` file has SHA-256
+`26d72ab7d660b13d4334acd2ef4cbe47261180146595746e1db9199cb30fe70e`.
+`server_results/` is private evidence and must not be committed.
 
 ## Evidence ladder
 
-1. Synthetic Hessian, saliency, OBQ propagation, rank-one, and payload tests.
-2. Materialize and hash the pinned 256x2048 C4 calibration token artifact.
-3. One real Qwen3-32B Linear with independent pure two-base OBQ and
-   Hessian-salient hybrid-s8 OBQ outputs.
-4. Layer-sequential full-model quantization with both arms, only after manual
-   review of stage 3.
-5. Dense fake-quantized PPL, only after full-model acceptance.
-6. Packed CUDA deployment, separately gated after algorithm-quality acceptance.
+1. Synthetic Hessian, saliency, OBQ propagation, packing, and payload tests.
+2. Hash-pinned 256x2048 C4 calibration artifact.
+3. Real Qwen3-32B single-Linear pure/hybrid gate.
+4. Exact pre/post-repair replay comparison.
+5. Complete independently propagated 64-layer reconstruction.
+6. Matched dense fake-quant WikiText-2 PPL.
+7. Packed CUDA correctness/performance only after a separate quality decision.
 
-No stage launches the next stage automatically.
-
-## Calibrated single-Linear v2 result
-
-Jobs `6271395` and `6271396` completed successfully on Isambard GH200. The
-first materialized the pinned 256x2048 C4 token artifact; the second captured
-524,288 activation rows for `model.layers.0.self_attn.o_proj.weight` and ran
-the two independent calibrated arms.
-
-- Pure two-base OBQ: weight SSE `3088.66483`, calibration output loss
-  `2.73732155`.
-- Hessian-salient hybrid-s8 OBQ: weight SSE `2819.43539`, calibration output
-  loss `1.89756616`.
-- Hybrid reduces weight SSE by `8.71669%` and the Hessian-weighted calibration
-  loss by `30.67800%` relative to the matched pure arm.
-- The two global payloads differ as required, all metrics are finite, packed
-  tensor hashes round-trip, and the refinement delta outside selected columns
-  is exactly zero.
-
-The calibrated single-Linear execution and artifacts are accepted. Its higher
-ordinary weight SSE than historical v1 is not itself a regression verdict:
-OBQ changes later working groups to reduce activation-weighted output loss.
-Full-model PPL remains the quality gate, and no downstream stage was launched
-automatically.
-
-## Partial full-model v2 result and offline handoff
-
-Pure job `6272553` and hybrid-s8 job `6272554` each reached their eight-hour
-Slurm limit without an algorithm or out-of-memory error. Atomic checkpoint
-validation accepted pure layers 0--10 and hybrid-s8 layers 0--5. The common
-layers 0--5 cover 42 Linears and 2,925,527,040 weights with identical target
-weight hashes between arms.
-
-- Aggregate weight SSE is `191072.7887040316` for pure and
-  `144583.16664755723` for hybrid-s8, a `24.33084395%` reduction. Hybrid-s8
-  improves all 42 individual Linear SSE values.
-- Aggregate branch-calibrated output loss is `46464.67755112283` for pure and
-  `5778.682172360981` for hybrid-s8, an `87.56327930%` reduction. Later-layer
-  Hessians use each arm's propagated inputs, so this is a protocol-level
-  diagnostic rather than a same-Hessian comparison.
-- These incomplete layers establish neither full-model PPL nor deployability.
-
-Observed quantization time was about 42.3 minutes per pure layer and 77.7
-minutes per hybrid-s8 layer. Static diagnosis found that the 16-row assignment
-chunk executes about 10.24 million and 17.29 million synchronizing `.item()`
-calls per completed pure and hybrid layer respectively. Continuation jobs
-`6281717` and `6281718` were therefore cancelled before allocation.
-
-The first semantics-preserving runtime repair is implemented and accepted on
-Isambard GH200. New v2 runs choose assignment row chunks from a 1 GiB
-temporary-memory budget, so
-the active group-local OBQ fit (`G=1`) processes the whole output dimension in
-one chunk, while the legacy full-weight path remains bounded. Assignment-change
-counts accumulate on device and synchronize once per assignment rather than
-once per chunk. Fixed row chunking remains available as an explicit legacy and
-test override. Regression job `6282732` passed all 26 tests and reproduced the
-accepted job-`6271396` payload bit-for-bit: all 10 tensors match and the complete
-payload SHA-256 remains `bcddf5b77fb679f6784129c20bcd54e734a40369cccf78fbff5bc370d369583f`.
-The application elapsed time fell from `571.1411166` to `27.7813934` seconds
-(`20.5584x`), while Slurm wall time fell from `00:09:45` to `00:00:51`
-(`11.4706x`). Peak allocated GPU memory was unchanged at `71,720,856,576`
-bytes. This accepts the assignment-overhead repair for the retained
-single-Linear scope; it is not yet a seven-Linear layer or full-model runtime
-result.
-
-The non-reconstructable v2 evidence has been exported locally into the
-Git-ignored `server_results/` directory before Isambard access ends. With the
-accepted runtime-regression JSON, manifest and logs, the bundle contains 53
-files and occupies 393,760 KiB; its 52-entry SHA-256 manifest has hash
-`2144952e30cb72f4f81e9df0d9c1997b3036a1653ede4fc043ce7984ee2b78f0`.
-It excludes the downloadable Qwen3-32B checkpoint, all v1 payloads, virtual
-environments, caches, and non-layer-0 partial v2 payloads.
-
-The v2 full-model runner executes pure and hybrid as separate branch-specific
-jobs. Each branch propagates its quantized hidden states into the next layer.
-Within a layer, one calibration pass captures four exact-input Hessians:
-q/k/v share one, gate/up share one, and o/down each use their own. Every layer
-is committed as one atomic payload plus metadata directory, so a time-limited
-rerun validates and replays complete layers before continuing. First-pass,
-resumed, and later PPL weights all use the same packed-payload materialization
-path and are required to match bit-exactly after BF16 conversion.
-
-The single-Linear convergence diagnostic also supports a strictly matched
-50-versus-200 iteration comparison. It binds the accepted 50-step result by
-SHA-256 and changes only `max_iters`; the output records whether the additional
-optimization improves SSE beyond the declared `1e-6` relative comparison
-tolerance.
-
-The full-model reconstruction is resumable at one payload per Linear. Its
-two-base signs use the lossless `fluxbin-two-base-interleaved-2bit-v1` artifact
-format, while FP32 scales and group-local `int16` refinement indices remain
-explicit. The hybrid payload shares the global arm with the pure result rather
-than storing it twice. This compact artifact is for algorithm evaluation and is
-not evidence of a Marlin-compatible CUDA layout or runtime speed.
-
-The model-quality gate reuses the accepted QBB-New WikiText-2 token artifact:
-146 non-overlapping 2048-token blocks and 298,862 scored next-token
-transitions. It evaluates BF16, pure global two-base, and hybrid-s8 sequentially
-with BF16 model weights materialized in place. This is dense fake-quant PPL,
-not packed-kernel execution.
-
-The accepted execution from job `6259037` reproduced BF16 PPL `7.61084`. Pure
-global two-base rank-one produced PPL `147.53152`; hybrid-s8 improved it to
-`24.21529`, but remained `3.18x` the BF16 PPL. The run and provenance are valid,
-while the algorithm-quality result is negative; these weights do not authorize
-the packed-backend stage.
+No runner automatically launches its successor.
 
 ## Local checks
 
@@ -174,9 +150,10 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m compileall -q src scripts tests
 ```
 
-The current macOS host has a local CPU/MPS project environment but no NVIDIA
-GPU. Historical formal tensor evidence came from Isambard GH200. Access remains
-available through 2026-09-05 and is expected to end from 2026-09-06. Bounded
-single-Linear regression job `6282732` completed and was accepted from
-implementation revision `eef867dfa37ad2b5e2cd848eb4330bd99c46d313`; it did
-not launch a downstream full-model, PPL, or backend job.
+macOS/Apple Silicon is used for source review and local tests. The accepted
+real-weight, full-model, and PPL evidence was produced on Isambard GH200.
+Isambard remains available through 2026-09-05; access is expected to end from
+2026-09-06. Scheduler `COMPLETED` alone is never treated as acceptance.
+
+For the full operational record and exact acceptance boundaries, see
+[`CURRENT_HANDOFF.md`](CURRENT_HANDOFF.md).
