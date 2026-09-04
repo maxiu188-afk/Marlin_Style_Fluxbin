@@ -1,0 +1,94 @@
+{
+  "schema_version": 2,
+  "seed": 20260902,
+  "scope": "matched dense fake-quant WikiText-2 perplexity for independently propagated Qwen3-32B BF16, pure two-base Hessian-OBQ, and hybrid-s8 Hessian-OBQ arms; no packed backend or performance claim",
+  "model": {
+    "repo_id": "Qwen/Qwen3-32B",
+    "revision": "9216db5781bf21249d130ec9da846c4624c16137",
+    "model_type": "qwen3",
+    "checkpoint_dtype": "torch.bfloat16",
+    "evaluation_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 64,
+    "expected_tensor_count": 448,
+    "expected_parameter_count": 31205621760,
+    "expected_weight_shards": 17
+  },
+  "decomposition": {
+    "artifact_id": "qwen3-32b-full-hessian-obq-s8-v3-assignment-optimized",
+    "payload_format": "fluxbin-two-base-interleaved-2bit-v1",
+    "group_size": 128,
+    "columns_per_group": 8,
+    "arms_share_global_payload": false,
+    "accepted_config_sha256": "b1f6b525ed1aa354ee08f59977c73fa2e28141ac12cd11bd4fff4ed325f80e65",
+    "accepted_implementation_sha256": "9b21a75e75c48764a1201cd569b165376fe0c5c27f41efa8f8f4c241e5b9a314",
+    "accepted_calibration_manifest_sha256": "a89c967136a9d7964cfad3dcfc956dee2f6cae360ccb5858d254333a4d352675",
+    "arms": {
+      "pure": {
+        "job_id": "6283509",
+        "accepted_result_sha256": "4b9f5ab5c41bf7e266fc8a4c52072db9fb7869437bb871d3c55c14d243078e08",
+        "accepted_source_manifest_sha256": "98f28880acfad64e869842e8fb562efea855a7ecfc0373ee3c1c4242f490218d",
+        "expected_layer_count": 64,
+        "expected_payload_tensor_count_per_layer": 21
+      },
+      "hybrid_s8": {
+        "job_id": "6283510",
+        "accepted_result_sha256": "9a8753cdb99efc224651c5ca270efe050e44c58d4c1ccd66133c5d132924746a",
+        "accepted_source_manifest_sha256": "526a035f9d1dd65b86262a38e888db6443e6fbb500fbbfc77569443cc27b2966",
+        "expected_layer_count": 64,
+        "expected_payload_tensor_count_per_layer": 49
+      }
+    }
+  },
+  "accepted_protocol": {
+    "id": "qbb-new-wt2-2048-qwen3-8b-v1",
+    "protocol_manifest_sha256": "8b61cbeaba8809b94bc6b7568cb45ede0d941d046c812f57f3156163e42069ae",
+    "token_artifact_sha256": "252938697260d7f7241f26a05b9822c1a2fd5e9ae0168a87e0d5345d4a111ee0",
+    "token_artifact_tensor_sha256": "d5f7bbfcee9855ebfeddf25bb0c7e483220d6bdb6631923c7bebf2002d61ca59",
+    "token_artifact_dtype": "torch.int32",
+    "sequence_length": 2048,
+    "token_count": 299078,
+    "tokens_sha256": "c7a8c41e587561b93c8dd0b17224e6f20aa4270c9dab62151357cca88651ad9e",
+    "tokenizer_files_sha256": {
+      "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+      "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+      "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    "full_block_count": 146,
+    "blocks_sha256": "8c5206620a0cf76d8cdf5fb6332b2356f91cebe957ec026a2524d7069dd3ccec",
+    "scored_transition_count": 298862
+  },
+  "accepted_bf16_reference": {
+    "job_id": "6154681",
+    "result_sha256": "ad5385e9f321521572ea15de55ea5d7e22bb9a081d6a3a60e31a4774a3cdd94b",
+    "perplexity": 7.6108390395557874,
+    "absolute_tolerance": 1e-6
+  },
+  "evaluation": {
+    "arms": ["bf16", "pure", "hybrid_s8"],
+    "attention_implementation": "sdpa",
+    "use_cache": false,
+    "batch_size": 1,
+    "logit_chunk_tokens": 128,
+    "tf32_allowed": false
+  },
+  "execution": {
+    "environment": "Isambard GH200",
+    "device_name": "NVIDIA GH200 120GB",
+    "compute_capability": [9, 0],
+    "torch": "2.11.0+cu129",
+    "transformers": "5.14.1",
+    "datasets": "5.0.0",
+    "safetensors": "0.8.0"
+  },
+  "acceptance": {
+    "require_exact_accepted_token_artifact": true,
+    "require_identical_scored_transition_count": true,
+    "require_all_metrics_finite": true,
+    "require_bf16_reference_reproduction": true,
+    "require_all_layer_payload_hashes": true,
+    "quantized_improvement_required_for_valid_execution": false,
+    "backend_auto_launch": false,
+    "distillation_auto_launch": false
+  }
+}
