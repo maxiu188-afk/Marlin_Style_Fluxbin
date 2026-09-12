@@ -1,11 +1,20 @@
 # Marlin-Style FluxBin
 
 This repository studies a calibrated two-base rank-one binary weight
-representation for Qwen3-32B. Algorithm quality is evaluated first; a packed
-CUDA backend is a separate later phase and is not implemented or authorized by
-the current results.
+representation. The active full-model target is now Qwen3-8B: first produce and
+quality-gate the quantized weights, then implement and measure real packed
+deployment. The completed Qwen3-32B work remains historical algorithm-quality
+evidence and a source of operator-only stress shapes; it is no longer the active
+full-model target.
 
-## Current accepted result
+The approved staged plan is [`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md). No new
+download, quantization, accuracy, kernel, or serving job has been launched by
+the planning update.
+
+The reusable RunPod image, Network Volume, Template, and cache layout are
+specified in [`infra/runpod/README.md`](infra/runpod/README.md).
+
+## Historical accepted Qwen3-32B result
 
 The assignment-overhead repair, the complete 64-layer v3 reconstruction, and
 the matched WikiText-2 PPL execution have been accepted after structured-result,
@@ -133,13 +142,18 @@ The bundle's `provenance/SHA256SUMS` file has SHA-256
 
 ## Evidence ladder
 
-1. Synthetic Hessian, saliency, OBQ propagation, packing, and payload tests.
-2. Hash-pinned 256x2048 C4 calibration artifact.
-3. Real Qwen3-32B single-Linear pure/hybrid gate.
-4. Exact pre/post-repair replay comparison.
-5. Complete independently propagated 64-layer reconstruction.
-6. Matched dense fake-quant WikiText-2 PPL.
-7. Packed CUDA correctness/performance only after a separate quality decision.
+The historical Qwen3-32B ladder is complete through dense fake-quant PPL. The
+new active Qwen3-8B ladder is:
+
+1. Port/preflight and synthetic algorithm checks.
+2. Representative real-Linear pure/hybrid gates.
+3. Complete independently propagated 36-layer, 252-Linear quantization.
+4. Matched BF16/pure/hybrid WikiText-2 PPL and the frozen quality decision.
+5. Versioned deployment-layout conversion and exact correctness.
+6. CUDA correctness, then real-shape operator performance.
+7. Block integration and direct block timing.
+8. Full-model and serving latency, throughput, memory, and correctness on H20
+   during development, with final H200 and A100 80GB evaluation.
 
 No runner automatically launches its successor.
 
@@ -150,10 +164,11 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m compileall -q src scripts tests
 ```
 
-macOS/Apple Silicon is used for source review and local tests. The accepted
-real-weight, full-model, and PPL evidence was produced on Isambard GH200.
-Isambard remains available through 2026-09-05; access is expected to end from
-2026-09-06. Scheduler `COMPLETED` alone is never treated as acceptance.
+macOS/Apple Silicon is used for source review and local tests. The historical
+accepted real-weight, full-model, and PPL evidence was produced on Isambard
+GH200. New real-model and CUDA work must run on the NVIDIA environment named by
+the active plan. Scheduler/process completion alone is never treated as
+acceptance.
 
 For the full operational record and exact acceptance boundaries, see
 [`CURRENT_HANDOFF.md`](CURRENT_HANDOFF.md).

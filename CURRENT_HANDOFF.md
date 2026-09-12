@@ -2,13 +2,31 @@
 
 ## Current status
 
-The assignment-overhead repair, complete Qwen3-32B v3 full-model
-reconstruction, exact replay gate, and matched WikiText-2 PPL execution are
-accepted. Hybrid-s8 is materially better than pure two-base OBQ, but it remains
-above BF16 quality; packed-backend and serving work are not authorized by this
-result.
+The active research direction changed on 2026-09-12. Qwen3-8B is now the
+full-model target. Work proceeds in two strictly ordered stages: first reproduce
+the calibrated algorithm on 8B, produce complete quantized weights, and pass a
+matched model-quality gate; only then implement and benchmark real packed
+deployment. The canonical staged contract is
+[`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md).
 
-Current accepted checkpoints:
+No Qwen3-8B download, quantization, PPL, CUDA, or serving job has been launched
+yet. The existing scripts and configs still encode Qwen3-32B assumptions and
+must be ported under new versioned names before execution.
+
+RunPod reconstruction is addressed by the versioned bootstrap image and
+persistent-storage contract in [`infra/runpod/README.md`](infra/runpod/README.md).
+The intended lifecycle is terminate compute, retain the Network Volume, and
+recreate a Pod from the same Template and immutable image. The image is not yet
+built or pushed.
+
+The assignment-overhead repair, complete Qwen3-32B v3 full-model
+reconstruction, exact replay gate, and matched WikiText-2 PPL execution remain
+accepted historical evidence. Hybrid-s8 is materially better than pure
+two-base OBQ, but it remains above BF16 quality. Qwen3-32B is no longer an
+active full-model deployment target; retain its exact Linear shapes only for
+operator-level scaling tests.
+
+Historical accepted Qwen3-32B checkpoints:
 
 - full-model source revision:
   `412764e04cc5c997e7bc135ed52b128d08897a61`;
@@ -22,7 +40,28 @@ Current accepted checkpoints:
 - artifact id:
   `qwen3-32b-full-hessian-obq-s8-v3-assignment-optimized`.
 
-No backend or distillation job was launched.
+No backend or distillation job was launched from the historical 32B result.
+
+## Active Qwen3-8B plan
+
+- Target `Qwen/Qwen3-8B` at previously accepted revision
+  `b968826d9c46dd6066d109eabc6255188de91218`, subject to an exact preflight.
+- Expected scope: 36 layers, 252 transformer-block Linears, and
+  6,945,767,424 included weight elements.
+- Preserve the current two-base Hessian-OBQ and hybrid-s8 algorithm contract so
+  model size is the only planned algorithm-stage change.
+- First gate representative real Linears; then produce complete pure/hybrid
+  artifacts; then run matched BF16/pure/hybrid WikiText-2 PPL.
+- Only an arm within 5% relative PPL of matched BF16 may enter deployment. A
+  gap above 10% blocks deployment; the intermediate range requires a separately
+  approved quality-improvement plan.
+- After quality acceptance: define a versioned packed runtime layout, pass
+  conversion and CUDA correctness, measure real-shape operators, integrate a
+  block, and finally measure the complete model and serving path.
+- H20 is the iterative SM90 development platform. H200 and A100 80GB provide
+  the formal final Hopper and SM80 evaluations.
+- Qwen3-32B shapes remain operator-only stress cases. No new 32B full-model
+  quantization, PPL, or serving work is authorized.
 
 ## Frozen calibrated algorithm contract
 
@@ -208,7 +247,7 @@ Nothing under `server_results/` belongs in Git.
 - `scripts/run_isambard_qwen3_32b_full_hessian_obq_s8_ppl.sbatch`: PPL Slurm
   entrypoint.
 
-## Evidence boundary and next decision
+## Evidence boundary and next action
 
 The algorithm-quality ladder through dense fake-quant PPL is complete. The
 accepted result says:
@@ -218,17 +257,23 @@ accepted result says:
 - hybrid-s8 materially improves pure in reconstruction and PPL;
 - hybrid-s8 still has a substantial gap to BF16.
 
-There was no predeclared deployment-quality threshold, so the PPL execution is
-accepted without claiming that the quality clears production use. Packed CUDA,
-serving integration, and distillation remain unlaunched. Any next experiment
-requires a separate explicit decision and acceptance contract.
+There was no predeclared deployment-quality threshold for the historical 32B
+run, so its PPL execution remains accepted without claiming production quality.
+It does not authorize a packed backend.
+
+The next authorized work is planning and implementation for Qwen3-8B Phase A0:
+create versioned 8B configs/runners, verify the pinned model inventory and
+calibration protocol, and run local static/synthetic checks. Real-model work
+must then follow the gates in `EXPERIMENT_PLAN.md`; no phase auto-launches the
+next one.
 
 ## Environment boundary
 
 - macOS/Apple Silicon: source review, static compilation, and small local tests.
-- Isambard GH200: accepted real-weight, exact-gate, full-model, and PPL evidence.
-- Isambard remains accessible through 2026-09-05; access is expected to end from
-  2026-09-06.
+- Isambard GH200: historical accepted 32B real-weight, exact-gate, full-model,
+  and PPL evidence only; it is not the assumed environment for the new plan.
+- H20: planned Qwen3-8B SM90 development and tuning.
+- H200 and A100 80GB: planned formal final performance evaluation.
 - Scheduler `COMPLETED` alone is not acceptance. Structured JSON, provenance,
   hashes, inventory, finite metrics, and the declared gate must all pass.
 

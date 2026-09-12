@@ -1,0 +1,11 @@
+# PyTorch and CUDA are supplied by the pinned RunPod base image. Keep the
+# experiment dependencies explicit; add vLLM only after the serving version is
+# frozen for Phase B4.
+datasets==5.0.0
+huggingface-hub==1.24.0
+ninja==1.13.0
+numpy==2.4.6
+packaging==26.3
+safetensors==0.8.0
+sentencepiece==0.2.0
+transformers==5.14.1
