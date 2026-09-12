@@ -4,6 +4,28 @@ This setup minimizes GPU-Pod rebuild work while keeping accepted experiments
 reproducible. It separates immutable software, persistent data, and frequently
 changing source code.
 
+## Current execution status
+
+RunPod provisioning is **paused** as of 2026-09-12.
+
+- GitHub Actions run
+  [`34681093330`](https://github.com/maxiu188-afk/Marlin_Style_Fluxbin/actions/runs/34681093330)
+  started from commit `e041f77c8edf5c2ce095c18ec003e66582039e83`.
+- Checkout, Buildx setup, and GHCR login succeeded.
+- The `Build and push linux/amd64 image` step failed when the GitHub-hosted
+  runner reported `No space left on device`.
+- The digest-recording step did not run. No image tag/digest is accepted for an
+  experiment, even if an incomplete registry upload is later visible.
+- No RunPod Network Volume, Template, Pod, or registry credential was created.
+- The workflow is manual-dispatch only. Do not rerun it until the build is
+  changed to fit the runner disk or moved to a builder with sufficient space.
+
+A future resume must first choose and document one build-space repair, such as
+using a smaller pinned base, removing unnecessary hosted-runner toolchains
+before Buildx, disabling the large `mode=max` build cache, or building on a
+machine with sufficient disk. Then run the workflow manually, require a
+successful digest, and only afterward configure RunPod storage and Templates.
+
 ## Three layers
 
 1. **Custom image**: CUDA/PyTorch, compiler toolchain, Python dependencies, and

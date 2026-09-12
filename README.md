@@ -14,6 +14,12 @@ the planning update.
 The reusable RunPod image, Network Volume, Template, and cache layout are
 specified in [`infra/runpod/README.md`](infra/runpod/README.md).
 
+RunPod provisioning is currently paused. GitHub Actions run `34681093330`
+failed during image build/push because the hosted runner exhausted its disk;
+no image digest was accepted, and no RunPod Volume, Template, or Pod was
+created. The workflow is manual-dispatch only until the build-space problem is
+addressed.
+
 ## Historical accepted Qwen3-32B result
 
 The assignment-overhead repair, the complete 64-layer v3 reconstruction, and

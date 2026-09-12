@@ -2,13 +2,6 @@ name: Build RunPod image
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - codex/runpod-bootstrap
-    paths:
-      - .github/workflows/build-runpod-image.yml
-      - .dockerignore
-      - infra/runpod/**
 
 permissions:
   contents: read

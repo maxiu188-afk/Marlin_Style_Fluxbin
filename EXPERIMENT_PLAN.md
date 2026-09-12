@@ -1,7 +1,8 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
-Status: approved direction, planning only. No download, quantization, accuracy,
-kernel, or serving job is launched by this document.
+Status: approved direction, execution paused. No download, quantization,
+accuracy, kernel, or serving job is active. The first RunPod image-build attempt
+failed before producing an accepted digest; see `infra/runpod/README.md`.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in
 [`infra/runpod/README.md`](infra/runpod/README.md). The reusable environment is

@@ -16,8 +16,16 @@ must be ported under new versioned names before execution.
 RunPod reconstruction is addressed by the versioned bootstrap image and
 persistent-storage contract in [`infra/runpod/README.md`](infra/runpod/README.md).
 The intended lifecycle is terminate compute, retain the Network Volume, and
-recreate a Pod from the same Template and immutable image. The image is not yet
-built or pushed.
+recreate a Pod from the same Template and immutable image.
+
+RunPod provisioning is paused. GitHub Actions run
+[`34681093330`](https://github.com/maxiu188-afk/Marlin_Style_Fluxbin/actions/runs/34681093330)
+at commit `e041f77c8edf5c2ce095c18ec003e66582039e83` failed inside the
+`Build and push linux/amd64 image` step because the hosted runner reported
+`No space left on device`. The digest-recording step never ran, so no image is
+accepted or referenced by digest. No RunPod Network Volume, Template, or Pod
+was created. The workflow now requires manual dispatch and must remain idle
+until a build-space strategy is approved.
 
 The assignment-overhead repair, complete Qwen3-32B v3 full-model
 reconstruction, exact replay gate, and matched WikiText-2 PPL execution remain
