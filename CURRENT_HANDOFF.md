@@ -13,7 +13,10 @@ No Qwen3-8B download, real-weight quantization, PPL, CUDA, or serving job has
 been launched. On 2026-09-13, versioned 8B snapshot preflight, C4 materialization,
 and layer-0 representative Linear runners were added. Nine new tests and all
 40 local CPU tests passed. See [QWEN3_8B_LINEAR_GUIDE.md](QWEN3_8B_LINEAR_GUIDE.md).
-The 8B full-model and PPL ports remain pending until the Linear gates pass.
+The 8B full-model runner/config port is now prepared, with 45 local tests
+passing. Admission requires all five representative Linear acceptance records
+and exact artifact hashes. GPU Linear acceptance is in progress; no full-model
+claim follows from the local tests. The 8B PPL port remains pending.
 
 The user changed the environment route: use an existing RunPod PyTorch/CUDA
 template first, inspect its installed packages, and add only necessary missing

@@ -118,11 +118,22 @@ PYTHONPATH=src python scripts/run_qwen3_8b_single_linear_hessian_obq_s8.py \
 ## 下一部分与当前边界
 
 五个目标全部验收后，才移植独立 pure/hybrid 的 36 层全模型传播、逐层恢复和完整产物验收。
-之后才是匹配 BF16/pure/hybrid 的 WikiText-2 PPL。未实现新的 8B 全模型或 PPL runner，
-不能拿旧 32B 命令直接启动。5% PPL 部署门槛继续按 `EXPERIMENT_PLAN.md` 执行。
+之后才是匹配 BF16/pure/hybrid 的 WikiText-2 PPL。新增的全模型入口为
+`scripts/run_qwen3_8b_full_hessian_obq_s8.py`，配置模板为
+`configs/experiments/qwen3_8b_full_hessian_obq_s8_v1.json`。使用
+`scripts/prepare_qwen3_8b_full.py --project-root . --output <新配置路径> --suite-output <新门槛路径>`
+绑定五个目标的 acceptance/result/payload/config 哈希后，才可执行。
+未实现新的 8B PPL runner；5% PPL 部署门槛继续按 `EXPERIMENT_PLAN.md` 执行。
 
-本地已验证：9 项新测试（8B 清单/错误拒绝、校准来源和哈希、真实小型 Qwen3 激活捕获、
-两个 128 列组的实际 OBQ）及全部 40 项测试通过。无 8B 真实模型、CUDA、显存或 PPL 验证。
+全模型入口保留历史逐层算法、独立分支和恢复语义，固定当前 A100 软件版本；
+`--validate-only` 仅验收输入，`--stop-after-layer` 保留有界回放功能。
+必须使用 `artifacts/qwen3-8b-full-hessian-obq-s8-v1/pure` 和
+`artifacts/qwen3-8b-full-hessian-obq-s8-v1/hybrid_s8` 分别保存权重。
+实际提交前检查全部五个 Linear 的验收，不因入口已写好而越过门槛。
+
+本地已验证：全部 45 项测试通过，覆盖 Linear 合成验证、全模型边界和恢复一致性、
+五目标验收完整性、坏指标与文件篡改拒绝。真实 GPU Linear 结果以服务器结果和独立
+acceptance JSON 为准；它们不是全模型质量或 PPL 证据。
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
