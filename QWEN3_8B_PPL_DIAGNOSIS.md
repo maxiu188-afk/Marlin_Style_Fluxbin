@@ -140,3 +140,77 @@ the compensation issue is isolated.
 No claim is made that increasing sample count, adding distillation, switching
 GPU, or merely using a larger model will fix the result. Server work was not
 started; the user is retaining server storage for later recovery.
+
+## Hybrid-focused follow-up, 2026-09-13
+
+User direction: focus on hybrid; pure is not an optimization target. Investigate
+implementation/quality gaps first, and consider distillation later. No new GPU
+work, fitting changes, or distillation has been launched.
+
+### Compensation and selection must be separated
+
+The compensation defect above is a conditional quadratic-optimum violation.
+Changing the saliency definition is a distinct algorithm decision: the paper's
+Eq. 7 uses the inverse Hessian diagonal, while its abbreviated groupwise
+pseudocode does not establish whether author code conditions it between groups.
+Do not silently change both compensation and selection in a single “bug fix.”
+
+The actual hybrid function was instrumented on a synthetic CPU case (seed
+20260902, W shape [24,128], four groups of 32, two selected columns per group,
+eight fitting iterations). It returned the original selections and weights;
+only a parallel diagnostic recomputed selections on each same working weight
+with the inverse of the remaining Hessian. Selections, group-local indices:
+
+| Group | Existing full-inverse slice | Remaining-subproblem inverse |
+| --- | --- | --- |
+| 0 | [2,19] | [2,19] |
+| 1 | [17,18] | [16,18] |
+| 2 | [14,15] | [2,15] |
+| 3 | [20,24] | [10,20] |
+
+This proves the choice can alter which columns receive hybrid refinement. It
+does not show that the conditioned selector has lower real-model loss, or that
+it is the authors' implementation. The example is not an 8B benchmark.
+Evidence: `server_results/diagnostics/hybrid-selection-conditioning.json`;
+reproduction: `tmp/check_hybrid_selection.py`.
+
+### Fitting budget is another measurable suspect
+
+Across all 10,368 hybrid groups, the recorded stopping reasons are:
+
+| Fit | Relative-tolerance stop | Reached 50-iteration cap |
+| --- | ---: | ---: |
+| Global two-base fit | 5039 | 5329 (51.40%) |
+| Sparse refinement fit | 9591 | 777 (7.49%) |
+
+The global fit uses 436,263 total iterations and refinement 308,778. Several
+middle-layer gate/up projections hit the global cap in every group. Hitting
+the cap does not prove that extra iterations improve PPL: the full artifacts
+do not retain per-iteration loss curves. Before allocating a longer full run,
+inspect a bounded same-W/X target with unchanged initialization and record the
+loss trajectory beyond 50 iterations. Do not claim the paper used more
+iterations; its exact runtime setting has not been established here.
+
+### Author source availability
+
+The paper points to `https://github.com/nicyyyy/FluxBin`. GitHub API lookup
+returned HTTP 404 in this session. This means the referenced repository was
+not accessible through this lookup, not that the authors never published code.
+No alternate or third-party implementation has been treated as canonical.
+
+### Order of controlled follow-ups
+
+1. Hybrid only: validate the compensation fix against multi-group quadratic
+   oracles, holding the existing saliency policy fixed as an explicit variant.
+2. On identical real W/X, separately compare the saliency policies. Record
+   index overlap, output loss and payload identity, not just weight SSE.
+3. Separately test within-layer sequential calibration and iteration budget;
+   do not bundle them with the compensation change.
+4. Evaluate the resulting hybrid with the same matched PPL protocol before
+   deciding a distillation scope. Preserve the current 16.142104 artifact as
+   the comparison baseline. No pure refit is necessary for this question.
+
+A validated correction should precede distillation: otherwise training could
+compensate for a defect without explaining the paper-reproduction gap. Neither
+paper-level quality nor the stricter deployment target is guaranteed by these
+checks.

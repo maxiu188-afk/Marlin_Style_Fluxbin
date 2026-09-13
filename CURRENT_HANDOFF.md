@@ -32,6 +32,11 @@ conditioning on fixed groups. A CPU quadratic counterexample fails the optimum
 invariant. Its full-model PPL impact is not measured and the code is not yet
 fixed. See `QWEN3_8B_PPL_DIAGNOSIS.md`; preserve old artifacts and isolate this
 repair before varying calibration or within-layer ordering.
+User direction is now hybrid-only diagnosis, with distillation deferred. A
+synthetic hybrid probe confirms that inverse conditioning can alter selected
+columns, but selection policy changes must be isolated from compensation fixes.
+Full metadata also shows 5329/10368 global hybrid fits hit the 50-iteration cap;
+its PPL impact remains unmeasured. See the hybrid-focused follow-up in the diagnosis.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
