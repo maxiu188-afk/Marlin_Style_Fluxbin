@@ -122,10 +122,11 @@
   },
   "artifacts": {
     "synthetic_data_payload": "safetensors_int32",
-    "final_scale_payload": "safetensors_fp32",
     "intermediate_scale_payloads": "disabled",
     "structured_result": "json",
-    "write_once": true
+    "write_once": true,
+    "final_training_state": "optimizer_scheduler_rng_normalizers_final_only_pt",
+    "final_packed_payloads": "36_safetensors_layers_with_frozen_signs_indices_and_trained_scales"
   },
   "execution": {
     "environment": "RunPod A100 PCIe; proposed, training memory not yet validated",
@@ -159,7 +160,7 @@
     "test_auto_launch": false,
     "require_selected_index_hashes_unchanged": true
   },
-  "status": "prepared_not_launched",
+  "status": "ready_for_gpu_smoke",
   "reference": {
     "repository": "QBB-New",
     "files_sha256": {
