@@ -44,22 +44,25 @@ Python 3.12.3 / torch 2.8.0+cu128. Retained model/calibration/artifact storage i
 present. Container-disk `/opt/fluxbin-venv` was rebuilt with system-site-packages
 and the existing add-on lock; pip check passed, size ~410 MB. No torch/model download.
 
-The hybrid-only compensation probe completed in tmux
-`hybrid-compensation-probe-pcie-v1`, from clean revision
-`ae77820c96662505ed222a45164be3acc2026288`. Its dedicated PCIe config changes only
-the GPU name/environment label. All 56 local/server tests pass. The first
-preflight exposed a C4 field-name bug (`tokens` vs `token_ids`), fixed and covered
-by a regression test before this submission. The job performs full preflight
-before fitting and passed. The run completed in 128.93 s, exit 1, status
-`failed_metric_agreement`: layer-6 down corrected direct/Hessian loss differs
-by about 0.0244%, above the frozen 0.01% tolerance. Three direct output losses
-fell by 60.63%, 56.52%, and 58.98% (layer-1 gate/up, layer-6 down), but this is
-diagnostic-only and not an accepted probe or PPL improvement. Investigate the
-metric discrepancy before any full-model run. Small evidence is archived locally
-in `server_results/runpod_hybrid_pcie_2026-09-13/`. Job directory:
-`/workspace/jobs/hybrid-compensation-probe-pcie-v1/`; see
-`QWEN3_8B_HYBRID_PROBE_GUIDE.md`. Preserve the recorded execution revision.
-No pure/full/PPL/distillation auto-launch.
+The hybrid-only compensation probe is now accepted as a bounded Linear
+**diagnostic**, after an evaluation precision repair. First run
+`hybrid-compensation-probe-pcie-v1` (ae77820) failed metric agreement: the
+layer-6 down corrected direct/Hessian loss differed by 0.0244%, exceeding 0.01%.
+Rerun `hybrid-compensation-probe-pcie-fp64-v1`, clean revision
+`3a75d7ece7e6e442471cdad74517e614ae95f3a0`, exited 0. All six comparisons pass
+with maximum relative discrepancy 5.7751e-9, under the unchanged 1e-4 tolerance.
+The dominant discrepancy came from FP32 Hessian accumulation: simply evaluating
+the same FP32 Hessian in FP64 still gave 18.434305 versus direct 18.429785;
+independent FP64 accumulation and quadratic evaluation gives 18.429785329.
+
+Fitting still uses the original FP32 Hessian. Across both runs, input traces,
+fit Hessian/target weight hashes, six payloads, selected indices and direct
+losses are exactly unchanged. Direct loss reductions are 60.63%, 56.52%, 58.98%
+for layer-1 gate/up and layer-6 down. This supports the compensation repair on
+these targets, not a measured full-model PPL improvement. All 57 local/server
+tests pass. Small evidence and independent acceptance are archived locally in
+`server_results/runpod_hybrid_pcie_2026-09-13/fp64/`; old failure is preserved.
+See `QWEN3_8B_HYBRID_PROBE_GUIDE.md`. No pure/full/PPL/distillation auto-launch.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
