@@ -86,6 +86,14 @@ See `QWEN3_8B_CONDITIONED_FULL_RESULTS.md` for hashes and evidence, and
 `QWEN3_8B_CONDITIONED_FULL_GUIDE.md` for paths. Small evidence is backed up under
 `server_results/runpod_hybrid_pcie_2026-09-13/full-conditioned/`.
 
+The user now requests distillation preparation, following QBB-New token-logit
+and per-layer feature losses. Prepared scale-only packed HybridScaleLinear and
+CE + mean block-output MSE with fixed initial component normalizers; symbols
+and selected indices remain frozen. Candidate sample200/400-step config binds
+the accepted conditioned parent. Local 64 tests pass. No data generation,
+GPU smoke, training, or full training entry point yet. Integration requirements
+are explicit in `QWEN3_8B_DISTILLATION_PREPARATION.md`.
+
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
 was refused by existing-output protection; payloads/results were unchanged,
