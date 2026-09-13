@@ -85,7 +85,7 @@ smoke 使用随机输入，不生成或筛选正式训练数据，不覆盖父�
 packed 导出回读、CE shift、层均值与归一化、教师无梯度及 hooks 清理。
 
 
-## 已验收 smoke / 已提交训练
+## Smoke 验收与训练提交记录（已完成）
 
 smoke 退出码 0，结果 `passed`：252 个 Linear 初始 BF16 解码精确一致，
 四类 scales 各 252 个张量发生更新，teacher 无梯度，符号/索引哈希不变。
@@ -95,7 +95,7 @@ smoke 退出码 0，结果 `passed`：252 个 Linear 初始 BF16 解码精确一
 
 本地记录：`server_results/runpod_hybrid_pcie_2026-09-13/distillation/smoke.json`。
 
-正式任务已提交到同一 A100 PCIe：
+正式任务当时提交到同一 A100 PCIe，现已完成：
 
 - tmux：`qwen3-8b-distill-train-v1`；初始 PID **2839**。
 - 作业目录：`/workspace/jobs/qwen3-8b-distill-train-v1/`。
@@ -105,7 +105,7 @@ smoke 退出码 0，结果 `passed`：252 个 Linear 初始 BF16 解码精确一
   数据 `artifacts/synthetic.safetensors`；最终权重 `artifacts/payloads/`。
 - WT2 validation 从固定 revision `b08601e04326c79dfdd32d625aee71d232d685c3`
   下载至持久缓存，训练记录其原始文件、文本、token 和 block 哈希。
-- 当前状态：退出码 0，400 步完成，验收 accepted_validation_only。WT2 validation PPL 15.272183 → 13.670310；test 尚未评估。
+- 当前状态：退出码 0，400 步完成，验收 accepted_validation_only。WT2 validation PPL 15.272183 → 13.670310；随后固定 step400 test PPL 已评估为 13.169788495，见 [test 验收](QWEN3_8B_DISTILLED_TEST_RESULTS.md)。
 
 服务器只读查看：
 

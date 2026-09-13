@@ -1,37 +1,37 @@
 # Marlin-Style FluxBin
 
-2026-09-13: all five representative 8B Linear gates passed on A100 80GB;
-[accepted results](QWEN3_8B_LINEAR_RESULTS.md). Full-model pure/hybrid quantization
-artifacts now pass integrity/reconstruction review with notes; see
-[full-model results](QWEN3_8B_FULL_RESULTS.md). Hybrid weight SSE improves
-12.4301% overall (249/252 Linears improve). Matched PPL execution is accepted,
-but quality fails: BF16 **9.724945**, pure **1149.470625**, hybrid **16.142104**.
-Hybrid is **65.9866% above BF16**, so deployment is blocked. See
-[PPL acceptance](QWEN3_8B_PPL_RESULTS.md).
-The conditioned hybrid repair now passes full-model artifact/reconstruction
-review (36 layers / 252 Linears). Its accepted PPL is **14.951611**, 7.3751% lower
-than historical hybrid but still 53.7449% above same-run BF16; quality fails. See
-[conditioned PPL acceptance](QWEN3_8B_CONDITIONED_PPL_RESULTS.md) and
-[conditioned full-model acceptance](QWEN3_8B_CONDITIONED_FULL_RESULTS.md).
-Scale-only distillation now passes validation-only acceptance: WT2 validation
-PPL **15.272183 -> 13.670310** (-10.49%); post-distillation test PPL is **13.169788495** (-11.92% vs undistilled parent).
-Accuracy work is paused; compute shutdown is ready with weights on the persistent network volume.
-See [shutdown handoff](SERVER_SHUTDOWN_READY.md).
-See [distillation results](QWEN3_8B_DISTILLATION_RESULTS.md).
-Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
-Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
-custom image construction is deferred.
+This repository studies a calibrated two-base rank-one binary weight representation.
+The active target is Qwen3-8B; Qwen3-32B remains historical algorithm-quality
+evidence and a source of operator-only stress shapes.
 
-This repository studies a calibrated two-base rank-one binary weight
-representation. The active full-model target is now Qwen3-8B: first produce and
-quality-gate the quantized weights, then implement and measure real packed
-deployment. The completed Qwen3-32B work remains historical algorithm-quality
-evidence and a source of operator-only stress shapes; it is no longer the active
-full-model target.
+2026-09-13 closeout: full-model reconstruction, compensation repair, scale-only
+distillation and fixed step400 test PPL have been reviewed. Start with the
+[results overview](RESULTS_OVERVIEW.md) for the evidence and source revisions.
 
-The approved staged plan is [`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md). The
-initial planning update did not launch jobs; subsequent 8B execution status is
-recorded above and in the handoff.
+| Qwen3-8B weights | WikiText-2 test PPL |
+| --- | ---: |
+| BF16 | 9.724945 |
+| Original pure | 1149.470625 |
+| Original hybrid | 16.142104 |
+| Conditioned hybrid, undistilled | 14.951611 |
+| Conditioned hybrid, distilled step400 | **13.169788** |
+
+Distillation improves test PPL by **11.92%** versus its direct parent. Separately,
+WT2 validation PPL improved from 15.272183 to 13.670310. The test table combines
+matched-protocol runs, not five arms measured in one run; BF16 reproduced exactly.
+The final model remains 35.42% above BF16 and does not pass the original quality gate.
+
+Accuracy experiments are paused by user direction. Research on packed conversion,
+CUDA correctness and acceleration is authorized next, independently of the unmet
+quality gate; no packed CUDA or end-to-end speed result exists yet. Follow
+[the acceleration handoff](ACCELERATION_HANDOFF.md) and
+[the staged plan](EXPERIMENT_PLAN.md).
+
+The user confirmed the compute server is closed. Before shutdown, the 36-layer
+step400 payload and records were copied and hash-verified on the persistent
+network volume; large weights were not downloaded locally. See
+[storage and restart details](SERVER_SHUTDOWN_READY.md). Use an existing RunPod
+PyTorch/CUDA template and restore only missing dependencies on container disk.
 
 The reusable RunPod image, Network Volume, Template, and cache layout are
 specified in [`infra/runpod/README.md`](infra/runpod/README.md).
@@ -39,7 +39,7 @@ specified in [`infra/runpod/README.md`](infra/runpod/README.md).
 Custom-image provisioning remains deferred. GitHub Actions run `34681093330`
 failed during image build/push because the hosted runner exhausted its disk;
 no custom image digest was accepted, and that workflow created no RunPod
-resources. The current A100 Pod was provisioned separately by the user from an
+resources. The now-closed A100 Pod was provisioned separately by the user from an
 existing template. The image workflow remains manual-dispatch only.
 
 ## Historical accepted Qwen3-32B result

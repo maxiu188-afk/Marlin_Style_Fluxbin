@@ -2,7 +2,8 @@
 
 ## Current status
 
-Latest closeout: the user prioritizes shutting down the compute server now.
+Latest closeout (2026-09-13): the user confirmed the compute server is closed.
+See [RESULTS_OVERVIEW.md](RESULTS_OVERVIEW.md) for the consolidated results.
 Fixed distilled step400 WT2 test PPL is accepted for execution: **13.169788495**,
 vs its undistilled parent **14.951611048** (-11.9173%), same-run BF16 9.724944981.
 Accuracy work is paused by explicit user direction; acceleration research is
@@ -12,10 +13,23 @@ Persistent artifact: `/workspace/models/fluxbin/qwen3-8b-hybrid-distilled-step40
 `253ab448797ef4d798522875014b7e47a4edb84c5c3c1ca5cf6179edfd339fec`.
 The `/workspace` network volume is `/networkvolumes/34au39ljvf`; preserve this
 volume and the original pinned model snapshot needed for non-quantized weights.
-Latest shutdown check found no NVIDIA compute processes, PPL exit 0, and clean
+The last pre-shutdown check found no NVIDIA compute processes, PPL exit 0, and clean
 server checkout. Local closeout archive was verified. No server shutdown/delete
-operation was performed by the agent. See `SERVER_SHUTDOWN_READY.md`.
+operation was performed by the agent; closure is user-confirmed, not a new
+remote inspection. See `SERVER_SHUTDOWN_READY.md`.
 
+Next: prepare versioned packed conversion and numerical correctness, then measure
+Linear -> block -> full-model performance under `ACCELERATION_HANDOFF.md` and
+`EXPERIMENT_PLAN.md`. Further accuracy optimization is not a prerequisite for
+this authorized research. No acceleration implementation or GPU benchmark was
+completed during the closeout. Do not reconnect to the old SSH endpoint.
+
+
+## Historical 8B execution chronology
+
+The following records preserve decisions and status at each stage. Earlier
+quality-first sequencing, pending work and server state are superseded by the
+current status above; completed evidence and audit caveats remain applicable.
 
 The active research direction changed on 2026-09-12. Qwen3-8B is now the
 full-model target. Work proceeds in two strictly ordered stages: first reproduce
@@ -201,7 +215,7 @@ Historical accepted Qwen3-32B checkpoints:
 
 No backend or distillation job was launched from the historical 32B result.
 
-## Active Qwen3-8B plan
+## Original Qwen3-8B plan (sequencing superseded)
 
 - Target `Qwen/Qwen3-8B` at previously accepted revision
   `b968826d9c46dd6066d109eabc6255188de91218`, subject to an exact preflight.
@@ -222,7 +236,7 @@ No backend or distillation job was launched from the historical 32B result.
 - Qwen3-32B shapes remain operator-only stress cases. No new 32B full-model
   quantization, PPL, or serving work is authorized.
 
-## Frozen calibrated algorithm contract
+## Historical Qwen3-32B calibrated algorithm contract
 
 - C4 calibration uses 256 sequences. Sequence length 2048 and seed `20260902`
   are explicit project choices because the paper does not specify them.
@@ -414,7 +428,7 @@ Nothing under `server_results/` belongs in Git.
 - `scripts/run_isambard_qwen3_32b_full_hessian_obq_s8_ppl.sbatch`: PPL Slurm
   entrypoint.
 
-## Evidence boundary and next action
+## Historical 32B evidence boundary and original next action
 
 The algorithm-quality ladder through dense fake-quant PPL is complete. The
 accepted result says:
