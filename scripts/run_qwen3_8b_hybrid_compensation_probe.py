@@ -19,6 +19,12 @@ from run_qwen3_two_base_rank1_s8_ppl import validate_runtime
 
 ROOT=Path(__file__).resolve().parents[1]
 CONFIG=ROOT/'configs/experiments/qwen3_8b_hybrid_compensation_probe_v1.json'
+PCIE_CONFIG=CONFIG.with_name('qwen3_8b_hybrid_compensation_probe_v1_a100_pcie.json')
+
+
+def validate_probe_config(config):
+    if not any(config==json.loads(path.read_text()) for path in (CONFIG,PCIE_CONFIG)):
+        raise ValueError('unknown or modified frozen probe config')
 
 
 def payload_of(result):
@@ -61,11 +67,12 @@ def walk_prefix(model,tokens,groups,callback,device):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--config',type=Path,default=CONFIG)
     p.add_argument('--snapshot-root',type=Path,required=True)
     p.add_argument('--calibration-dir',type=Path,required=True)
     p.add_argument('--output-dir',type=Path,required=True)
     p.add_argument('--execute',action='store_true',help='Run GPU fits; default only validates inputs/runtime')
-    args=p.parse_args();c=json.loads(CONFIG.read_text())
+    args=p.parse_args();c=json.loads(args.config.read_text());validate_probe_config(c)
     if args.output_dir.exists():raise FileExistsError(args.output_dir)
     if args.snapshot_root.name!=c['model']['revision']:raise ValueError('model revision mismatch')
     for name,digest in c['model_preflight_files'].items():
@@ -78,10 +85,10 @@ def main():
     print('PROBE_PREFLIGHT=passed',flush=True)
     if not args.execute:return
     args.output_dir.mkdir(parents=True)
-    sources=list((ROOT/'src/fluxbin_style').glob('*.py'))+[CONFIG,Path(__file__),ROOT/'scripts/run_qwen3_8b_single_linear_hessian_obq_s8.py',ROOT/'scripts/run_qwen3_two_base_rank1_s8_ppl.py']
+    sources=list((ROOT/'src/fluxbin_style').glob('*.py'))+[CONFIG,PCIE_CONFIG,Path(__file__),ROOT/'scripts/run_qwen3_8b_single_linear_hessian_obq_s8.py',ROOT/'scripts/run_qwen3_two_base_rank1_s8_ppl.py']
     source_hashes={str(x.relative_to(ROOT)):sha256_file(x) for x in sources}
     started=time.monotonic()
-    atomic_json(args.output_dir/'provenance.json',{'config':c,'config_sha256':sha256_file(CONFIG),'source_files_sha256':source_hashes})
+    atomic_json(args.output_dir/'provenance.json',{'config':c,'config_sha256':sha256_file(args.config),'source_files_sha256':source_hashes})
     torch.manual_seed(c['seed']);torch.cuda.manual_seed_all(c['seed'])
     torch.backends.cuda.matmul.allow_tf32=False;torch.backends.cudnn.allow_tf32=False
     torch.set_float32_matmul_precision('highest')
@@ -143,7 +150,7 @@ def main():
         new=records[target]['arms']['conditioned_fixed_indices']['direct_mean_token_output_squared_error']
         decisions[target]={'output_loss_reduced':new<old,'relative_output_loss_change':(new-old)/old if old else None}
     if source_hashes!={str(x.relative_to(ROOT)):sha256_file(x) for x in sources}:raise ValueError('source changed during run')
-    atomic_json(args.output_dir/'result.json',{'status':'completed_pending_review' if valid else 'failed_metric_agreement','config_sha256':sha256_file(CONFIG),'input_policy':c['input_policy'],'input_trace':trace,'source_files_sha256':source_hashes,'targets':records,'comparison':decisions,'elapsed_seconds':time.monotonic()-started,'full_model_auto_launch':False,'distillation_auto_launch':False})
+    atomic_json(args.output_dir/'result.json',{'status':'completed_pending_review' if valid else 'failed_metric_agreement','config_sha256':sha256_file(args.config),'input_policy':c['input_policy'],'input_trace':trace,'source_files_sha256':source_hashes,'targets':records,'comparison':decisions,'elapsed_seconds':time.monotonic()-started,'full_model_auto_launch':False,'distillation_auto_launch':False})
     print('PROBE_COMPLETE; manual review required',flush=True)
     if not valid:raise SystemExit(1)
 

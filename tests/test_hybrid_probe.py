@@ -1,3 +1,5 @@
+import json
+import copy
 import sys
 import unittest
 from pathlib import Path
@@ -9,6 +11,14 @@ sys.path.pop(0)
 
 
 class ProbeTests(unittest.TestCase):
+    def test_frozen_runtime_variants(self):
+        base=json.loads(probe.CONFIG.read_text());pcie=json.loads(probe.PCIE_CONFIG.read_text())
+        probe.validate_probe_config(base);probe.validate_probe_config(pcie)
+        self.assertEqual({k:v for k,v in base.items() if k!="execution"},{k:v for k,v in pcie.items() if k!="execution"})
+        for key,value in [("group_size",64),("damp_percent",.02)]:
+            wrong=copy.deepcopy(pcie);wrong[key]=value
+            with self.assertRaises(ValueError):probe.validate_probe_config(wrong)
+
     def test_original_prefix_replay_and_early_stop(self):
         class Tiny(torch.nn.Module):
             def __init__(self):
