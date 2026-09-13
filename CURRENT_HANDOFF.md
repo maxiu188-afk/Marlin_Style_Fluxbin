@@ -92,14 +92,20 @@ The complete sample200 generation/filter/validation/train/export runner passed
 65 local/server tests. GPU smoke passed on A100 PCIe: all 252 initial BF16
 reconstructions exact, all 1008 scales updated, frozen signs/indices unchanged,
 no teacher gradients, peak allocated 26.28 GiB across tested shapes.
-Formal task `qwen3-8b-distill-train-v1` is submitted, initial PID 2839, clean
-source `8b4aa4ac012d06d900bf34ee00701e1a052b0889`, same as smoke. Startup check
-confirmed running; preflight precedes 400 candidates/200 retained + 100 separate
-validation sequences and 400 training steps. WT2 validation only, no test or
-backend auto-launch. Logs/results under `/workspace/jobs/qwen3-8b-distill-train-v1/`.
-Preserve remote source while running. No intermediate checkpoints/automatic resume;
-final full packed payloads and optimizer/scheduler/RNG state are exported separately.
-See `QWEN3_8B_DISTILLATION_PREPARATION.md` for exact status/log/cancel commands.
+Formal task `qwen3-8b-distill-train-v1` completed, exit 0, source
+`8b4aa4ac012d06d900bf34ee00701e1a052b0889`; acceptance is
+**accepted_validation_only**. All 400 steps, 21 synthetic monitors, 7 real
+validation monitors, schedules/data isolation/source hashes and final optimizer
+state passed audit. All 36 exported layers/252 Linears decode finite; all 1008
+scale tensors changed, fixed parent signs/indices are exactly unchanged.
+Synthetic validation normalized loss 1.621944 -> 0.630516; WT2 validation PPL
+15.272183 -> 13.670310 (-10.49%), teacher 10.240814425. Final step400 retained;
+unsaved step300 is slightly better (13.664953), not selected post hoc.
+No test evaluation during training. Post-distillation test PPL remains pending;
+do not compare validation 13.670310 directly with parent's test 14.951611.
+Recorded post-load elapsed 66.20 min, peak allocated 26.19 GiB. See
+`QWEN3_8B_DISTILLATION_RESULTS.md`. Artifacts remain under the job directory;
+small evidence archived locally in `server_results/runpod_hybrid_pcie_2026-09-13/distillation/`.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch

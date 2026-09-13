@@ -13,6 +13,9 @@ review (36 layers / 252 Linears). Its accepted PPL is **14.951611**, 7.3751% low
 than historical hybrid but still 53.7449% above same-run BF16; quality fails. See
 [conditioned PPL acceptance](QWEN3_8B_CONDITIONED_PPL_RESULTS.md) and
 [conditioned full-model acceptance](QWEN3_8B_CONDITIONED_FULL_RESULTS.md).
+Scale-only distillation now passes validation-only acceptance: WT2 validation
+PPL **15.272183 -> 13.670310** (-10.49%); post-distillation test PPL is pending.
+See [distillation results](QWEN3_8B_DISTILLATION_RESULTS.md).
 Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
 Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
 custom image construction is deferred.

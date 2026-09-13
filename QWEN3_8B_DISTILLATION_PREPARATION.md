@@ -1,6 +1,6 @@
 # 修复版 hybrid 蒸馏准备
 
-状态：完整 smoke/train 入口已接通，本地和服务器各 65 项测试通过；GPU smoke 已通过，正式首轮任务已提交。
+状态：完整 smoke/train 入口已接通，本地和服务器各 65 项测试通过；GPU smoke 已通过，正式首轮已完成并通过 validation-only 验收，见 [蒸馏结果](QWEN3_8B_DISTILLATION_RESULTS.md)。
 学生父版本为验收后的 conditioned hybrid（WT2 test PPL 14.951611），教师为同一
 Qwen3-8B BF16 snapshot b968826d9c46dd6066d109eabc6255188de91218。
 
@@ -105,7 +105,7 @@ smoke 退出码 0，结果 `passed`：252 个 Linear 初始 BF16 解码精确一
   数据 `artifacts/synthetic.safetensors`；最终权重 `artifacts/payloads/`。
 - WT2 validation 从固定 revision `b08601e04326c79dfdd32d625aee71d232d685c3`
   下载至持久缓存，训练记录其原始文件、文本、token 和 block 哈希。
-- 最后观察：进程已独立启动，正在预检；尚未报告生成或训练完成。
+- 当前状态：退出码 0，400 步完成，验收 accepted_validation_only。WT2 validation PPL 15.272183 → 13.670310；test 尚未评估。
 
 服务器只读查看：
 
@@ -119,6 +119,4 @@ tail -n 30 /workspace/jobs/qwen3-8b-distill-train-v1/run.log
 cat /workspace/jobs/qwen3-8b-distill-train-v1/status.json
 ```
 
-如需停止，先确认 `ps -p 2839 -o pid,args` 仍指向本次训练，再单独执行
-`kill -TERM 2839`。取消命令不要与查看命令一起粘贴。当前无自动恢复功能；
-中断前请注意未完成步骤不会生成中间 scales checkpoint。独立 tmux 可在断开 SSH 后运行。
+任务已结束，PID 为历史记录，无需停止。完整结果与检查见 [蒸馏验收](QWEN3_8B_DISTILLATION_RESULTS.md)。
