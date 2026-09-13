@@ -1,7 +1,7 @@
 # Qwen3-8B conditioned hybrid 蒸馏验收
 
 2026-09-13：**accepted_validation_only**。完整训练/导出通过，合成与真实验证均改善。
-尚无蒸馏后 WT2 test PPL，不将本报告的 validation 数值与旧 test PPL 14.951611 混比。
+随后固定 step400 的 WT2 test PPL 测得 **13.169788495**；详见 [test 结果](QWEN3_8B_DISTILLED_TEST_RESULTS.md)。本报告以下仍是 validation 数据，不能与 test 混比。
 
 ## 首轮结果
 

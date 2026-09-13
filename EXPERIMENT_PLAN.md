@@ -1,16 +1,15 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
-Status (2026-09-13): all five representative 8B Linear gates passed on A100;
-full-model pure/hybrid artifacts are accepted with notes for integrity and
-weight reconstruction. Hybrid improves aggregate SSE by 12.4301%, with 249/252
-Linears improving and three local regressions retained. Matched PPL execution
-on A100 is accepted; both quantized arms fail quality. BF16/pure/hybrid PPL:
-9.724945 / 1149.470625 / 16.142104. Hybrid is 65.9866% above BF16. Deployment
-is blocked; further work returns to algorithm-quality diagnosis/planning.
-See `QWEN3_8B_PPL_RESULTS.md`.
-See `QWEN3_8B_FULL_RESULTS.md` and `CURRENT_HANDOFF.md`.
-PPL source: `e45462aa155aeeedf72f98080a03f74852bc9120`; see `QWEN3_8B_PPL_GUIDE.md`.
-No packed kernel or serving job was launched.
+Status (2026-09-13, latest user direction): accuracy experiments pause after the
+accepted fixed step400 test PPL, **13.169788495**, improved from undistilled
+conditioned hybrid 14.951611048. The persistent step400 artifact is the frozen
+starting point for acceleration research. The user explicitly prioritizes
+performance and authorizes research correctness/benchmark work despite the
+remaining 35.4228% gap over BF16. This supersedes the earlier sequencing rule
+that required passing the 5% gate before any performance engineering.
+Original quality thresholds/results remain reported; no claim of product
+quality acceptance or measured acceleration is made. See
+`QWEN3_8B_DISTILLED_TEST_RESULTS.md` and `ACCELERATION_HANDOFF.md`.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in
 [`infra/runpod/README.md`](infra/runpod/README.md). The reusable environment is
@@ -22,11 +21,11 @@ prerequisite. Freeze the accepted environment before matched quality runs.
 ## Objective
 
 Move the active full-model target from Qwen3-32B to Qwen3-8B and answer two
-questions in order:
+questions, with quality improvements now paused by user direction:
 
 1. Can the calibrated two-base representation produce a complete, reproducible
    Qwen3-8B quantized checkpoint with acceptable model quality?
-2. After that quality gate passes, can a packed implementation provide useful
+2. Using the fixed accepted step400 artifact, can a packed implementation provide useful
    operator, block, full-model, and serving acceleration on real NVIDIA GPUs?
 
 Qwen3-32B is no longer an active full-model target. Its accepted quality results
@@ -133,9 +132,10 @@ Primary quality gate:
 - the candidate for deployment must have finite PPL on exactly the same scored
   transitions as BF16;
 - relative PPL gap versus matched BF16 must be at most 5%;
-- only the best arm that passes the 5% gate proceeds to deployment;
-- a gap above 5% returns to a separately approved quality-improvement phase;
-  a gap above 10% explicitly blocks deployment work for that arm.
+- the historical quality gate remains a model-quality criterion;
+- the latest user authorization permits research acceleration work on the fixed
+  step400 artifact while further quality experiments are paused, even though
+  the recorded gap remains above 10%. This does not certify deployment quality.
 
 The 5% and 10% boundaries are project acceptance choices, not claims from the
 paper. Reconstruction improvements cannot substitute for the PPL gate.
@@ -145,8 +145,9 @@ frozen datasets and metrics. It is not automatically launched by the PPL run.
 
 ## Phase B: real deployment and acceleration
 
-Phase B begins only after Phase A accepts one exact quantized artifact and pins
-its manifest and PPL result.
+Phase B uses the exact step400 artifact with accepted integrity/reconstruction
+and test PPL provenance. Its manifest is pinned on the persistent volume; the
+latest user direction permits performance research without further quality tuning.
 
 ### B0. Runtime contract and packed layout
 

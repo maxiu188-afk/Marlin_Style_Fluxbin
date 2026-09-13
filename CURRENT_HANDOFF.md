@@ -2,6 +2,21 @@
 
 ## Current status
 
+Latest closeout: the user prioritizes shutting down the compute server now.
+Fixed distilled step400 WT2 test PPL is accepted for execution: **13.169788495**,
+vs its undistilled parent **14.951611048** (-11.9173%), same-run BF16 9.724944981.
+Accuracy work is paused by explicit user direction; acceleration research is
+future work, not currently launched. The original quality gate remains unmet.
+Persistent artifact: `/workspace/models/fluxbin/qwen3-8b-hybrid-distilled-step400-v1/`,
+36 copied layers, hashes checked, about 2.54 GiB plus small records. Manifest SHA256:
+`253ab448797ef4d798522875014b7e47a4edb84c5c3c1ca5cf6179edfd339fec`.
+The `/workspace` network volume is `/networkvolumes/34au39ljvf`; preserve this
+volume and the original pinned model snapshot needed for non-quantized weights.
+Latest shutdown check found no NVIDIA compute processes, PPL exit 0, and clean
+server checkout. Local closeout archive was verified. No server shutdown/delete
+operation was performed by the agent. See `SERVER_SHUTDOWN_READY.md`.
+
+
 The active research direction changed on 2026-09-12. Qwen3-8B is now the
 full-model target. Work proceeds in two strictly ordered stages: first reproduce
 the calibrated algorithm on 8B, produce complete quantized weights, and pass a
@@ -101,7 +116,7 @@ scale tensors changed, fixed parent signs/indices are exactly unchanged.
 Synthetic validation normalized loss 1.621944 -> 0.630516; WT2 validation PPL
 15.272183 -> 13.670310 (-10.49%), teacher 10.240814425. Final step400 retained;
 unsaved step300 is slightly better (13.664953), not selected post hoc.
-No test evaluation during training. Post-distillation test PPL remains pending;
+No test evaluation during training. Post-distillation test PPL subsequently completed (13.169788495);
 do not compare validation 13.670310 directly with parent's test 14.951611.
 Recorded post-load elapsed 66.20 min, peak allocated 26.19 GiB. See
 `QWEN3_8B_DISTILLATION_RESULTS.md`. Artifacts remain under the job directory;

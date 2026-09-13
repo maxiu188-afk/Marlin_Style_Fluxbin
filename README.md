@@ -14,7 +14,9 @@ than historical hybrid but still 53.7449% above same-run BF16; quality fails. Se
 [conditioned PPL acceptance](QWEN3_8B_CONDITIONED_PPL_RESULTS.md) and
 [conditioned full-model acceptance](QWEN3_8B_CONDITIONED_FULL_RESULTS.md).
 Scale-only distillation now passes validation-only acceptance: WT2 validation
-PPL **15.272183 -> 13.670310** (-10.49%); post-distillation test PPL is pending.
+PPL **15.272183 -> 13.670310** (-10.49%); post-distillation test PPL is **13.169788495** (-11.92% vs undistilled parent).
+Accuracy work is paused; compute shutdown is ready with weights on the persistent network volume.
+See [shutdown handoff](SERVER_SHUTDOWN_READY.md).
 See [distillation results](QWEN3_8B_DISTILLATION_RESULTS.md).
 Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
 Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
