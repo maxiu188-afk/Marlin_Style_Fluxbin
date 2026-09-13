@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "id": "qwen3-8b-hybrid-compensation-probe-v1",
+  "seed": 20260902,
+  "targets": [
+    "model.layers.1.mlp.gate_proj",
+    "model.layers.1.mlp.up_proj",
+    "model.layers.6.mlp.down_proj"
+  ],
+  "capture_groups": {
+    "model.layers.1.mlp.gate_proj": [
+      "model.layers.1.mlp.gate_proj",
+      "model.layers.1.mlp.up_proj"
+    ],
+    "model.layers.6.mlp.down_proj": [
+      "model.layers.6.mlp.down_proj"
+    ]
+  },
+  "input_policy": "same_original_bf16_prefix_for_both_variants_diagnostic_only",
+  "arms": [
+    "legacy_hybrid",
+    "conditioned_fixed_indices"
+  ],
+  "group_size": 128,
+  "columns_per_group": 8,
+  "damp_percent": 0.01,
+  "calibration_manifest_sha256": "fe554afbd625b7746b0295d3a269825fca869bb7a7c159aaf469f1b122f387f9",
+  "calibration_tokens_sha256": "a31bfd489dccd7f4ea2cdc04e245f4d47229ca0fe788c4690d061a17fe47e2e2",
+  "token_shape": [
+    256,
+    2048
+  ],
+  "output_loss_relative_tolerance": 0.0001,
+  "output_loss_absolute_tolerance": 1e-06,
+  "full_model_auto_launch": false,
+  "distillation_auto_launch": false,
+  "global_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-06,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-06,
+    "assignment_memory_budget_bytes": 1073741824,
+    "denominator_epsilon": 1e-12
+  },
+  "refinement_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-06,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-06,
+    "assignment_memory_budget_bytes": 1073741824,
+    "denominator_epsilon": 1e-12
+  },
+  "model": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "model_type": "qwen3",
+    "checkpoint_dtype": "torch.bfloat16",
+    "evaluation_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 36,
+    "expected_tensor_count": 252,
+    "expected_parameter_count": 6945767424,
+    "expected_weight_shards": 4
+  },
+  "model_preflight_files": {
+    "config.json": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+    "model-00001-of-00005.safetensors": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+    "model-00002-of-00005.safetensors": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+    "model-00003-of-00005.safetensors": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+    "model-00004-of-00005.safetensors": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+    "model-00005-of-00005.safetensors": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+    "model.safetensors.index.json": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc",
+    "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+  },
+  "execution": {
+    "compute_capability": [
+      8,
+      0
+    ],
+    "datasets": "5.0.0",
+    "device_name": "NVIDIA A100-SXM4-80GB",
+    "environment": "RunPod A100; existing template + container-disk venv",
+    "safetensors": "0.8.0",
+    "torch": "2.8.0+cu128",
+    "transformers": "5.14.1"
+  }
+}

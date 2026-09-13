@@ -29,14 +29,22 @@ diagnosis/improvement plan; no backend or distillation was launched.
 Offline diagnosis now confirms a sequential OBQ conditioning defect shared by
 8B/32B: group updates reuse slices of the original inverse Hessian without
 conditioning on fixed groups. A CPU quadratic counterexample fails the optimum
-invariant. Its full-model PPL impact is not measured and the code is not yet
-fixed. See `QWEN3_8B_PPL_DIAGNOSIS.md`; preserve old artifacts and isolate this
+invariant. Its full-model PPL impact is not measured. A separate corrected hybrid
+implementation and bounded probe are now prepared; the historical code remains
+unchanged. See `QWEN3_8B_PPL_DIAGNOSIS.md`; preserve old artifacts and isolate this
 repair before varying calibration or within-layer ordering.
 User direction is now hybrid-only diagnosis, with distillation deferred. A
 synthetic hybrid probe confirms that inverse conditioning can alter selected
 columns, but selection policy changes must be isolated from compensation fixes.
 Full metadata also shows 5329/10368 global hybrid fits hit the 50-iteration cap;
 its PPL impact remains unmeasured. See the hybrid-focused follow-up in the diagnosis.
+
+Pre-start preparation is complete: `hybrid_conditioned.py` uses conditional
+Cholesky block compensation; the probe freezes legacy-selected indices and
+compares only hybrid variants on original BF16-prefix inputs for layer-1 gate/up
+and layer-6 down. All 54 local tests pass; no CUDA probe or server operation has
+been run. Follow `QWEN3_8B_HYBRID_PROBE_GUIDE.md` after restoring the retained
+volume and container-disk environment. No pure/full/PPL/distillation auto-launch.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch

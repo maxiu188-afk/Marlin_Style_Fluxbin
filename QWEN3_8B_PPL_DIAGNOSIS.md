@@ -2,8 +2,11 @@
 
 A concrete sequential OBQ compensation defect is confirmed by a CPU algebraic
 counterexample. It is shared by the 8B and historical 32B implementations.
-Its contribution to full-model PPL has not yet been measured. No algorithm code,
-weights, quantization runs or PPL runs were changed by this diagnosis.
+Its contribution to full-model PPL has not yet been measured. This diagnosis
+initially changed no algorithm code or weights. Subsequent user-authorized
+pre-start preparation adds a separate corrected hybrid implementation and
+bounded probe; historical implementations and artifacts remain unchanged.
+See `QWEN3_8B_HYBRID_PROBE_GUIDE.md`; no GPU experiment has been run.
 
 ## Compare the correct baselines
 
