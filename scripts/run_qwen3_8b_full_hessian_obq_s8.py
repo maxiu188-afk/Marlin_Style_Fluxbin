@@ -41,6 +41,9 @@ from fluxbin_style import (
 )
 
 
+from fluxbin_style.hybrid_conditioned import quantize_hybrid_conditioned_v1
+
+
 HESSIAN_GROUP_MODULES = {
     "qkv": ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj"),
     "o": ("self_attn.o_proj",),
@@ -53,6 +56,7 @@ IMPLEMENTATION_FILES = (
     "src/fluxbin_style/__init__.py",
     "src/fluxbin_style/evaluation.py",
     "src/fluxbin_style/hessian_obq.py",
+    "src/fluxbin_style/hybrid_conditioned.py",
     "src/fluxbin_style/packing.py",
     "src/fluxbin_style/qwen3.py",
     "src/fluxbin_style/qwen3_sequential.py",
@@ -66,6 +70,7 @@ IMPLEMENTATION_FILES = (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--hybrid-probe-result", type=Path)
     parser.add_argument("--linear-suite", type=Path, required=True)
     parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--arm", choices=("pure", "hybrid_s8"), required=True)
@@ -268,6 +273,7 @@ def add_quantized_module(
     target = target_bf16.to(torch.float32)
     group_size = config["algorithm"]["global_group_size"]
     global_config = solver_config(config["global_solver"])
+    selection_record = {}
     if arm == "pure":
         result = quantize_pure_two_base_obq(
             target,
@@ -295,6 +301,21 @@ def add_quantized_module(
             global_config=global_config,
             refinement_config=solver_config(config["refinement_solver"]),
         )
+        policy=config['algorithm']['hybrid_s8'].get('compensation')
+        if policy is not None:
+            if policy!='conditioned_fixed_indices_v1' or config['algorithm']['hybrid_s8'].get('fixed_indices_policy')!='legacy_fit_on_same_target_and_hessian':
+                raise ValueError('unknown hybrid compensation or index policy')
+            fixed=result.decomposition.selected_indices.clone()
+            selection_record={'compensation':policy,'legacy_selected_indices_sha256':tensor_sha256(fixed)}
+            del result
+            result=quantize_hybrid_conditioned_v1(
+                target,inverse_hessian,fixed_indices=fixed,group_size=group_size,
+                columns_per_group=config['algorithm']['hybrid_s8']['residual_columns_per_group'],
+                global_config=global_config,refinement_config=solver_config(config['refinement_solver']))
+            if not torch.equal(fixed,result.decomposition.selected_indices):
+                raise RuntimeError('conditioned fit changed legacy indices')
+            selection_record['conditioned_selected_indices_sha256']=tensor_sha256(result.decomposition.selected_indices)
+            del fixed
         decomposition = result.decomposition
         global_value = decomposition.global_decomposition
         refinement = decomposition.refinement_decomposition
@@ -337,6 +358,7 @@ def add_quantized_module(
     metrics = reconstruction_metrics(target, reconstruction, hessian)
     module.weight.copy_(reconstruction)
     record = {
+        **selection_record,
         "module": module_name,
         "shape": list(target.shape),
         "parameter_count": target.numel(),
@@ -552,6 +574,10 @@ def main() -> None:
             raise ValueError("source manifest exists with different content")
     else:
         atomic_json(args.source_manifest, source_record)
+    if config['algorithm']['hybrid_s8'].get('compensation'):
+        torch.backends.cuda.matmul.allow_tf32=False
+        torch.backends.cudnn.allow_tf32=False
+        torch.set_float32_matmul_precision('highest')
     torch.manual_seed(config["seed"])
     torch.cuda.reset_peak_memory_stats()
 

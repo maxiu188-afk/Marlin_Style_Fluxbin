@@ -2,6 +2,7 @@ import importlib.util
 import json
 import tempfile
 import unittest
+import torch
 from pathlib import Path
 from unittest import mock
 
@@ -21,6 +22,36 @@ def runner():
 
 
 class Full8BTests(unittest.TestCase):
+    def test_conditioned_full_route_matches_probe_and_packed_replay(self):
+        r=runner();torch.manual_seed(31)
+        module=torch.nn.Linear(16,9,bias=False)
+        w=module.weight.detach().clone();x=torch.randn(50,16);h=x.T@x/25
+        inv=torch.linalg.inv(h+.01*torch.eye(16))
+        solver={'max_iters':3}
+        c={'algorithm':{'global_group_size':8,'hybrid_s8':{'residual_columns_per_group':2,
+            'compensation':'conditioned_fixed_indices_v1','fixed_indices_policy':'legacy_fit_on_same_target_and_hessian'}},
+            'global_solver':solver,'refinement_solver':solver}
+        cfg=r.solver_config(solver)
+        legacy=r.quantize_hybrid_two_base_obq(w,inv,group_size=8,columns_per_group=2,global_config=cfg,refinement_config=cfg)
+        fixed=legacy.decomposition.selected_indices
+        expected=r.quantize_hybrid_conditioned_v1(w,inv,fixed_indices=fixed,group_size=8,columns_per_group=2,global_config=cfg,refinement_config=cfg)
+        payload={}
+        rec=r.add_quantized_module(arm='hybrid_s8',module_name='mlp.down_proj',module=module,hessian=h,inverse_hessian=inv,config=c,payload=payload)
+        self.assertEqual(rec['legacy_selected_indices_sha256'],rec['conditioned_selected_indices_sha256'])
+        torch.testing.assert_close(payload['mlp.down_proj.refinement_indices'].long(),fixed,rtol=0,atol=0)
+        torch.testing.assert_close(module.weight,expected.decomposition.reconstruct().bfloat16().float(),rtol=0,atol=0)
+        replay=r.materialize_module(payload,'mlp.down_proj',arm='hybrid_s8',config=c,device='cpu')
+        torch.testing.assert_close(module.weight,replay.float(),rtol=0,atol=0)
+
+    def test_conditioned_gate_rejects_pure_and_missing_probe(self):
+        from types import SimpleNamespace
+        from fluxbin_style.qwen3_8b_full import validate_full_contract
+        c=json.loads((ROOT/'configs/experiments/qwen3_8b_full_hybrid_conditioned_v1.json').read_text())
+        with self.assertRaisesRegex(ValueError,'hybrid only'):
+            validate_full_contract(c,SimpleNamespace(arm='pure'))
+        with self.assertRaisesRegex(ValueError,'probe is required'):
+            validate_full_contract(c,SimpleNamespace(arm='hybrid_s8'))
+
     def test_same_resume_oracle_on_new_runner(self):
         # Reuse the established tiny-model oracle, with the 8B runner under test.
         with mock.patch.object(historical, "load_runner", runner):

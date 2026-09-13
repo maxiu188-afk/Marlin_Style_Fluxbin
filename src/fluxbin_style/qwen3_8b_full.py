@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 from typing import Any
 
@@ -53,7 +54,24 @@ def validate_suite(suite: dict[str, Any], root: Path) -> None:
 
 def validate_full_contract(config: dict[str, Any], args: Any) -> None:
     root = Path(__file__).resolve().parents[2]
-    baseline = json.loads((root / "configs/experiments/qwen3_8b_full_hessian_obq_s8_v1.json").read_text())
+    conditioned=config['algorithm']['hybrid_s8'].get('compensation') is not None
+    filename='qwen3_8b_full_hybrid_conditioned_v1.json' if conditioned else 'qwen3_8b_full_hessian_obq_s8_v1.json'
+    baseline = json.loads((root / 'configs/experiments' / filename).read_text())
+    if conditioned:
+        if args.arm!='hybrid_s8':raise ValueError('conditioned experiment is hybrid only')
+        probe_path=getattr(args,'hybrid_probe_result',None)
+        if config.get('accepted_hybrid_probe_sha256')!=baseline['accepted_hybrid_probe_sha256']:
+            raise ValueError('accepted hybrid probe hash drifted')
+        if probe_path is None or sha256_file(probe_path)!=baseline['accepted_hybrid_probe_sha256']:
+            raise ValueError('accepted hybrid probe is required')
+        probe=json.loads(probe_path.read_text())
+        if probe['status']!='completed_pending_review':raise ValueError('hybrid probe did not complete')
+        for target in probe['targets'].values():
+            for arm in target['arms'].values():
+                if not arm['hessian_direct_agreement'] or not math.isclose(arm['direct_mean_token_output_squared_error'],arm['reference_hessian_quadratic_fp64'],rel_tol=1e-4,abs_tol=1e-6):
+                    raise ValueError('hybrid probe metric agreement failed')
+        if not all(x['output_loss_reduced'] for x in probe['comparison'].values()):
+            raise ValueError('hybrid probe output loss did not improve')
     for key in ("schema_version", "seed", "model", "algorithm", "layerwise_calibration", "global_solver", "refinement_solver", "artifact_policy", "execution", "decision"):
         if config[key] != baseline[key]:
             raise ValueError(f"8B full-model contract drifted: {key}")
