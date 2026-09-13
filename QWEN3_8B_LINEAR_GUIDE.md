@@ -7,12 +7,13 @@ datasets 5.0.0、safetensors 0.8.0 及其依赖，环境约 410 MB。`pip check`
 小型 Qwen3 的 CUDA/BF16 前向测试通过。新增依赖清单见
 `infra/runpod/requirements-linear-a100-v1.lock`，服务器完整版本记录在
 `/opt/fluxbin-environment-freeze.txt`。模型和实验数据仍规划放 `/workspace`；
-尚未下载真实 8B，也未运行项目 Linear GPU 验收。
+随后已完成真实 8B 下载、预检及五个代表性 Linear 验收，结果见
+[Linear 验收表](QWEN3_8B_LINEAR_RESULTS.md)。全模型 pure/hybrid 已提交，尚未验收。
 
 服务器上运行下列 Python 命令前，用 `source /opt/fluxbin-venv/bin/activate`
 激活环境。Container disk 是临时环境，Pod 重建后需恢复；它不承担结果持久化。
 
-2026-09-13：第一部分代码已完成本地合成验证；未下载 8B、未运行真实权重或 GPU 实验。
+2026-09-13：第一部分代码及真实 Linear 验收均已完成；以下保留可复现的分步操作。
 这里的“精度”指权重重构及校准输入下的 Linear 输出误差；任务准确率和全模型 PPL 尚未覆盖。
 
 ## 当前实现

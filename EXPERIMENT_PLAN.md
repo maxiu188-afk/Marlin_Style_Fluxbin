@@ -1,8 +1,9 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
-Status (2026-09-13): local preparation of versioned 8B Linear code is underway;
-real-model execution remains paused. See `QWEN3_8B_LINEAR_GUIDE.md`.
-No model download, real-weight quantization, kernel or serving job was launched.
+Status (2026-09-13): all five representative 8B Linear gates passed on A100;
+the full-model pure/hybrid queue is submitted and pending acceptance.
+See `QWEN3_8B_LINEAR_RESULTS.md` and `CURRENT_HANDOFF.md`.
+No PPL, packed kernel or serving job was launched.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in
 [`infra/runpod/README.md`](infra/runpod/README.md). The reusable environment is

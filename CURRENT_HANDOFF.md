@@ -9,19 +9,39 @@ matched model-quality gate; only then implement and benchmark real packed
 deployment. The canonical staged contract is
 [`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md).
 
-No Qwen3-8B download, real-weight quantization, PPL, CUDA, or serving job has
-been launched. On 2026-09-13, versioned 8B snapshot preflight, C4 materialization,
-and layer-0 representative Linear runners were added. Nine new tests and all
-40 local CPU tests passed. See [QWEN3_8B_LINEAR_GUIDE.md](QWEN3_8B_LINEAR_GUIDE.md).
-The 8B full-model runner/config port is now prepared, with 45 local tests
-passing. Admission requires all five representative Linear acceptance records
-and exact artifact hashes. GPU Linear acceptance is in progress; no full-model
-claim follows from the local tests. The 8B PPL port remains pending.
+As of 2026-09-13, the pinned Qwen3-8B snapshot and new C4 calibration artifact
+have passed preflight. All five layer-0 representative Linears passed independent
+review on RunPod A100-SXM4-80GB; see [QWEN3_8B_LINEAR_RESULTS.md](QWEN3_8B_LINEAR_RESULTS.md).
+All 45 tests passed locally and on the server. The 8B full-model pure/hybrid
+quantization queue has been submitted from clean revision
+`d8a2eff231dee7f0f4c4822179685672d60e10f9`. PPL and serving were not launched.
+
+Last bounded startup check: pure PID `5199` was executing layer 0 on the GPU;
+hybrid-s8 is queued after pure exits successfully. Neither full-model arm is
+accepted yet. The user requested monitoring through full-model submission;
+that monitoring boundary has been reached. No automatic PPL/backend follow-up.
+
+- Server checkout: `/workspace/repos/marlin-style-fluxbin`.
+- tmux session: `qwen3-8b-full-v1`.
+- Job state/logs: `/workspace/jobs/qwen3-8b-full-v1/` (`status.json`,
+  `pure.log`, `hybrid_s8.log`, per-arm PID/exit-code and source manifests).
+- Resolved input config/suite: checkout `results/qwen3-8b-linear-v1/full.config.json`
+  and `linear-suite.json`.
+- Full-model result directory: checkout `results/qwen3-8b-full-hessian-obq-s8-v1/`.
+- Full-model payloads: checkout `artifacts/qwen3-8b-full-hessian-obq-s8-v1/`,
+  separate `pure` and `hybrid_s8` directories.
+- Keep the running checkout on the pinned clean revision: the queue checks it
+  before each arm. Documentation updates after submission are not synced into
+  the active checkout.
+
+See [QWEN3_8B_LINEAR_GUIDE.md](QWEN3_8B_LINEAR_GUIDE.md) for the input/algorithm
+contract. The 8B PPL port remains pending.
 
 The user changed the environment route: use an existing RunPod PyTorch/CUDA
 template first, inspect its installed packages, and add only necessary missing
 dependencies. A custom image is no longer a prerequisite for initial checks.
-No new server was provisioned by this local preparation.
+The user provisioned the A100 Pod; the environment is installed on container
+disk at `/opt/fluxbin-venv`, while model/data/artifacts stay on `/workspace`.
 
 RunPod reconstruction is addressed by the versioned bootstrap image and
 persistent-storage contract in [`infra/runpod/README.md`](infra/runpod/README.md).

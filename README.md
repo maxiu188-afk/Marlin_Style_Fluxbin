@@ -1,7 +1,9 @@
 # Marlin-Style FluxBin
 
-2026-09-13: initial 8B Linear precision code and local tests are ready; real GPU
-validation is pending. Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md).
+2026-09-13: all five representative 8B Linear gates passed on A100 80GB;
+[accepted results](QWEN3_8B_LINEAR_RESULTS.md). Full-model pure/hybrid quantization
+is now submitted and pending acceptance; see [CURRENT_HANDOFF.md](CURRENT_HANDOFF.md).
+Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
 Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
 custom image construction is deferred.
 
@@ -12,9 +14,9 @@ deployment. The completed Qwen3-32B work remains historical algorithm-quality
 evidence and a source of operator-only stress shapes; it is no longer the active
 full-model target.
 
-The approved staged plan is [`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md). No new
-download, quantization, accuracy, kernel, or serving job has been launched by
-the planning update.
+The approved staged plan is [`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md). The
+initial planning update did not launch jobs; subsequent 8B execution status is
+recorded above and in the handoff.
 
 The reusable RunPod image, Network Volume, Template, and cache layout are
 specified in [`infra/runpod/README.md`](infra/runpod/README.md).
