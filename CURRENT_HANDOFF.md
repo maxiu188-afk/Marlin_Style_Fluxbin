@@ -26,6 +26,13 @@ blocked under the frozen >10% rule. See `QWEN3_8B_PPL_RESULTS.md` for review
 checks, source hashes and limitations. Further work requires an algorithm-quality
 diagnosis/improvement plan; no backend or distillation was launched.
 
+Offline diagnosis now confirms a sequential OBQ conditioning defect shared by
+8B/32B: group updates reuse slices of the original inverse Hessian without
+conditioning on fixed groups. A CPU quadratic counterexample fails the optimum
+invariant. Its full-model PPL impact is not measured and the code is not yet
+fixed. See `QWEN3_8B_PPL_DIAGNOSIS.md`; preserve old artifacts and isolate this
+repair before varying calibration or within-layer ordering.
+
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
 was refused by existing-output protection; payloads/results were unchanged,
