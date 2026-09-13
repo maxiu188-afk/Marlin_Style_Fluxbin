@@ -27,6 +27,15 @@ def validate_probe_config(config):
         raise ValueError('unknown or modified frozen probe config')
 
 
+def load_probe_tokens(path,config):
+    stored=load_file(path)
+    if set(stored)!={'token_ids'}:raise ValueError('C4 calibration must contain token_ids only')
+    tokens=stored['token_ids']
+    if list(tokens.shape)!=config['token_shape'] or tokens.dtype!=torch.int32 or torch.any(tokens<0):
+        raise ValueError('token contract drift')
+    return tokens
+
+
 def payload_of(result):
     d=result.decomposition; g=d.global_decomposition; s=d.refinement_decomposition
     return {k:v.detach().cpu().contiguous() for k,v in {
@@ -79,8 +88,7 @@ def main():
         if sha256_file(args.snapshot_root/name)!=digest:raise ValueError(f'model file drift: {name}')
     for filename,key in [('manifest.json','calibration_manifest_sha256'),('tokens.safetensors','calibration_tokens_sha256')]:
         if sha256_file(args.calibration_dir/filename)!=c[key]:raise ValueError('calibration drift')
-    tokens=load_file(args.calibration_dir/'tokens.safetensors')['tokens']
-    if list(tokens.shape)!=c['token_shape'] or tokens.dtype!=torch.int32:raise ValueError('token contract drift')
+    tokens=load_probe_tokens(args.calibration_dir/'tokens.safetensors',c)
     device=validate_runtime(c)
     print('PROBE_PREFLIGHT=passed',flush=True)
     if not args.execute:return

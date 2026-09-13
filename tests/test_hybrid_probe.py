@@ -2,6 +2,8 @@ import json
 import copy
 import sys
 import unittest
+import tempfile
+from safetensors.torch import save_file
 from pathlib import Path
 import torch
 from fluxbin_style import quantize_hybrid_two_base_obq,TwoBaseRankOneOptimizationConfig,materialize_hybrid_s8_weight
@@ -11,6 +13,16 @@ sys.path.pop(0)
 
 
 class ProbeTests(unittest.TestCase):
+    def test_c4_token_ids_schema_not_ppl_tokens_schema(self):
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'tokens.safetensors';tokens=torch.zeros(2,3,dtype=torch.int32)
+            save_file({'token_ids':tokens},p)
+            torch.testing.assert_close(probe.load_probe_tokens(p,{'token_shape':[2,3]}),tokens)
+            save_file({'tokens':tokens},p)
+            with self.assertRaises(ValueError):probe.load_probe_tokens(p,{'token_shape':[2,3]})
+            save_file({'token_ids':tokens.long()},p)
+            with self.assertRaises(ValueError):probe.load_probe_tokens(p,{'token_shape':[2,3]})
+
     def test_frozen_runtime_variants(self):
         base=json.loads(probe.CONFIG.read_text());pcie=json.loads(probe.PCIE_CONFIG.read_text())
         probe.validate_probe_config(base);probe.validate_probe_config(pcie)
