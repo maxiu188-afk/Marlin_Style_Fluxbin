@@ -63,18 +63,18 @@ these targets, not a measured full-model PPL improvement. All 57 local/server
 tests pass. Small evidence and independent acceptance are archived locally in
 `server_results/runpod_hybrid_pcie_2026-09-13/fp64/`; old failure is preserved.
 See `QWEN3_8B_HYBRID_PROBE_GUIDE.md`. The user then authorized continuing:
-conditioned hybrid full-model quantization is now submitted in tmux
-`qwen3-8b-hybrid-conditioned-v1` on the PCIe server, initial PID 1698, clean source
-`e5f3861c22cd99bbba5cf4bb7bfdf7df3b183de5`. All 59 local/server tests pass.
-Runtime/input preflight passed; the bounded startup check confirmed layer 0
-was atomically committed and propagated (1/36, 50.492 s for the first layer).
-The new route obtains indices from a legacy fit on the same current W/H, then
-uses conditioned compensation with those fixed indices. It preserves the
-layerwise schedule, calibration and solver budget. New artifacts/results use
-`qwen3-8b-full-hybrid-conditioned-v1`; old artifacts remain unchanged.
-See `QWEN3_8B_CONDITIONED_FULL_GUIDE.md` for status/log paths and separate cancel
-instructions. Preserve the remote source during execution. No PPL/backend or
-distillation auto-launch; full weights require review first.
+conditioned hybrid full-model quantization has now passed artifact/reconstruction
+acceptance on the PCIe server. All 36 layers / 252 Linears / 6,945,767,424
+parameters completed, exit 0, 1960.51 seconds, clean execution source
+`e5f3861c22cd99bbba5cf4bb7bfdf7df3b183de5`. Independent CPU audit checked all
+1,764 payload tensors and 252 reconstructions; maximum relative SSE discrepancy
+3.2879e-16. Every saved selected-index hash matches both legacy and conditioned
+metadata. Logs are intact. Weight SSE is 693294.065948 (8.76% above old hybrid),
+which does not establish PPL quality. Full-model Hessians were not independently
+replayed. PPL remains pending; no PPL/distillation/backend task launched.
+See `QWEN3_8B_CONDITIONED_FULL_RESULTS.md` for hashes and evidence, and
+`QWEN3_8B_CONDITIONED_FULL_GUIDE.md` for paths. Small evidence is backed up under
+`server_results/runpod_hybrid_pcie_2026-09-13/full-conditioned/`.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch

@@ -8,6 +8,9 @@ artifacts now pass integrity/reconstruction review with notes; see
 but quality fails: BF16 **9.724945**, pure **1149.470625**, hybrid **16.142104**.
 Hybrid is **65.9866% above BF16**, so deployment is blocked. See
 [PPL acceptance](QWEN3_8B_PPL_RESULTS.md).
+The conditioned hybrid repair now passes full-model artifact/reconstruction
+review (36 layers / 252 Linears); its PPL remains pending. See
+[conditioned full-model acceptance](QWEN3_8B_CONDITIONED_FULL_RESULTS.md).
 Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
 Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
 custom image construction is deferred.

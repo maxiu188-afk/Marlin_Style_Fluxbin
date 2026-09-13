@@ -45,8 +45,8 @@
   `results/qwen3-8b-full-hybrid-conditioned-v1/{full.config.json,hybrid_s8.json}`。
 - 启动记录：`/workspace/jobs/qwen3-8b-hybrid-conditioned-v1.launch.json`。
 
-启动检查已确认输入预检通过，layer 0 原子保存并完成传播（1/36，首层 50.492 秒）。
-任务仍在运行，尚未宣称全模型完成。
+任务已完成并通过完整性/重构验收：36/36 层，252 个 Linear，退出码 0。
+详见 [验收结果](QWEN3_8B_CONDITIONED_FULL_RESULTS.md)。PPL 尚未运行。
 执行期间保持远端代码版本不变。每层完成会输出 `FLUXBIN_FULL_LAYER_COMPLETE`。
 
 以下命令均在服务器执行。只读查看日志：
@@ -55,11 +55,10 @@
 tail -n 30 /workspace/jobs/qwen3-8b-hybrid-conditioned-v1/hybrid.log
 ```
 
-查看任务是否仍在运行：
+以下 PID 仅为历史记录；任务已结束，不再用它控制进程。历史查看命令：
 
 ```bash
 ps -p 1698 -o pid,etime,stat,args
 ```
 
-仅需要停止时使用：先确认上述 PID 仍对应本次任务，再单独执行 `kill -TERM 1698`。
-取消命令不要与查看命令一起粘贴。停止后保留已完成层，恢复前先核对源代码和配置哈希。
+任务已结束，无需执行取消命令。
