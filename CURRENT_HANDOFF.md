@@ -86,13 +86,20 @@ See `QWEN3_8B_CONDITIONED_FULL_RESULTS.md` for hashes and evidence, and
 `QWEN3_8B_CONDITIONED_FULL_GUIDE.md` for paths. Small evidence is backed up under
 `server_results/runpod_hybrid_pcie_2026-09-13/full-conditioned/`.
 
-The user now requests distillation preparation, following QBB-New token-logit
-and per-layer feature losses. Prepared scale-only packed HybridScaleLinear and
-CE + mean block-output MSE with fixed initial component normalizers; symbols
-and selected indices remain frozen. Candidate sample200/400-step config binds
-the accepted conditioned parent. Local 64 tests pass. No data generation,
-GPU smoke, training, or full training entry point yet. Integration requirements
-are explicit in `QWEN3_8B_DISTILLATION_PREPARATION.md`.
+QBB-New style scale-only distillation is now integrated: hard next-token CE +
+mean post-block feature MSE, each divided by its fixed initial training value.
+The complete sample200 generation/filter/validation/train/export runner passed
+65 local/server tests. GPU smoke passed on A100 PCIe: all 252 initial BF16
+reconstructions exact, all 1008 scales updated, frozen signs/indices unchanged,
+no teacher gradients, peak allocated 26.28 GiB across tested shapes.
+Formal task `qwen3-8b-distill-train-v1` is submitted, initial PID 2839, clean
+source `8b4aa4ac012d06d900bf34ee00701e1a052b0889`, same as smoke. Startup check
+confirmed running; preflight precedes 400 candidates/200 retained + 100 separate
+validation sequences and 400 training steps. WT2 validation only, no test or
+backend auto-launch. Logs/results under `/workspace/jobs/qwen3-8b-distill-train-v1/`.
+Preserve remote source while running. No intermediate checkpoints/automatic resume;
+final full packed payloads and optimizer/scheduler/RNG state are exported separately.
+See `QWEN3_8B_DISTILLATION_PREPARATION.md` for exact status/log/cancel commands.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
