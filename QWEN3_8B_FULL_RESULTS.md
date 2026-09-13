@@ -5,7 +5,8 @@ Review status: **accepted_with_notes** (artifact integrity and weight reconstruc
 2026-09-13, RunPod NVIDIA A100-SXM4-80GB. Both pure and hybrid-s8 completed
 36 layers / 252 transformer-block Linears / 6,945,767,424 weight elements per
 arm. This accepts the quantization artifacts and weight reconstruction only.
-Matched BF16/pure/hybrid WikiText-2 PPL remains pending; no packed CUDA,
+Matched BF16/pure/hybrid WikiText-2 PPL subsequently completed with accepted
+execution but failed quality for both quantized arms (see `QWEN3_8B_PPL_RESULTS.md`); no packed CUDA,
 end-to-end inference, or serving performance was measured.
 
 ## Results
@@ -107,8 +108,9 @@ Remote results live in `results/qwen3-8b-full-hessian-obq-s8-v1/` and payloads i
 `artifacts/qwen3-8b-full-hessian-obq-s8-v1/`, relative to the remote checkout.
 
 Subsequent update: the matched 8B BF16/pure/hybrid WikiText-2 evaluation has
-been ported, tested and submitted separately; see `QWEN3_8B_PPL_GUIDE.md`.
-Results remain pending review. Deployment requires the frozen quality gate
+completed and passed execution review; both quantized arms failed quality,
+with hybrid 65.9866% above BF16. See `QWEN3_8B_PPL_RESULTS.md`.
+Deployment requires the frozen quality gate
 (relative PPL gap to matched BF16 <= 5%; > 10% blocks deployment).
 
 - Audit source SHA-256: `126e21fab6d6f42acb53e532d3b16e437fcbe3bfe851963e50bfaaf9a4339cf4`.

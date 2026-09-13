@@ -1,6 +1,8 @@
 # Qwen3-8B matched PPL evaluation
 
-2026-09-13：已提交至 RunPod A100-SXM4-80GB，结果待验收。
+2026-09-13：RunPod A100-SXM4-80GB 运行结束，执行验收通过，两组量化方案均未通过质量门槛。
+BF16 / pure / hybrid PPL：9.724945 / 1149.470625 / 16.142104。
+见[验收报告](QWEN3_8B_PPL_RESULTS.md)。
 执行代码：`e45462aa155aeeedf72f98080a03f74852bc9120`。
 本地与服务器各通过 48 项单元测试；本地测试不构成 CUDA 数值验证。
 
@@ -22,9 +24,9 @@ Token 文件 SHA-256：`252938697260d7f7241f26a05b9822c1a2fd5e9ae0168a87e0d5345d
 协议 manifest SHA-256：`8b61cbeaba8809b94bc6b7568cb45ede0d941d046c812f57f3156163e42069ae`。
 完整冻结字段位于 `configs/evaluation/qwen3_8b_wikitext2_full_hessian_obq_s8_v1.json`。
 
-## 已提交任务
+## 已完成任务
 
-- tmux：`qwen3-8b-ppl-v1`；初始计算 PID：`6391`。
+- 原 tmux：`qwen3-8b-ppl-v1`；历史 PID：`6391`（已结束，不用于取消操作）。
 - Job 目录：`/workspace/jobs/qwen3-8b-ppl-v1/`。
 - 日志：Job 目录的 `ppl.log`，每 10 个块输出进度。
 - 任务状态：`status.json`；结束后生成 `exit-code`。
@@ -33,9 +35,8 @@ Token 文件 SHA-256：`252938697260d7f7241f26a05b9822c1a2fd5e9ae0168a87e0d5345d
 - 每完成一组写入 `result.progress.json`，含计分指标、来源哈希与量化覆盖记录。
 - 模型与 token 已在服务器；环境复用 `/opt/fluxbin-venv`，未新增依赖。
 
-任务由 tmux 持久运行，SSH 断开不影响执行。此处为提交记录，最终 PPL 与质量
-结论仍需核验结构化结果、计分数、有限性、来源哈希及量化覆盖。执行期间不要更新
-服务器代码。完成本轮启动检查后不持续轮询。
+任务已结束，退出码为 0。独立 `acceptance.json` 记录执行有效、质量失败。
+既定协议、计分数、有限性、来源哈希和覆盖记录已复核；未重跑前向或逐 token logits。
 
 在已连接服务器的终端查看状态：
 
@@ -49,5 +50,4 @@ cat /workspace/jobs/qwen3-8b-ppl-v1/status.json
 tail -n 30 /workspace/jobs/qwen3-8b-ppl-v1/ppl.log
 ```
 
-仅在明确需要取消时，单独执行 `kill 6391`。先核实 PID 仍属于本任务，
-避免任务已结束后 PID 被复用；此命令不会与查看命令放在同一代码块。
+任务已经结束，无需取消；不要对历史 PID 执行停止命令。

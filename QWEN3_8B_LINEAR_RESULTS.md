@@ -57,4 +57,6 @@ copied back to the Mac.
 
 Full-model pure/hybrid quantization (36 layers and 252 Linears per arm) has
 subsequently passed artifact integrity/reconstruction review with notes; see
-[full-model results](QWEN3_8B_FULL_RESULTS.md). PPL and deployment remain gated.
+[full-model results](QWEN3_8B_FULL_RESULTS.md). Subsequent matched PPL execution
+was accepted but both quantized arms failed quality; deployment remains blocked.
+See [PPL results](QWEN3_8B_PPL_RESULTS.md).

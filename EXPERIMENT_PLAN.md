@@ -3,8 +3,11 @@
 Status (2026-09-13): all five representative 8B Linear gates passed on A100;
 full-model pure/hybrid artifacts are accepted with notes for integrity and
 weight reconstruction. Hybrid improves aggregate SSE by 12.4301%, with 249/252
-Linears improving and three local regressions retained. Matched PPL has been
-submitted on A100; model quality remains pending review.
+Linears improving and three local regressions retained. Matched PPL execution
+on A100 is accepted; both quantized arms fail quality. BF16/pure/hybrid PPL:
+9.724945 / 1149.470625 / 16.142104. Hybrid is 65.9866% above BF16. Deployment
+is blocked; further work returns to algorithm-quality diagnosis/planning.
+See `QWEN3_8B_PPL_RESULTS.md`.
 See `QWEN3_8B_FULL_RESULTS.md` and `CURRENT_HANDOFF.md`.
 PPL source: `e45462aa155aeeedf72f98080a03f74852bc9120`; see `QWEN3_8B_PPL_GUIDE.md`.
 No packed kernel or serving job was launched.
