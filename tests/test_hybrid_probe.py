@@ -13,6 +13,22 @@ sys.path.pop(0)
 
 
 class ProbeTests(unittest.TestCase):
+    def test_reference_quadratic_matches_direct_with_correlated_inputs(self):
+        torch.manual_seed(23)
+        x=torch.randn(512,1).repeat(1,32)+torch.randn(512,32)*1e-3
+        w=torch.randn(7,32);w-=w.mean(dim=1,keepdim=True)
+        q=torch.zeros_like(w)
+        ref=probe.ReferenceHessian(32,'cpu')
+        for chunk in x.split(17):ref.add(chunk)
+        expected=float((x.double()@w.double().T).square().sum()/len(x))
+        actual=probe.reference_quadratic(w,q,ref.value())
+        self.assertAlmostEqual(actual,expected,places=11)
+        old=probe.InputHessianAccumulator(32)
+        for chunk in x.split(17):old.add(chunk)
+        old_loss=probe.reconstruction_metrics(w,q,old.value())['calibration_total_output_squared_error']
+        self.assertGreater(abs(old_loss-expected)/expected,1e-4)
+        self.assertEqual(ref.rows,len(x))
+
     def test_c4_token_ids_schema_not_ppl_tokens_schema(self):
         with tempfile.TemporaryDirectory() as d:
             p=Path(d)/'tokens.safetensors';tokens=torch.zeros(2,3,dtype=torch.int32)

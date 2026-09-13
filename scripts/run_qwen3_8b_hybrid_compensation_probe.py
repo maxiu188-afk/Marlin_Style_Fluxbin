@@ -36,6 +36,28 @@ def load_probe_tokens(path,config):
     return tokens
 
 
+class ReferenceHessian:
+    """FP64 evaluation-only Gram sum; never used by fitting or column selection."""
+    def __init__(self, in_features, device):
+        self.total=torch.zeros((in_features,in_features),dtype=torch.float64,device=device)
+        self.rows=0
+
+    def add(self,x):
+        x=x.detach().reshape(-1,self.total.shape[0]).double()
+        self.total.addmm_(x.T,x)
+        self.rows+=x.shape[0]
+
+    def value(self):
+        if not self.rows:raise ValueError('empty reference Hessian')
+        return self.total*(2.0/self.rows)
+
+
+def reference_quadratic(target,reconstruction,hessian):
+    # Cast BEFORE subtraction/matmul, not just during the final reduction.
+    error=target.double()-reconstruction.double()
+    return float(0.5*((error@hessian.double())*error).sum())
+
+
 def payload_of(result):
     d=result.decomposition; g=d.global_decomposition; s=d.refinement_decomposition
     return {k:v.detach().cpu().contiguous() for k,v in {
@@ -107,15 +129,20 @@ def main():
     # JSON writers may sort keys: explicit target order must put the terminal hook last.
     groups={name:groups[name] for name in ('model.layers.1.mlp.gate_proj','model.layers.6.mlp.down_proj')}
     accum={name:InputHessianAccumulator(model.get_submodule(name).in_features,device=device) for name in groups}
-    trace=walk_prefix(model,tokens,groups,lambda n,x:accum[n].add(x),device)
+    reference={name:ReferenceHessian(model.get_submodule(name).in_features,device) for name in groups}
+    def capture(name,x):
+        accum[name].add(x)
+        reference[name].add(x)
+    trace=walk_prefix(model,tokens,groups,capture,device)
     if any(n!=256*2048 for n in trace['rows'].values()):raise ValueError('capture count drift')
     records={}; reconstructions={}
     for group,targets in groups.items():
+        h_reference=reference.pop(group).value()
         h=accum.pop(group).value(); inverse=invert_hessian(h,damp_percent=c['damp_percent']).inverse
         for target in targets:
             print(f'FIT_TARGET={target}',flush=True)
             w=model.get_submodule(target).weight.detach(); fixed=None
-            records[target]={'target_bf16_sha256':tensor_sha256(w),'hessian_sha256':tensor_sha256(h),'arms':{}}
+            records[target]={'target_bf16_sha256':tensor_sha256(w),'hessian_sha256':tensor_sha256(h),'reference_hessian_sha256':tensor_sha256(h_reference),'arms':{}}
             reconstructions[target]={}
             for arm in c['arms']:
                 kwargs=dict(group_size=c['group_size'],columns_per_group=c['columns_per_group'],global_config=TwoBaseRankOneOptimizationConfig(**c['global_solver']),refinement_config=TwoBaseRankOneOptimizationConfig(**c['refinement_solver']))
@@ -131,10 +158,12 @@ def main():
                 if not torch.equal(stored['refinement_indices'].long().to(device),fixed):raise ValueError('selected columns changed')
                 q=materialize_hybrid_s8_weight(**stored,group_size=c['group_size'],columns_per_group=c['columns_per_group'],device=device,output_dtype=torch.bfloat16)
                 rec={'metrics':reconstruction_metrics(w.float(),q,h),'payload_sha256':sha256_file(path),'indices_sha256':tensor_sha256(stored['refinement_indices']),'elapsed_seconds':time.monotonic()-t,'peak_allocated_bytes':torch.cuda.max_memory_allocated()}
+                rec['fp32_hessian_quadratic_fp64']=reference_quadratic(w,q,h)
+                rec['reference_hessian_quadratic_fp64']=reference_quadratic(w,q,h_reference)
                 records[target]['arms'][arm]=rec;reconstructions[target][arm]=q.cpu()
                 del fit,q,tensors,stored
             del fixed
-        del h,inverse
+        del h,inverse,h_reference
         torch.cuda.empty_cache()
     atomic_json(args.output_dir/'fits.json',{'input_trace':trace,'targets':records})
     totals={target:{arm:[] for arm in c['arms']} for target in records}
@@ -150,7 +179,7 @@ def main():
     for target in records:
         for arm in c['arms']:
             direct_loss=math.fsum(totals[target][arm])/(256*2048)
-            rec=records[target]['arms'][arm]; expected=rec['metrics']['calibration_total_output_squared_error']
+            rec=records[target]['arms'][arm]; expected=rec['reference_hessian_quadratic_fp64']
             agreement=math.isfinite(direct_loss) and math.isclose(direct_loss,expected,rel_tol=c['output_loss_relative_tolerance'],abs_tol=c['output_loss_absolute_tolerance'])
             rec.update(direct_mean_token_output_squared_error=direct_loss,hessian_direct_agreement=agreement)
             valid=valid and agreement
@@ -158,7 +187,7 @@ def main():
         new=records[target]['arms']['conditioned_fixed_indices']['direct_mean_token_output_squared_error']
         decisions[target]={'output_loss_reduced':new<old,'relative_output_loss_change':(new-old)/old if old else None}
     if source_hashes!={str(x.relative_to(ROOT)):sha256_file(x) for x in sources}:raise ValueError('source changed during run')
-    atomic_json(args.output_dir/'result.json',{'status':'completed_pending_review' if valid else 'failed_metric_agreement','config_sha256':sha256_file(args.config),'input_policy':c['input_policy'],'input_trace':trace,'source_files_sha256':source_hashes,'targets':records,'comparison':decisions,'elapsed_seconds':time.monotonic()-started,'full_model_auto_launch':False,'distillation_auto_launch':False})
+    atomic_json(args.output_dir/'result.json',{'metric_policy':'fp64_reference_hessian_and_quadratic; unchanged_fp32_fitting_and_direct_loss','status':'completed_pending_review' if valid else 'failed_metric_agreement','config_sha256':sha256_file(args.config),'input_policy':c['input_policy'],'input_trace':trace,'source_files_sha256':source_hashes,'targets':records,'comparison':decisions,'elapsed_seconds':time.monotonic()-started,'full_model_auto_launch':False,'distillation_auto_launch':False})
     print('PROBE_COMPLETE; manual review required',flush=True)
     if not valid:raise SystemExit(1)
 
