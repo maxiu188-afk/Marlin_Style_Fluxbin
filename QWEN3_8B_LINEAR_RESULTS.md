@@ -55,6 +55,6 @@ Server files are under the checkout's `results/qwen3-8b-linear-v1/` and
 are retained under `server_results/runpod_qwen3_8b_2026-09-13/`; weights were not
 copied back to the Mac.
 
-The next stage is separately submitted full-model pure/hybrid quantization,
-36 layers and 252 Linears per arm. PPL and deployment remain gated and do not
-automatically start.
+Full-model pure/hybrid quantization (36 layers and 252 Linears per arm) has
+subsequently passed artifact integrity/reconstruction review with notes; see
+[full-model results](QWEN3_8B_FULL_RESULTS.md). PPL and deployment remain gated.

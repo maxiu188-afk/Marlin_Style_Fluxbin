@@ -8,7 +8,8 @@ datasets 5.0.0、safetensors 0.8.0 及其依赖，环境约 410 MB。`pip check`
 `infra/runpod/requirements-linear-a100-v1.lock`，服务器完整版本记录在
 `/opt/fluxbin-environment-freeze.txt`。模型和实验数据仍规划放 `/workspace`；
 随后已完成真实 8B 下载、预检及五个代表性 Linear 验收，结果见
-[Linear 验收表](QWEN3_8B_LINEAR_RESULTS.md)。全模型 pure/hybrid 已提交，尚未验收。
+[Linear 验收表](QWEN3_8B_LINEAR_RESULTS.md)。全模型 pure/hybrid 的产物完整性与权重重建已带备注验收，
+见[全模型验收报告](QWEN3_8B_FULL_RESULTS.md)；PPL 尚未运行。
 
 服务器上运行下列 Python 命令前，用 `source /opt/fluxbin-venv/bin/activate`
 激活环境。Container disk 是临时环境，Pod 重建后需恢复；它不承担结果持久化。

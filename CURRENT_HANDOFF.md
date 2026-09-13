@@ -12,17 +12,27 @@ deployment. The canonical staged contract is
 As of 2026-09-13, the pinned Qwen3-8B snapshot and new C4 calibration artifact
 have passed preflight. All five layer-0 representative Linears passed independent
 review on RunPod A100-SXM4-80GB; see [QWEN3_8B_LINEAR_RESULTS.md](QWEN3_8B_LINEAR_RESULTS.md).
-All 45 tests passed locally and on the server. The 8B full-model pure/hybrid
-quantization queue has been submitted from clean revision
-`d8a2eff231dee7f0f4c4822179685672d60e10f9`. PPL and serving were not launched.
+All 45 tests passed locally and on the server before submission. Full-model
+pure/hybrid artifacts from clean revision
+`d8a2eff231dee7f0f4c4822179685672d60e10f9` are now **accepted_with_notes**
+for integrity and weight reconstruction; see [QWEN3_8B_FULL_RESULTS.md](QWEN3_8B_FULL_RESULTS.md).
+Both arms contain 36 layers / 252 Linears. Independent CPU replay covered all
+504 targets; maximum relative SSE discrepancy was 3.2544e-16. Hybrid aggregate
+weight SSE is 12.4301% lower; 249/252 targets improve, with three small o_proj
+regressions recorded. Matched PPL and deployment remain untested and unlaunched.
 
-Last bounded startup check: pure PID `5199` was executing layer 0 on the GPU;
-hybrid-s8 is queued after pure exits successfully. Neither full-model arm is
-accepted yet. The user requested monitoring through full-model submission;
-that monitoring boundary has been reached. No automatic PPL/backend follow-up.
+Review caveat: importing an audit from the job directory accidentally loaded
+job-local `queue.py` in place of the standard library. A duplicate pure launch
+was refused by existing-output protection; payloads/results were unchanged,
+but the pure log/PID/exit code and queue status now describe that failed retry.
+Use `results/qwen3-8b-full-hessian-obq-s8-v1/acceptance.json` as the authoritative
+review record, not the overwritten queue status. Audit scripts must use the
+isolated `runpy` entry from the repository root. The original pure log is lost;
+this limitation and the provisional audit's overly strict all-tensor improvement
+assertion are preserved in the review record. No job remains running.
 
 - Server checkout: `/workspace/repos/marlin-style-fluxbin`.
-- tmux session: `qwen3-8b-full-v1`.
+- Original tmux session: `qwen3-8b-full-v1` (finished).
 - Job state/logs: `/workspace/jobs/qwen3-8b-full-v1/` (`status.json`,
   `pure.log`, `hybrid_s8.log`, per-arm PID/exit-code and source manifests).
 - Resolved input config/suite: checkout `results/qwen3-8b-linear-v1/full.config.json`
@@ -30,9 +40,10 @@ that monitoring boundary has been reached. No automatic PPL/backend follow-up.
 - Full-model result directory: checkout `results/qwen3-8b-full-hessian-obq-s8-v1/`.
 - Full-model payloads: checkout `artifacts/qwen3-8b-full-hessian-obq-s8-v1/`,
   separate `pure` and `hybrid_s8` directories.
-- Keep the running checkout on the pinned clean revision: the queue checks it
-  before each arm. Documentation updates after submission are not synced into
-  the active checkout.
+- Remote checkout remains on the pinned clean execution revision; later
+  documentation updates have not been synced there.
+- Private local archive: `server_results/runpod_qwen3_8b_2026-09-13/`;
+  full acceptance metadata, audit source and portable manifest retained, no weights downloaded.
 
 See [QWEN3_8B_LINEAR_GUIDE.md](QWEN3_8B_LINEAR_GUIDE.md) for the input/algorithm
 contract. The 8B PPL port remains pending.
@@ -48,13 +59,14 @@ persistent-storage contract in [`infra/runpod/README.md`](infra/runpod/README.md
 The intended lifecycle is terminate compute, retain the Network Volume, and
 recreate a Pod from the same Template and immutable image.
 
-RunPod provisioning is paused. GitHub Actions run
+Custom-image provisioning remains deferred. GitHub Actions run
 [`34681093330`](https://github.com/maxiu188-afk/Marlin_Style_Fluxbin/actions/runs/34681093330)
 at commit `e041f77c8edf5c2ce095c18ec003e66582039e83` failed inside the
 `Build and push linux/amd64 image` step because the hosted runner reported
 `No space left on device`. The digest-recording step never ran, so no image is
-accepted or referenced by digest. No RunPod Network Volume, Template, or Pod
-was created. The workflow now requires manual dispatch and must remain idle
+accepted or referenced by digest. That workflow created no RunPod resources;
+the current A100 Pod was provisioned separately by the user. The workflow now
+requires manual dispatch and must remain idle
 until a build-space strategy is approved.
 
 The assignment-overhead repair, complete Qwen3-32B v3 full-model

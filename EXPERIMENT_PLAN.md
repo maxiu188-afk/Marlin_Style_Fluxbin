@@ -1,8 +1,10 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
 Status (2026-09-13): all five representative 8B Linear gates passed on A100;
-the full-model pure/hybrid queue is submitted and pending acceptance.
-See `QWEN3_8B_LINEAR_RESULTS.md` and `CURRENT_HANDOFF.md`.
+full-model pure/hybrid artifacts are accepted with notes for integrity and
+weight reconstruction. Hybrid improves aggregate SSE by 12.4301%, with 249/252
+Linears improving and three local regressions retained. Model quality is pending.
+See `QWEN3_8B_FULL_RESULTS.md` and `CURRENT_HANDOFF.md`.
 No PPL, packed kernel or serving job was launched.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in

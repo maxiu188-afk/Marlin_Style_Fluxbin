@@ -2,7 +2,9 @@
 
 2026-09-13: all five representative 8B Linear gates passed on A100 80GB;
 [accepted results](QWEN3_8B_LINEAR_RESULTS.md). Full-model pure/hybrid quantization
-is now submitted and pending acceptance; see [CURRENT_HANDOFF.md](CURRENT_HANDOFF.md).
+artifacts now pass integrity/reconstruction review with notes; see
+[full-model results](QWEN3_8B_FULL_RESULTS.md). Hybrid weight SSE improves
+12.4301% overall (249/252 Linears improve); PPL quality remains untested.
 Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
 Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
 custom image construction is deferred.
@@ -21,11 +23,11 @@ recorded above and in the handoff.
 The reusable RunPod image, Network Volume, Template, and cache layout are
 specified in [`infra/runpod/README.md`](infra/runpod/README.md).
 
-RunPod provisioning is currently paused. GitHub Actions run `34681093330`
+Custom-image provisioning remains deferred. GitHub Actions run `34681093330`
 failed during image build/push because the hosted runner exhausted its disk;
-no image digest was accepted, and no RunPod Volume, Template, or Pod was
-created. The workflow is manual-dispatch only until the build-space problem is
-addressed.
+no custom image digest was accepted, and that workflow created no RunPod
+resources. The current A100 Pod was provisioned separately by the user from an
+existing template. The image workflow remains manual-dispatch only.
 
 ## Historical accepted Qwen3-32B result
 
