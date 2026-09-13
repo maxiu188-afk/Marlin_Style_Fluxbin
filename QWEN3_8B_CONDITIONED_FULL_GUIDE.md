@@ -45,7 +45,8 @@
   `results/qwen3-8b-full-hybrid-conditioned-v1/{full.config.json,hybrid_s8.json}`。
 - 启动记录：`/workspace/jobs/qwen3-8b-hybrid-conditioned-v1.launch.json`。
 
-提交时已确认 tmux 存在、PID 已记录，输入预检正在执行，尚未宣称全模型完成。
+启动检查已确认输入预检通过，layer 0 原子保存并完成传播（1/36，首层 50.492 秒）。
+任务仍在运行，尚未宣称全模型完成。
 执行期间保持远端代码版本不变。每层完成会输出 `FLUXBIN_FULL_LAYER_COMPLETE`。
 
 以下命令均在服务器执行。只读查看日志：

@@ -66,7 +66,8 @@ See `QWEN3_8B_HYBRID_PROBE_GUIDE.md`. The user then authorized continuing:
 conditioned hybrid full-model quantization is now submitted in tmux
 `qwen3-8b-hybrid-conditioned-v1` on the PCIe server, initial PID 1698, clean source
 `e5f3861c22cd99bbba5cf4bb7bfdf7df3b183de5`. All 59 local/server tests pass.
-The runtime identity check passed; full input preflight is running before fitting.
+Runtime/input preflight passed; the bounded startup check confirmed layer 0
+was atomically committed and propagated (1/36, 50.492 s for the first layer).
 The new route obtains indices from a legacy fit on the same current W/H, then
 uses conditioned compensation with those fixed indices. It preserves the
 layerwise schedule, calibration and solver budget. New artifacts/results use
