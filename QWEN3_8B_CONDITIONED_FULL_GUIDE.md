@@ -62,3 +62,38 @@ ps -p 1698 -o pid,etime,stat,args
 ```
 
 任务已结束，无需执行取消命令。
+
+
+## 修复版 PPL 提交
+
+全模型权重验收通过后，用户授权继续 PPL。冻结配置为
+`configs/evaluation/qwen3_8b_wikitext2_conditioned_hybrid_v1.json`，独立入口
+`scripts/run_qwen3_8b_conditioned_hybrid_ppl.py` 复用原 scorer/decoder。
+本地和服务器均通过 61 项测试。
+
+- 源码：`3a3ef5c2aeee260b3b7522171b37536b7fb4d3f5`。
+- tmux：`qwen3-8b-conditioned-ppl-v1`；初始 PID 2243。
+- 作业：`/workspace/jobs/qwen3-8b-conditioned-ppl-v1/`，含 `status.json`、
+  `ppl.log`、`ppl.pid`、`exit-code`、`launch.json`。
+- 输出：checkout 的 `results/qwen3-8b-conditioned-ppl-v1/result.json`。
+- 状态：独立会话已启动，输入/权重预检正在执行，尚无 PPL 结果。
+
+本轮按相同顺序先 BF16 后修复版 hybrid，使用原 WT2 固定 token、146 块、
+298862 次预测、FP32 CE、SDPA、禁用 cache/TF32 和原质量门槛。
+原 hybrid 16.142104 是历史对照，本轮不重跑 pure 或旧 hybrid。
+结果需区分执行有效性与质量通过；不会触发后端或蒸馏。
+
+服务器只读查看：
+
+```bash
+tail -n 30 /workspace/jobs/qwen3-8b-conditioned-ppl-v1/ppl.log
+```
+
+只读状态：
+
+```bash
+cat /workspace/jobs/qwen3-8b-conditioned-ppl-v1/status.json
+```
+
+如必须停止，先确认 `ps -p 2243 -o pid,args` 仍对应本次任务，再单独执行
+`kill -TERM 2243`。不要把取消命令和查看命令一起粘贴。

@@ -71,7 +71,13 @@ parameters completed, exit 0, 1960.51 seconds, clean execution source
 3.2879e-16. Every saved selected-index hash matches both legacy and conditioned
 metadata. Logs are intact. Weight SSE is 693294.065948 (8.76% above old hybrid),
 which does not establish PPL quality. Full-model Hessians were not independently
-replayed. PPL remains pending; no PPL/distillation/backend task launched.
+replayed. The user authorized PPL next: matched BF16/conditioned hybrid evaluation
+is submitted in tmux `qwen3-8b-conditioned-ppl-v1`, initial PID 2243, clean source
+`3a3ef5c2aeee260b3b7522171b37536b7fb4d3f5`. Local/server 61 tests pass. Startup
+check confirmed running; input/payload preflight is in progress. The original
+WT2 protocol, scorer and quality gate are unchanged. Output:
+`results/qwen3-8b-conditioned-ppl-v1/result.json`. PPL quality remains pending;
+no distillation/backend task launched. Do not modify the remote source mid-run.
 See `QWEN3_8B_CONDITIONED_FULL_RESULTS.md` for hashes and evidence, and
 `QWEN3_8B_CONDITIONED_FULL_GUIDE.md` for paths. Small evidence is backed up under
 `server_results/runpod_hybrid_pcie_2026-09-13/full-conditioned/`.
