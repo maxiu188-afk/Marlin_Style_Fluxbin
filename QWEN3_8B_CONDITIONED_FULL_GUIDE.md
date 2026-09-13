@@ -46,7 +46,7 @@
 - 启动记录：`/workspace/jobs/qwen3-8b-hybrid-conditioned-v1.launch.json`。
 
 任务已完成并通过完整性/重构验收：36/36 层，252 个 Linear，退出码 0。
-详见 [验收结果](QWEN3_8B_CONDITIONED_FULL_RESULTS.md)。PPL 尚未运行。
+详见 [验收结果](QWEN3_8B_CONDITIONED_FULL_RESULTS.md)。PPL 随后完成，见 [PPL 验收](QWEN3_8B_CONDITIONED_PPL_RESULTS.md)。
 执行期间保持远端代码版本不变。每层完成会输出 `FLUXBIN_FULL_LAYER_COMPLETE`。
 
 以下命令均在服务器执行。只读查看日志：
@@ -76,7 +76,7 @@ ps -p 1698 -o pid,etime,stat,args
 - 作业：`/workspace/jobs/qwen3-8b-conditioned-ppl-v1/`，含 `status.json`、
   `ppl.log`、`ppl.pid`、`exit-code`、`launch.json`。
 - 输出：checkout 的 `results/qwen3-8b-conditioned-ppl-v1/result.json`。
-- 状态：独立会话已启动，输入/权重预检正在执行，尚无 PPL 结果。
+- 状态：已完成，执行验收通过，质量门槛未通过；BF16 9.724945，修复版 hybrid 14.951611。
 
 本轮按相同顺序先 BF16 后修复版 hybrid，使用原 WT2 固定 token、146 块、
 298862 次预测、FP32 CE、SDPA、禁用 cache/TF32 和原质量门槛。
@@ -95,5 +95,4 @@ tail -n 30 /workspace/jobs/qwen3-8b-conditioned-ppl-v1/ppl.log
 cat /workspace/jobs/qwen3-8b-conditioned-ppl-v1/status.json
 ```
 
-如必须停止，先确认 `ps -p 2243 -o pid,args` 仍对应本次任务，再单独执行
-`kill -TERM 2243`。不要把取消命令和查看命令一起粘贴。
+任务已结束，PID 为历史记录，无需执行停止命令。详见 [PPL 验收](QWEN3_8B_CONDITIONED_PPL_RESULTS.md)。
