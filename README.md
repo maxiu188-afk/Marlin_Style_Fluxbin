@@ -1,5 +1,10 @@
 # Marlin-Style FluxBin
 
+2026-09-13: initial 8B Linear precision code and local tests are ready; real GPU
+validation is pending. Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md).
+Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
+custom image construction is deferred.
+
 This repository studies a calibrated two-base rank-one binary weight
 representation. The active full-model target is now Qwen3-8B: first produce and
 quality-gate the quantized weights, then implement and measure real packed

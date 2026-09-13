@@ -1,12 +1,15 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
-Status: approved direction, execution paused. No download, quantization,
-accuracy, kernel, or serving job is active. The first RunPod image-build attempt
-failed before producing an accepted digest; see `infra/runpod/README.md`.
+Status (2026-09-13): local preparation of versioned 8B Linear code is underway;
+real-model execution remains paused. See `QWEN3_8B_LINEAR_GUIDE.md`.
+No model download, real-weight quantization, kernel or serving job was launched.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in
 [`infra/runpod/README.md`](infra/runpod/README.md). The reusable environment is
-part of Phase A0 and must be frozen before the first accepted remote run.
+part of Phase A0. The user now prefers an existing RunPod PyTorch/CUDA template:
+inspect the provided environment and add only missing dependencies. Record its
+base image and actual versions; a custom image is optional later, not an A0
+prerequisite. Freeze the accepted environment before matched quality runs.
 
 ## Objective
 
@@ -55,9 +58,10 @@ changing this baseline.
 
 Before any real-model execution:
 
-- build and publish the versioned RunPod `linux/amd64` image, attach the
-  persistent Network Volume, create the reusable Template, and record the image
-  digest and environment versions;
+- select an existing RunPod PyTorch/CUDA template, inspect its environment,
+  add only necessary dependencies, verify persistent storage, and record the
+  base image/digest and actual environment versions; custom image publication
+  is optional after the required stack is established;
 - remove Qwen3-32B-only assumptions from the new versioned configs and runners
   without changing historical 32B configs or results;
 - verify the pinned model revision, 36-layer / 252-Linear inventory, tensor

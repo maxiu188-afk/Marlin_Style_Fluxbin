@@ -9,9 +9,16 @@ matched model-quality gate; only then implement and benchmark real packed
 deployment. The canonical staged contract is
 [`EXPERIMENT_PLAN.md`](EXPERIMENT_PLAN.md).
 
-No Qwen3-8B download, quantization, PPL, CUDA, or serving job has been launched
-yet. The existing scripts and configs still encode Qwen3-32B assumptions and
-must be ported under new versioned names before execution.
+No Qwen3-8B download, real-weight quantization, PPL, CUDA, or serving job has
+been launched. On 2026-09-13, versioned 8B snapshot preflight, C4 materialization,
+and layer-0 representative Linear runners were added. Nine new tests and all
+40 local CPU tests passed. See [QWEN3_8B_LINEAR_GUIDE.md](QWEN3_8B_LINEAR_GUIDE.md).
+The 8B full-model and PPL ports remain pending until the Linear gates pass.
+
+The user changed the environment route: use an existing RunPod PyTorch/CUDA
+template first, inspect its installed packages, and add only necessary missing
+dependencies. A custom image is no longer a prerequisite for initial checks.
+No new server was provisioned by this local preparation.
 
 RunPod reconstruction is addressed by the versioned bootstrap image and
 persistent-storage contract in [`infra/runpod/README.md`](infra/runpod/README.md).
@@ -218,6 +225,14 @@ This is dense fake-quant PPL. It does not establish packed representation
 correctness, kernel performance, end-to-end latency, throughput, or serving.
 
 ## Retention and private export
+
+On 2026-09-13 the user authorized removal of downloaded local 32B quantized
+weights. Fourteen hybrid payload files (including one incomplete download),
+2,505,730,544 logical bytes, were removed; all 14 layer metadata files, result
+JSON, logs and calibration evidence were retained. Remote state was not changed
+or reverified. Private provenance records this in
+`server_results/provenance/local_32b_payload_removal_2026-09-13.json`.
+Older statements below about weights not downloaded describe the earlier export.
 
 The obsolete partial full-model v2 artifact directory, result directory, and
 jobs `6272553`/`6272554` logs were removed from Isambard. The corresponding

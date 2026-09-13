@@ -1,5 +1,10 @@
 # RunPod reusable environment
 
+2026-09-13: custom image work is deferred. The current route uses an existing
+RunPod PyTorch/CUDA template, inspects installed packages, and adds only needed
+dependencies. See [the 8B Linear guide](../../QWEN3_8B_LINEAR_GUIDE.md).
+The image lifecycle below remains a future reproducibility option.
+
 This setup minimizes GPU-Pod rebuild work while keeping accepted experiments
 reproducible. It separates immutable software, persistent data, and frequently
 changing source code.
@@ -25,6 +30,35 @@ using a smaller pinned base, removing unnecessary hosted-runner toolchains
 before Buildx, disabling the large `mode=max` build cache, or building on a
 machine with sufficient disk. Then run the workflow manually, require a
 successful digest, and only afterward configure RunPod storage and Templates.
+
+### Local Docker preparation (2026-09-12)
+
+The user authorized installing Docker and preparing the image locally. Docker
+Desktop's client and engine are now verified at version 29.7.2 on the Apple
+Silicon development Mac. The `desktop-linux` builder supports `linux/amd64`;
+the CLI is available inside Docker.app without system-wide binary links. The local host
+has approximately 331 GiB free, so the selected build-space strategy is a local
+Buildx build, retaining the existing CUDA/PyTorch base and avoiding a `mode=max`
+cache export. GitHub Actions remains manual and idle.
+
+See [the Chinese next-steps guide](NEXT_STEPS_ZH.md) for terminal setup, local
+build/validation, registry publication, RunPod setup, and the 8B A0 boundary.
+
+After installation, launch Docker Desktop and complete its first-run setup.
+Check its VM disk allocation and available space before building the large CUDA
+image. From the repository root:
+
+```bash
+docker info
+bash infra/runpod/build-local.sh
+```
+
+The helper explicitly targets `linux/amd64`, loads the image locally, and saves
+build logs, metadata, and image inspection under Git-ignored `tmp/runpod-build/`.
+If the CLI is not on PATH, set `DOCKER_BIN` to the installed Docker CLI path.
+The helper does not publish an image or start experiments. A successful build,
+registry publication with a recorded digest, and an NVIDIA-host preflight are
+still required. No local image build has been started or accepted yet.
 
 ## Three layers
 

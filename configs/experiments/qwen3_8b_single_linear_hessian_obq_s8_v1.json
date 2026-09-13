@@ -1,0 +1,74 @@
+{
+  "schema_version": 2,
+  "seed": 20260902,
+  "scope": "Qwen3-8B layer-0 representative Linear gate; one target per invocation",
+  "model": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "checkpoint_dtype": "torch.bfloat16",
+    "target_tensor": "model.layers.0.self_attn.o_proj.weight",
+    "target_shape": [
+      4096,
+      4096
+    ],
+    "target_tensor_sha256": null
+  },
+  "calibration": {
+    "artifact_id": "qwen3-8b-c4-calibration-256x2048-v1",
+    "dataset": "allenai/c4",
+    "sequences": 256,
+    "sequence_length": 2048,
+    "hessian_definition": "2 * X^T X / activation_rows",
+    "inverse_method": "damped_cholesky",
+    "damp_percent": 0.01,
+    "damping_provenance": "project-frozen GPTQ default; FluxBin paper does not specify damping"
+  },
+  "algorithm": {
+    "global_num_bases": 2,
+    "global_group_size": 128,
+    "row_column_scales_independent_per_base": true,
+    "joint_sign_pattern_count": 4,
+    "pure_arm": {
+      "residual_refinement": false,
+      "hessian_error_propagation": true
+    },
+    "hybrid_arm": {
+      "residual_refinement": true,
+      "residual_columns_per_group": 8,
+      "selection_metric": "sum_i(W_ij^2) / inverse_hessian_jj^2",
+      "selection_before_global_decomposition": true,
+      "hessian_error_propagation": true
+    },
+    "arms_share_global_payload": false,
+    "distillation": false
+  },
+  "global_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-06,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-06,
+    "assignment_memory_budget_bytes": 1073741824,
+    "denominator_epsilon": 1e-12
+  },
+  "refinement_solver": {
+    "max_iters": 50,
+    "relative_tolerance": 1e-06,
+    "convergence_patience": 3,
+    "monotonicity_tolerance": 1e-06,
+    "assignment_memory_budget_bytes": 1073741824,
+    "denominator_epsilon": 1e-12
+  },
+  "execution": {
+    "environment": "NVIDIA CUDA; versions recorded per run; formal environment not yet frozen",
+    "require_cuda": true
+  },
+  "decision": {
+    "require_finite_metrics": true,
+    "require_exact_sparse_support": true,
+    "full_model_auto_launch": false,
+    "ppl_auto_launch": false,
+    "backend_auto_launch": false,
+    "manual_review_required": true
+  },
+  "preflight": null
+}
