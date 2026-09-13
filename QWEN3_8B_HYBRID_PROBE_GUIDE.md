@@ -1,6 +1,8 @@
 # Hybrid 补偿修复：开机前准备与首轮验证
 
-2026-09-13：本地准备完成，54 项测试通过；尚未运行 CUDA 或真实模型对照。
+2026-09-13：新 RunPod A100 80GB PCIe 环境已恢复，本地及服务器各 56 项测试通过。
+hybrid 对照 `hybrid-compensation-probe-pcie-v1` 已结束，退出码 1，指标一致性门槛未通过。
+执行版本：`ae77820c96662505ed222a45164be3acc2026288`。
 只研究 hybrid，蒸馏留到诊断之后。旧量化器、旧权重和 16.142104 PPL 记录保持不变。
 
 ## 本轮唯一改动
@@ -36,12 +38,16 @@ Cholesky 因子 U，使用 `solve_triangular(U_BB, U_BR)` 计算当前剩余子�
 - 运行完成只生成 `completed_pending_review`；误差未改善也保留结果，不能强行判成功。
   不自动提交全模型、PPL、pure 或蒸馏。
 
-冻结配置：`configs/experiments/qwen3_8b_hybrid_compensation_probe_v1.json`。
+冻结算法配置：`configs/experiments/qwen3_8b_hybrid_compensation_probe_v1.json`。
+本次 PCIe 配置：`configs/experiments/qwen3_8b_hybrid_compensation_probe_v1_a100_pcie.json`；
+仅 execution 的 GPU 名称和环境描述不同，算法/输入/阈值完全相同。
 本轮运行器：`scripts/run_qwen3_8b_hybrid_compensation_probe.py`。
 
 ## 启动服务器之后
 
-复用保留的存储和已验证的 A100-SXM4-80GB / PyTorch 2.8.0+cu128 模板。
+本次复用保留存储，使用 A100 80GB PCIe / PyTorch 2.8.0+cu128 模板。
+Python 3.12.3，CUDA 12.8，driver 570.133.20；环境 `/opt/fluxbin-venv` 约 410 MB。
+按旧 lock 恢复附加依赖，`pip check` 通过，未重装 torch 或下载模型。
 如选择不同 GPU 或软件版本，先检查兼容性并建立新配置，不绕过运行时检查。
 原始模型、C4 和旧 hybrid 权重无需重下。以下命令在服务器执行，从 checkout 根目录开始。
 
@@ -62,17 +68,18 @@ python -m unittest discover -s tests
 
 ```bash
 python scripts/run_qwen3_8b_hybrid_compensation_probe.py \
+  --config configs/experiments/qwen3_8b_hybrid_compensation_probe_v1_a100_pcie.json \
   --snapshot-root /workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218 \
   --calibration-dir "$PWD/artifacts/qwen3-8b-c4-v1" \
-  --output-dir /workspace/jobs/hybrid-compensation-probe-v1/artifacts
+  --output-dir /workspace/jobs/hybrid-compensation-probe-pcie-v1/artifacts
 ```
 
-正式运行（仅在前两步通过后执行）：
+本次正式运行命令记录（已执行，不要重复提交）：
 
 ```bash
 mkdir -p /workspace/jobs
-tmux new-session -d -s hybrid-compensation-probe-v1 \
-  "bash scripts/run_hybrid_probe_job.sh /workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218 '$PWD/artifacts/qwen3-8b-c4-v1' /workspace/jobs/hybrid-compensation-probe-v1"
+tmux new-session -d -s hybrid-compensation-probe-pcie-v1 \
+  "bash scripts/run_hybrid_probe_job.sh /workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218 '$PWD/artifacts/qwen3-8b-c4-v1' /workspace/jobs/hybrid-compensation-probe-pcie-v1 configs/experiments/qwen3_8b_hybrid_compensation_probe_v1_a100_pcie.json"
 ```
 
 任务包装要求全新 job 目录，重复执行不会覆盖旧日志；如失败，先诊断再使用新的
@@ -82,7 +89,7 @@ tmux new-session -d -s hybrid-compensation-probe-v1 \
 只读查看命令：
 
 ```bash
-tail -n 30 /workspace/jobs/hybrid-compensation-probe-v1/probe.log
+tail -n 30 /workspace/jobs/hybrid-compensation-probe-pcie-v1/probe.log
 ```
 
 结束后查看 `exit-code`；结果在 job 目录下 `artifacts/result.json`，中间拟合记录
@@ -92,8 +99,23 @@ tail -n 30 /workspace/jobs/hybrid-compensation-probe-v1/probe.log
 
 ## 本地验证范围
 
-54 项测试包括历史回归、相关 Hessian 的多 group 条件最优性、旧切片反例、
+56 项测试包括历史回归、相关 Hessian 的多 group 条件最优性、旧切片反例、
 identity 与旧 hybrid 一致、固定索引/输入不变、稀疏支持、payload BF16 解码一致、
-前缀提前终止和输入重放。CLI 帮助及 Bash 语法检查通过。
-尚未验证：真实 A100 上的 Cholesky 数值稳定性、同输入直接误差与 Hessian 误差的
-容限、真实拟合效果及资源消耗。开机后先运行上述有界对照，结果不预设改善。
+前缀提前终止和输入重放、PCIe 配置边界及 C4 `token_ids` 读取契约。
+首次预检因新脚本误读 `tokens` 字段失败，未开始拟合；修复后新增测试，
+此次运行仍在拟合前复核全部输入。CLI 帮助及 Bash 语法检查通过。
+本次真实 A100 对照已完成，脚本记录耗时 128.93 秒，峰值 allocated 约 18.19 GiB。
+预检、输入重放、固定列及 payload 回读检查通过。直接输出平方误差：
+
+| 目标 | 旧 hybrid | 修复补偿 | 降幅 |
+|---|---:|---:|---:|
+| layer-1 gate | 211.515764 | 83.263938 | 60.63% |
+| layer-1 up | 72.045497 | 31.324630 | 56.52% |
+| layer-6 down | 44.924278 | 18.429785 | 58.98% |
+
+但 layer-6 down 修复分支的 Hessian 误差为 18.434274，与直接误差相差约
+0.0244%，超过冻结的 0.01% 相对容限；其他五项通过。因此状态为
+`failed_metric_agreement`，不能作为正式通过或 PPL 改善结论，也不放宽门槛。
+下一步应定位误差计算的数值差异，再决定是否重跑该小对照；全模型和蒸馏均未启动。
+结果、provenance、拟合记录、日志及启动记录备份在本地
+`server_results/runpod_hybrid_pcie_2026-09-13/`，不进入 Git。

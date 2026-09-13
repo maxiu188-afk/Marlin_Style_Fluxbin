@@ -39,12 +39,27 @@ columns, but selection policy changes must be isolated from compensation fixes.
 Full metadata also shows 5329/10368 global hybrid fits hit the 50-iteration cap;
 its PPL impact remains unmeasured. See the hybrid-focused follow-up in the diagnosis.
 
-Pre-start preparation is complete: `hybrid_conditioned.py` uses conditional
-Cholesky block compensation; the probe freezes legacy-selected indices and
-compares only hybrid variants on original BF16-prefix inputs for layer-1 gate/up
-and layer-6 down. All 54 local tests pass; no CUDA probe or server operation has
-been run. Follow `QWEN3_8B_HYBRID_PROBE_GUIDE.md` after restoring the retained
-volume and container-disk environment. No pure/full/PPL/distillation auto-launch.
+The new RunPod uses NVIDIA A100 80GB PCIe (SM80), driver 570.133.20,
+Python 3.12.3 / torch 2.8.0+cu128. Retained model/calibration/artifact storage is
+present. Container-disk `/opt/fluxbin-venv` was rebuilt with system-site-packages
+and the existing add-on lock; pip check passed, size ~410 MB. No torch/model download.
+
+The hybrid-only compensation probe completed in tmux
+`hybrid-compensation-probe-pcie-v1`, from clean revision
+`ae77820c96662505ed222a45164be3acc2026288`. Its dedicated PCIe config changes only
+the GPU name/environment label. All 56 local/server tests pass. The first
+preflight exposed a C4 field-name bug (`tokens` vs `token_ids`), fixed and covered
+by a regression test before this submission. The job performs full preflight
+before fitting and passed. The run completed in 128.93 s, exit 1, status
+`failed_metric_agreement`: layer-6 down corrected direct/Hessian loss differs
+by about 0.0244%, above the frozen 0.01% tolerance. Three direct output losses
+fell by 60.63%, 56.52%, and 58.98% (layer-1 gate/up, layer-6 down), but this is
+diagnostic-only and not an accepted probe or PPL improvement. Investigate the
+metric discrepancy before any full-model run. Small evidence is archived locally
+in `server_results/runpod_hybrid_pcie_2026-09-13/`. Job directory:
+`/workspace/jobs/hybrid-compensation-probe-pcie-v1/`; see
+`QWEN3_8B_HYBRID_PROBE_GUIDE.md`. Preserve the recorded execution revision.
+No pure/full/PPL/distillation auto-launch.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
