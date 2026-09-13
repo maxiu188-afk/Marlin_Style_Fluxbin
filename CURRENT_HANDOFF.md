@@ -19,7 +19,8 @@ for integrity and weight reconstruction; see [QWEN3_8B_FULL_RESULTS.md](QWEN3_8B
 Both arms contain 36 layers / 252 Linears. Independent CPU replay covered all
 504 targets; maximum relative SSE discrepancy was 3.2544e-16. Hybrid aggregate
 weight SSE is 12.4301% lower; 249/252 targets improve, with three small o_proj
-regressions recorded. Matched PPL and deployment remain untested and unlaunched.
+regressions recorded. Matched PPL has now been submitted; deployment remains
+untested and unlaunched. See `QWEN3_8B_PPL_GUIDE.md` for the frozen protocol and job paths.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
@@ -29,7 +30,8 @@ Use `results/qwen3-8b-full-hessian-obq-s8-v1/acceptance.json` as the authoritati
 review record, not the overwritten queue status. Audit scripts must use the
 isolated `runpy` entry from the repository root. The original pure log is lost;
 this limitation and the provisional audit's overly strict all-tensor improvement
-assertion are preserved in the review record. No job remains running.
+assertion are preserved in the review record. Full quantization and its audit
+have finished; the separate PPL job is active.
 
 - Server checkout: `/workspace/repos/marlin-style-fluxbin`.
 - Original tmux session: `qwen3-8b-full-v1` (finished).
@@ -40,13 +42,17 @@ assertion are preserved in the review record. No job remains running.
 - Full-model result directory: checkout `results/qwen3-8b-full-hessian-obq-s8-v1/`.
 - Full-model payloads: checkout `artifacts/qwen3-8b-full-hessian-obq-s8-v1/`,
   separate `pure` and `hybrid_s8` directories.
-- Remote checkout remains on the pinned clean execution revision; later
-  documentation updates have not been synced there.
+- Full quantization provenance remains pinned to `d8a2eff`; the clean remote
+  checkout was subsequently fast-forwarded to PPL revision
+  `e45462aa155aeeedf72f98080a03f74852bc9120`. Do not sync further code during PPL.
 - Private local archive: `server_results/runpod_qwen3_8b_2026-09-13/`;
   full acceptance metadata, audit source and portable manifest retained, no weights downloaded.
 
 See [QWEN3_8B_LINEAR_GUIDE.md](QWEN3_8B_LINEAR_GUIDE.md) for the input/algorithm
-contract. The 8B PPL port remains pending.
+contract. The 8B PPL port and 48 local/server tests are complete. PPL runs in
+tmux `qwen3-8b-ppl-v1`; job records live under `/workspace/jobs/qwen3-8b-ppl-v1/`
+and the output is checkout `results/qwen3-8b-ppl-v1/result.json`.
+Submission is not PPL acceptance; no backend/distillation auto-launch.
 
 The user changed the environment route: use an existing RunPod PyTorch/CUDA
 template first, inspect its installed packages, and add only necessary missing

@@ -4,7 +4,8 @@
 [accepted results](QWEN3_8B_LINEAR_RESULTS.md). Full-model pure/hybrid quantization
 artifacts now pass integrity/reconstruction review with notes; see
 [full-model results](QWEN3_8B_FULL_RESULTS.md). Hybrid weight SSE improves
-12.4301% overall (249/252 Linears improve); PPL quality remains untested.
+12.4301% overall (249/252 Linears improve). Matched BF16/pure/hybrid PPL is
+now submitted and pending review; see [PPL guide](QWEN3_8B_PPL_GUIDE.md).
 Start with [the 8B Linear guide](QWEN3_8B_LINEAR_GUIDE.md) for the protocol.
 Use an existing RunPod PyTorch/CUDA template and inspect missing dependencies;
 custom image construction is deferred.

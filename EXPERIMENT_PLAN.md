@@ -3,9 +3,11 @@
 Status (2026-09-13): all five representative 8B Linear gates passed on A100;
 full-model pure/hybrid artifacts are accepted with notes for integrity and
 weight reconstruction. Hybrid improves aggregate SSE by 12.4301%, with 249/252
-Linears improving and three local regressions retained. Model quality is pending.
+Linears improving and three local regressions retained. Matched PPL has been
+submitted on A100; model quality remains pending review.
 See `QWEN3_8B_FULL_RESULTS.md` and `CURRENT_HANDOFF.md`.
-No PPL, packed kernel or serving job was launched.
+PPL source: `e45462aa155aeeedf72f98080a03f74852bc9120`; see `QWEN3_8B_PPL_GUIDE.md`.
+No packed kernel or serving job was launched.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in
 [`infra/runpod/README.md`](infra/runpod/README.md). The reusable environment is

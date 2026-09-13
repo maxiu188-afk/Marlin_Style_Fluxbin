@@ -106,8 +106,9 @@ logs and audit source are archived under
 Remote results live in `results/qwen3-8b-full-hessian-obq-s8-v1/` and payloads in
 `artifacts/qwen3-8b-full-hessian-obq-s8-v1/`, relative to the remote checkout.
 
-Next stage: port and review the matched 8B BF16/pure/hybrid WikiText-2 evaluation
-before launching it separately. Deployment requires the frozen quality gate
+Subsequent update: the matched 8B BF16/pure/hybrid WikiText-2 evaluation has
+been ported, tested and submitted separately; see `QWEN3_8B_PPL_GUIDE.md`.
+Results remain pending review. Deployment requires the frozen quality gate
 (relative PPL gap to matched BF16 <= 5%; > 10% blocks deployment).
 
 - Audit source SHA-256: `126e21fab6d6f42acb53e532d3b16e437fcbe3bfe851963e50bfaaf9a4339cf4`.
