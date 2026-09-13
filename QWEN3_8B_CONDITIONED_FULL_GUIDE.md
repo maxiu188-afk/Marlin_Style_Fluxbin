@@ -30,5 +30,35 @@
    16.142104 比较。全模型输出误差或小 Linear 降幅不能代替 PPL。
 4. PPL/后端/蒸馏均不由量化脚本自动触发。
 
-本地 59 项测试通过，包括新 full 路由与 probe 的数值一致性、固定列与 packed
-回读，以及 pure/缺失 probe 拒绝检查。服务器验证和提交状态见后续记录。
+本地和服务器均通过 59 项测试，包括新 full 路由与 probe 的数值一致性、固定列与 packed
+回读，以及 pure/缺失 probe 拒绝检查。服务器 GPU/依赖检查通过。
+
+
+## 本次提交
+
+- 源码：`e5f3861c22cd99bbba5cf4bb7bfdf7df3b183de5`。
+- 服务器：`root@213.173.105.9:41889`，A100 80GB PCIe。
+- tmux：`qwen3-8b-hybrid-conditioned-v1`，初始计算 PID 1698。
+- 作业目录：`/workspace/jobs/qwen3-8b-hybrid-conditioned-v1/`。
+- 日志：作业目录 `hybrid.log`；PID：`hybrid.pid`；退出后生成 `exit-code`。
+- resolved config 和最终结果：checkout 的
+  `results/qwen3-8b-full-hybrid-conditioned-v1/{full.config.json,hybrid_s8.json}`。
+- 启动记录：`/workspace/jobs/qwen3-8b-hybrid-conditioned-v1.launch.json`。
+
+提交时已确认 tmux 存在、PID 已记录，输入预检正在执行，尚未宣称全模型完成。
+执行期间保持远端代码版本不变。每层完成会输出 `FLUXBIN_FULL_LAYER_COMPLETE`。
+
+以下命令均在服务器执行。只读查看日志：
+
+```bash
+tail -n 30 /workspace/jobs/qwen3-8b-hybrid-conditioned-v1/hybrid.log
+```
+
+查看任务是否仍在运行：
+
+```bash
+ps -p 1698 -o pid,etime,stat,args
+```
+
+仅需要停止时使用：先确认上述 PID 仍对应本次任务，再单独执行 `kill -TERM 1698`。
+取消命令不要与查看命令一起粘贴。停止后保留已完成层，恢复前先核对源代码和配置哈希。

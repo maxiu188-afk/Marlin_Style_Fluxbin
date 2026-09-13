@@ -62,7 +62,18 @@ for layer-1 gate/up and layer-6 down. This supports the compensation repair on
 these targets, not a measured full-model PPL improvement. All 57 local/server
 tests pass. Small evidence and independent acceptance are archived locally in
 `server_results/runpod_hybrid_pcie_2026-09-13/fp64/`; old failure is preserved.
-See `QWEN3_8B_HYBRID_PROBE_GUIDE.md`. No pure/full/PPL/distillation auto-launch.
+See `QWEN3_8B_HYBRID_PROBE_GUIDE.md`. The user then authorized continuing:
+conditioned hybrid full-model quantization is now submitted in tmux
+`qwen3-8b-hybrid-conditioned-v1` on the PCIe server, initial PID 1698, clean source
+`e5f3861c22cd99bbba5cf4bb7bfdf7df3b183de5`. All 59 local/server tests pass.
+The runtime identity check passed; full input preflight is running before fitting.
+The new route obtains indices from a legacy fit on the same current W/H, then
+uses conditioned compensation with those fixed indices. It preserves the
+layerwise schedule, calibration and solver budget. New artifacts/results use
+`qwen3-8b-full-hybrid-conditioned-v1`; old artifacts remain unchanged.
+See `QWEN3_8B_CONDITIONED_FULL_GUIDE.md` for status/log paths and separate cancel
+instructions. Preserve the remote source during execution. No PPL/backend or
+distillation auto-launch; full weights require review first.
 
 Review caveat: importing an audit from the job directory accidentally loaded
 job-local `queue.py` in place of the standard library. A duplicate pure launch
