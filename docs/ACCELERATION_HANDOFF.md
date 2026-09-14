@@ -1,5 +1,11 @@
 # 精度暂停、加速研究与关机交接
 
+Full-model follow-up: the submitted task exited 1 at packed_step400 prompt 0,
+repeat 0. Coverage (252 Linears) and KV length passed, but the same-weight decoded
+BF16 correctness comparison failed: NRMSE 0.0115685 > 0.005, maximum logprob error
+0.3394165 > 0.05, and 1/33 greedy predictions differed. No accepted full-model
+speedup is available. This supersedes the earlier observed-running status.
+
 Latest GPU evidence (2026-09-14, A100 SXM4): all 85 tests passed; bounded candidate
 batch passed correctness in 84/84 cells, with 77/84 stable timings. The selected
 v2/gps8 block passed correctness/stability but took 1213.783 us vs decoded BF16

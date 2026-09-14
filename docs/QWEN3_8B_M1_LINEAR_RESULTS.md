@@ -101,3 +101,20 @@ packed 相对 decoded 的 speedup 为 0.8650×，即 latency 高 15.6%。
 但没有 profiler 定量归因。限制 CPU 线程后专项测试/新记录阶段约 25 秒，此时已有
 编译缓存，不能把全部差异归因于线程设置。ptxas 显示三个 v2 行复用版本主 kernel
 分别使用 40/44/56 registers、0 spill；这不等于已经测得 occupancy 或主要瓶颈。
+
+### 完整模型首轮失败更新
+
+完整模型任务退出 1，异常为 `full-model correctness/coverage failed: packed_step400:0:0`。
+这是冻结数值 gate 触发的主动停止；日志未报告 CUDA 异常或 OOM。
+原始 BF16 与 decoded step400 两个基线已完成；packed 完成首 prompt 的一次测量后，
+因相对 decoded 的数值不合格而中止，不能发布合格的完整模型加速结论。
+
+252 个 Linear 覆盖通过，输入 continuation 完全相同，KV 长度为 43。
+33 个 next-token prediction 中 index=2 不同（decoded=3410，packed=1128）。
+logits max_abs_error=0.375，NRMSE=0.0115685276（上限 0.005），
+max_abs_logprob_error=0.3394165039（上限 0.05）。
+单层数值通过不保证堆叠后的全模型数值通过；具体偏差来源尚未定位，不能直接归因于
+量化质量或正常累积误差。没有放宽门槛、重跑或修改 kernel。
+
+失败 JSON、日志和退出码备份到
+`server_results/runpod_m1_sxm4_2026-09-14/full-model/`，保留原始现场。
