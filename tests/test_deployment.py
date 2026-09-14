@@ -117,8 +117,11 @@ class DeploymentTests(unittest.TestCase):
         _load_extension.cache_clear()
         try:
             with patch('torch.cuda.is_available',return_value=True), patch('torch.utils.cpp_extension.load') as build:
-                load_extension();load_extension('v1');load_extension('v2');load_extension('v2_r1');load_extension('v2_r2');load_extension('v1')
-                self.assertEqual(build.call_count,4)
+                load_extension();load_extension('v1');load_extension('v2');load_extension('v2_r1');load_extension('v2_r2');load_extension('v3');load_extension('v1')
+                self.assertEqual(build.call_count,5)
+                v3=build.call_args_list[-1].kwargs
+                self.assertTrue(v3['sources'][0].endswith('m1_v3.cu'))
+                self.assertIn('--ptxas-options=-v',v3['extra_cuda_cflags'])
                 with self.assertRaises(ValueError):load_extension('unknown')
         finally:_load_extension.cache_clear()
 
@@ -175,6 +178,35 @@ class CUDADeploymentTests(unittest.TestCase):
                             m1_out(x,layout,outputs[1],work[1],groups_per_split=gps,kernel=candidate)
                         torch.cuda.current_stream().wait_stream(stream)
                         self.assertTrue(torch.equal(outputs[1],expected))
+
+    def test_v3_mma_oracle_pipeline_tails_stream_and_graph(self):
+        from fluxbin_style.acceleration_checks import numerical_gate
+        for o,g in ((1,1),(7,2),(17,3),(63,4),(64,9),(65,10),(129,5),(65535,1)):
+            for dtype in (torch.bfloat16,torch.float16):
+                payload={k:v.cuda() for k,v in make_payload(o,g).items()}
+                layout=convert_artifact(payload)
+                # Basis-vector probe detects MMA row/K/output-lane mapping errors.
+                x=torch.zeros(1,g*128,device='cuda',dtype=dtype);x[0,min(73,g*128-1)]=1
+                for random in (False,True):
+                    if random:x.normal_()
+                    ref=torch.nn.functional.linear(x,oracle(payload,dtype))
+                    for gps in (1,2,8,1024):
+                        w=torch.full(workspace_shape(o,g*128,gps),float('nan'),device='cuda')
+                        y=torch.empty_like(ref)
+                        m1_out(x,layout,y,w,groups_per_split=gps,kernel='v3')
+                        self.assertTrue(numerical_gate(y,ref)['passed'])
+                        expected=y.clone()
+                        stream=torch.cuda.Stream();stream.wait_stream(torch.cuda.current_stream())
+                        with torch.cuda.stream(stream):
+                            w.fill_(float('nan'))
+                            m1_out(x,layout,y,w,groups_per_split=gps,kernel='v3')
+                        torch.cuda.current_stream().wait_stream(stream)
+                        self.assertTrue(torch.equal(y,expected))
+                        graph=torch.cuda.CUDAGraph()
+                        with torch.cuda.graph(graph):m1_out(x,layout,y,w,groups_per_split=gps,kernel='v3')
+                        graph.replay();torch.cuda.synchronize()
+                        self.assertTrue(torch.equal(y,expected))
+                        self.assertTrue(torch.isfinite(w).all())
 
 
 

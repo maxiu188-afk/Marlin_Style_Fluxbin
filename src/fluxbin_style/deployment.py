@@ -15,7 +15,7 @@ from torch.nn import functional as F
 from .evaluation import materialize_hybrid_s8_weight, tensor_sha256
 
 FORMAT = 'fluxbin-hybrid-g128-s8-m1-v1'
-KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2')
+KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2', 'v3')
 FIELDS = ('global_sign_codes', 'global_row_scales', 'global_column_scales',
           'refinement_indices', 'refinement_sign_codes',
           'refinement_row_scales', 'refinement_column_scales')
@@ -95,17 +95,18 @@ def load_extension(kernel="v1"):
     return _load_extension(kernel)
 
 
-@lru_cache(maxsize=4)
+@lru_cache(maxsize=5)
 def _load_extension(kernel):
     if not torch.cuda.is_available():
         raise RuntimeError('M=1 kernel requires NVIDIA CUDA; no CPU/MPS substitution')
     from torch.utils.cpp_extension import load
     root = Path(__file__).resolve().parent / 'csrc'
-    filename = 'm1.cu' if kernel == 'v1' else 'm1_v2.cu'
+    filename = {'v1':'m1.cu','v3':'m1_v3.cu'}.get(kernel,'m1_v2.cu')
     flags = ['-O3', '--fmad=false', '-lineinfo']
-    if kernel != 'v1':
+    if kernel.startswith('v2'):
         rows = {'v2_r1': 1, 'v2_r2': 2, 'v2': 4}[kernel]
         flags += [f'-DROWS_PER_WARP={rows}', '--ptxas-options=-v']
+    if kernel == 'v3':flags += ['--ptxas-options=-v']
     return load(name=f'fluxbin_m1_{kernel}', sources=[str(root / filename)],
                 extra_cuda_cflags=flags, verbose=True)
 

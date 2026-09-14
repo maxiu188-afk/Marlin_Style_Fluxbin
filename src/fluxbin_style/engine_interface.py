@@ -40,7 +40,7 @@ class M1Backend:
 
     def __init__(self, groups_per_split=8, *, kernel="v1"):
         if kernel not in KERNELS:
-            raise ValueError("kernel must be v1 or v2")
+            raise ValueError(f"kernel must be one of {KERNELS}")
         self.kernel=kernel
         if not isinstance(groups_per_split,int) or not 1<=groups_per_split<=1024:
             raise ValueError('groups_per_split must be 1..1024')

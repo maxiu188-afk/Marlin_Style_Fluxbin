@@ -77,6 +77,22 @@ class CandidateSummaryTests(unittest.TestCase):
             report=summarize_batch(root,CONFIG)
             self.assertIn('hash drift',report['trial_errors']['rows2-graph'])
 
+    def test_explicit_mma_suite_records_v1_difference_without_rejecting_dense_gate(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);fixture(root)
+            cfg=json.loads(CONFIG.read_text())
+            next(c for c in cfg['candidates'] if c['id']=='rows2')['kernel']='v3'
+            config=root/'mma-config.json';config.write_text(json.dumps(cfg))
+            batch=json.loads((root/'batch.json').read_text());batch['config_sha256']=sha256_file(config)
+            (root/'batch.json').write_text(json.dumps(batch))
+            def mma(r):
+                r['settings']['kernel']='v3'
+                for c in r['cells']:
+                    for check in c['checks']:check['v1_exact']=False
+            mutate(root,mma)
+            rows=[r for r in summarize_batch(root,config)['rows'] if r['trial']=='rows2-graph']
+            self.assertEqual(len(rows),7);self.assertTrue(all(r['eligible'] for r in rows))
+
     def test_unstable_samples_do_not_receive_speedup(self):
         with tempfile.TemporaryDirectory() as temp:
             root=Path(temp);fixture(root)

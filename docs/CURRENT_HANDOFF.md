@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin current handoff
 
+Local kernel follow-up: explicit `v3` now implements three-stage cp.async staging,
+register fragment double buffering and FP16/BF16 Tensor Core MMA for hybrid M=1.
+It retains the v1 layout and a deterministic split reduction, with a direct-store
+single-split path. This is implementation preparation only: no NVCC/GPU validation
+or speed result yet. See [kernel design](M1_V2_LOCAL_OPTIMIZATION.md) and the new fixed Marlin candidate config.
+
 Shutdown readiness (2026-09-14): live check found no experiment/tmux/GPU compute
 processes. All 68 small-evidence files were archived, downloaded and hash-verified.
 Keep network volume `34au39ljvf`; user may close compute. Actual shutdown has not

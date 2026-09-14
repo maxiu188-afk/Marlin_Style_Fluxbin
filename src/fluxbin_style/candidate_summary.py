@@ -78,7 +78,7 @@ def summarize_batch(root: Path, config_path: Path):
                         if (len(checks)!=4 or not cell['correctness_passed'] or
                             not all(x.get('passed') is True for x in checks) or
                             not all(x.get('repeat_exact') is True for x in checks[:3]) or
-                            (c['kernel']!='v1' and not all(x.get('v1_exact') is True for x in checks))):
+                            (c['kernel'] not in ('v1','v3') and not all(x.get('v1_exact') is True for x in checks))):
                             raise ValueError('correctness gate failed/incomplete')
                         names=('dense','packed') if c['kernel']=='v1' else ('dense','packed','v1')
                         measured={n:timing(cell['timings'][n]) for n in names}

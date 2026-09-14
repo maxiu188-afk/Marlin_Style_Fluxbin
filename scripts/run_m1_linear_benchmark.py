@@ -50,7 +50,8 @@ def main():
             'runner_sha256':sha256_file(Path(__file__)), 'settings':{k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},
             'inputs':'seeded synthetic activations on real step400 weights',
             'baseline':'same-input dense BF16/FP16 matmul using decoded step400 weights',
-            'timing_scope':'preallocated outputs; two kernel launches plus FP32 scratch reduction; excludes conversion/JIT/load',
+            'timing_scope':'preallocated outputs; packed compute plus split reduction (v3 single split directly stores output); excludes conversion/JIT/load',
+            'v1_comparison_policy':'diagnostic_mma_reduction' if args.kernel=='v3' else 'exact',
             'next_stage':'not_launched','cells':[]}
     try:
         load_extension(args.kernel)
@@ -87,7 +88,7 @@ def main():
             if args.kernel!='v1':
                 baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
             cell['checks'].append(gate)
-            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and c.get('v1_exact',True) for c in cell['checks'])
+            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel=='v3' or c.get('v1_exact',True)) for c in cell['checks'])
             report['cells'].append(cell)
             if not cell['correctness_passed']:raise RuntimeError(f'numerical gate failed: {name}')
             # Fixed random timing input, not the alternating diagnostic input.
@@ -107,7 +108,7 @@ def main():
                 functions={key:graph.replay for key,graph in zip(functions,graphs)}
                 for fn in functions.values():fn()
                 if not numerical_gate(y,reference)['passed']:raise RuntimeError('graph replay numerical gate failed')
-                if args.kernel!='v1' and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
+                if args.kernel not in ('v1','v3') and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
             cell['timings']=paired_cuda_timing(functions,warmup=args.warmup,repeats=args.repeats,rounds=args.rounds)
             stable=all(t['stable'] for t in cell['timings'].values())
             cell['speedup']=cell['timings']['dense']['median_us']/cell['timings']['packed']['median_us'] if stable else None

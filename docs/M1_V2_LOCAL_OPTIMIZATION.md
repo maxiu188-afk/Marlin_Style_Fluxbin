@@ -105,3 +105,44 @@ python scripts/run_m1_linear_benchmark.py \
 
 输出 `speedup` 仍是 dense/候选；另加 `speedup_vs_v1`，并记录 v1 同轮计时。
 增加 v1 对照后，三项计时全部稳定才报告速度比；保留每轮原始样本。
+
+## kernel v3：Marlin 流水与 MMA 适配（本地实现，待 CUDA 验证）
+
+这里的 v3 指 deployment kernel，与历史 32B 算法 artifact 的 v3 无关。
+新增 `src/fluxbin_style/csrc/m1_v3.cu`，参考本地 Marlin revision
+`1f25790bdd49fba53106164a24666dade68d7c90` 的 async copy、MMA、寄存器双缓冲
+与分工思路。保留 Apache-2.0 版权说明及 `licenses/Marlin-LICENSE`，打包时附带。
+
+| 机制 | 本次实际实现 |
+|---|---|
+| global → shared 流水 | 三个 stage，预取两组；`cp.async.commit_group` / `wait_group` |
+| 紧凑权重读取 | 每线程搬运 16B codes，row scales 以 8B async copy 读取 |
+| shared 布局 | codes 每行 48B pitch，适配 MMA 行组的广播访问，避免 32B pitch 的 bank 冲突 |
+| 寄存器解码 | 合并 global + sparse 后生成成对 BF16/FP16 MMA fragment，row scales 每 group 预加载 |
+| 解码与矩阵计算 | 两份 fragment 双缓冲，预备下一 K16 fragment，再调用当前 `mma.sync` |
+| Tensor Core | `m16n8k16.row.col.f32.{f16,bf16}.{f16,bf16}.f32` |
+| CTA 分工 | 128 threads、64 输出行，受 SM 数量约束的 persistent tile/split 任务遍历 |
+| 归并 | split>1 保留固定次序 FP32 scratch reduction；单 split 直接写输出，省掉第二次 launch |
+
+MMA operand A 放 16 行权重，B 放激活，激活复制到 8 个列位置，最后只写 column 0。
+M=1 因而仍有 8 列中的冗余计算，是否能被 Tensor Core 吞吐/流水优势抵消，必须实测。
+没有照搬 Marlin 的跨 CTA 自旋锁归并；当前固定 scratch 归并避免引入调度等待。
+2B sparse code 因奇数 O 时的对齐约束使用标量预取，其余 bulk 数据异步搬运。
+输入对齐由 host 显式检查（主体 16B、row scales 8B），不接受不满足 async-copy 对齐
+的 storage-offset 输入。标准转换产物和新分配输入满足该要求。
+
+当前离线 `[G,O,...]` layout 和算法权重不变，未改为 INT4，也没有复制 dense 权重。
+权重合并后 BF16/FP16 舍入保留；点积顺序改为 MMA。v1/v2 源码不改、默认路径不改；
+通过 `--kernel v3` 或 `M1Backend(kernel='v3')` 显式选择，block/full-model 自动继承。
+v3 同轮记录 v1 输出差异与计时，但不要求 MMA 与 SIMT 逐位一致；dense numerical gate、
+重复输出和路径检查仍保留。全模型可继续使用用户指定的 report-only 数值策略。
+
+索引依据：[NVIDIA PTX 的 m16n8k16 fragment 映射](https://docs.nvidia.com/cuda/archive/11.6.1/parallel-thread-execution/index.html#warp-level-matrix-fragment-mma-16816-float)。
+CPU 索引模型已核对 16×16 fragment 的完整覆盖、combined-weight 重建、输出列选择、
+shared pitch、三段槽位复用和 persistent task 完整性；这些模型测试不能替代 GPU 执行。
+CUDA 测试入口新增 O=1/7/17/63/64/65/129/65535、group=1/2/3/4/9/10、
+gps=1/2/8/1024、BF16/FP16、one-hot/random、workspace 污染、非默认 stream 和 Graph。
+大 O case 用于覆盖持久 CTA 的多任务执行。**当前没有 NVCC 编译、CUDA 数值或性能结果。**
+
+本地验证：91 项测试，88 通过、3 项 CUDA 测试跳过；wheel 打包通过，并检查包含
+`m1_v3.cu` 和 Marlin 许可证。wheel 构建不编译 CUDA 扩展，不能视为 NVCC 验证。

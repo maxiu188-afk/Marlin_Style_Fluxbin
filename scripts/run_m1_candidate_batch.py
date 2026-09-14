@@ -28,12 +28,13 @@ def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('artifact-root','environment','output-dir'):
         p.add_argument('--'+name,type=Path,required=True)
-    args=p.parse_args();cfg=json.loads(CONFIG.read_text())
+    p.add_argument('--config',type=Path,default=CONFIG)
+    args=p.parse_args();cfg=json.loads(args.config.read_text())
     signal.signal(signal.SIGTERM,interrupted)
     if not 1<=len(cfg['candidates'])<=6 or len(cfg['modes'])!=2:
         raise ValueError('bounded batch contract changed')
     args.output_dir.mkdir(parents=True,exist_ok=False)
-    report={'status':'running','config_sha256':sha256_file(CONFIG),
+    report={'status':'running','config_sha256':sha256_file(args.config),
             'runner_sha256':sha256_file(Path(__file__)),'trials':[],'next_stage':'not_launched'}
     try:
         for candidate in cfg['candidates']:

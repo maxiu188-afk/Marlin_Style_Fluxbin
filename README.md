@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin
 
+Local kernel follow-up: explicit `v3` now implements three-stage cp.async staging,
+register fragment double buffering and FP16/BF16 Tensor Core MMA for hybrid M=1.
+It retains the v1 layout and a deterministic split reduction, with a direct-store
+single-split path. This is implementation preparation only: no NVCC/GPU validation
+or speed result yet. See [kernel design](docs/M1_V2_LOCAL_OPTIMIZATION.md) and the new fixed Marlin candidate config.
+
 Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
 On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
 fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route

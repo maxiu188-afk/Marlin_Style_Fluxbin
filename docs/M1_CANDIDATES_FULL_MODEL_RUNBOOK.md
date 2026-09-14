@@ -153,3 +153,27 @@ CPU 输入、异常后恢复全部 fallback 策略。这不是 GPU packed forwar
 coverage、相同输入上下文和有限值检查仍保留。默认不传此参数时仍为 strict。
 结果同时记录 `all_numerical_checks_passed` 和 `all_timings_stable`，数值不通过而
 稳定测完的状态为 `completed_with_numerical_differences`。主性能基线为 original BF16。
+
+## kernel v3 上机批次
+
+新主循环说明见 [Marlin/MMA 适配](M1_V2_LOCAL_OPTIMIZATION.md)。
+本次改动只在本地；原 v1 候选配置和历史结果冻结不变。新配置包含 v1、v2 对照及
+v3 的 gps=4/8/16/1024，仍为 6 组、12 个 eager/Graph trial。源码已改变，上机须先生成
+新的 source-bound environment（`--build-smoke` 会包含 v3 GPU 检查）。
+
+```bash
+python scripts/run_m1_candidate_batch.py \
+  --config configs/acceleration/m1_marlin_candidates_v1.json \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
+  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output-dir "$FLUXBIN_RUN_ROOT/marlin-candidates"
+
+python scripts/summarize_m1_candidates.py \
+  --config configs/acceleration/m1_marlin_candidates_v1.json \
+  --batch-dir "$FLUXBIN_RUN_ROOT/marlin-candidates" \
+  --output-dir "$FLUXBIN_RUN_ROOT/marlin-summary"
+```
+
+仍按本手册的持久会话/超时方式运行。先看 correctness、ptxas register/spill 和
+同轮 dense/v1/v3 数据；不把本地测试通过写成 GPU 加速。后续 full-model 的主要速度
+基线是原始 BF16，数值差异可按既定 report-only 策略记录。
