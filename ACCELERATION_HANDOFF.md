@@ -1,5 +1,15 @@
 # 精度暂停、加速研究与关机交接
 
+2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
+12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
+runners are prepared. No new CUDA/full-model performance result; vLLM remains
+unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+
+最新进度（2026-09-14）：首次环境/CUDA smoke 已验收，M=1 的七个真实 layer-0
+Linear 数值门槛通过。Graph 计时稳定，但 v1 耗时为 dense BF16 的 2.03–2.26 倍。
+先保留负面基线并定位/优化 M=1 kernel；尚未启动 block/full-model/vLLM。
+详见 [M=1 结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。下列关机与离线准备段落为历史记录。
+
 2026-09-14 更新：先 M=1 kernel → 单个完整 block → 全模型；未来接入 vLLM，
 当前仅保留 engine 接口。本地准备与首次服务器环境记录/后续镜像流程见
 [M1_ACCELERATION_PREPARATION.md](M1_ACCELERATION_PREPARATION.md)。

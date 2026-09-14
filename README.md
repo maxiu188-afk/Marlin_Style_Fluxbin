@@ -1,10 +1,20 @@
 # Marlin-Style FluxBin
 
+2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
+12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
+runners are prepared. No new CUDA/full-model performance result; vLLM remains
+unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+
 This repository studies a calibrated two-base rank-one binary weight representation.
 The active target is Qwen3-8B; Qwen3-32B remains historical algorithm-quality
 evidence and a source of operator-only stress shapes.
 
-2026-09-14 local acceleration preparation: M=1 CUDA prototype and lossless layout,
+2026-09-14 first M=1 trial: seven real layer-0 Linears pass numerical checks.
+CUDA Graph timings are stable but packed v1 takes 2.03–2.26x the same-run dense
+BF16 time. This is a negative performance baseline; block/full-model/vLLM remain
+unlaunched. See [M=1 Linear results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+
+Historical local acceleration preparation: M=1 CUDA prototype and lossless layout,
 Linear and single-block trial entries, full-model replacement adapter, and a
 future vLLM interface are prepared. GPU compilation/correctness/timing remain
 unverified; no server was contacted. Follow [the M=1 preparation guide](M1_ACCELERATION_PREPARATION.md),

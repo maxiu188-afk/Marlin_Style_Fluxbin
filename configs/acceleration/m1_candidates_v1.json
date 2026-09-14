@@ -1,0 +1,15 @@
+{
+  "id": "m1-bounded-candidates-v1",
+  "dtype": "bf16",
+  "layer": 0,
+  "modes": ["eager", "graph"],
+  "timeout_seconds_per_trial": 300,
+  "candidates": [
+    {"id": "baseline", "kernel": "v1", "groups_per_split": 8, "hypothesis": "same-run original baseline"},
+    {"id": "swizzle", "kernel": "v2_r1", "groups_per_split": 8, "hypothesis": "swizzle and shared lookup width with one row per warp"},
+    {"id": "rows2", "kernel": "v2_r2", "groups_per_split": 8, "hypothesis": "two rows per warp"},
+    {"id": "rows4", "kernel": "v2", "groups_per_split": 8, "hypothesis": "four rows per warp"},
+    {"id": "rows4_split4", "kernel": "v2", "groups_per_split": 4, "hypothesis": "more K partitions"},
+    {"id": "rows4_split16", "kernel": "v2", "groups_per_split": 16, "hypothesis": "fewer K partitions"}
+  ]
+}

@@ -1,6 +1,65 @@
 # Marlin-Style FluxBin current handoff
 
+2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
+12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
+runners are prepared. No new CUDA/full-model performance result; vLLM remains
+unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+
 ## Current status
+
+Local optimization (2026-09-14): user requests local changes and explanation of
+v1 slowness. Added explicit v2 candidate (bank-swizzled shared memory, sixteen
+rows/CTA), preserving the v1 CUDA source and all representation/rounding gates.
+Runner can compare dense/v1/v2 within one trial and requires exact v1/v2 output
+agreement. No server connection or GPU validation this turn. See
+[M1_V2_LOCAL_OPTIMIZATION.md](M1_V2_LOCAL_OPTIMIZATION.md). Performance is unknown;
+next server run needs a fresh source-bound environment record, not the old hash set.
+
+
+Latest direction (2026-09-14): user plans to close compute and iterate locally.
+Do not launch new GPU work. Shutdown is planned, not yet user-confirmed.
+Both M=1 trial jobs previously completed and their small evidence backups passed
+hash checks. Preserve the original network volume, weights, results and caches.
+Startup-time reduction plan is in [SERVER_ITERATION_PLAN.md](SERVER_ITERATION_PLAN.md):
+prepare/push source before opening GPU, freeze a known image, reuse compatible
+build caches, and run bounded candidate batches per startup. Current observed
+install time was 39s; post-install record/compile/smoke window 62s; each real
+Linear trial took about 5s. Image identity remains unresolved. That planning step did not build an image, launch a new experiment or shut down
+the instance. Subsequent local candidate/full-model preparation is recorded above.
+
+
+Latest M=1 trial (2026-09-14): fixed step400, layer 0 seven real Linears tested
+on A100 PCIe in BF16 eager and CUDA Graph modes. All recorded numerical gates
+passed. Eager k_proj dense timing was unstable (31.29% range); Graph all seven
+cells passed stability. Graph packed v1 takes 2.03–2.26x dense BF16 time, so
+this is accepted execution with negative speed, not an acceleration success.
+See [QWEN3_8B_M1_LINEAR_RESULTS.md](QWEN3_8B_M1_LINEAR_RESULTS.md).
+Both jobs exited 0; results/acceptance live under `/workspace/results/m1-a100-20260914/`.
+The next action is bounded M=1 profiling/optimization, retaining v1 as baseline;
+no block/full-model/vLLM job was launched. No kernel bottleneck attribution yet.
+
+
+Server setup accepted (2026-09-14): RunPod A100 80GB PCIe (SM80), driver
+595.91.07, Python 3.12.3, unchanged template torch 2.8.0+cu128 / CUDA 12.8.
+Task `m1-env-20260914` finished with exit 0. First CUDA compile plus six smoke
+tests passed in 57.79 seconds; the full server suite passed all 75 tests with
+no skips. Live source hashes, clean revision `2868d5fa9763bfaa90ea1db786dea8a4c923783e`,
+compiler flags (SM80, --fmad=false, no fast-math), extension binary hash and
+pip check were verified. No GPU compute processes remained at review.
+Status: `accepted_environment_and_synthetic_cuda`. See
+[RUNPOD_M1_SETUP_RESULTS.md](RUNPOD_M1_SETUP_RESULTS.md).
+
+The original network volume and all 43 fixed step400 manifest files passed the
+startup check; snapshot directory exists but shard hashes were not rechecked.
+Before/after environment, runtime activation and acceptance are under
+`/workspace/results/m1-a100-20260914/`; task logs remain in
+`/workspace/jobs/m1-a100-20260914-setup-v1/`.
+Source `/workspace/results/m1-a100-20260914/runtime.sh` before a trial; CUDA PATH
+and cache variables were task-local, not globally installed into login shells.
+The subsequent real-weight M=1 trials are recorded above. The environment review
+itself did not launch benchmarks; block/full-model/vLLM remain unlaunched. Base image identity/digest remains unresolved, so no
+reusable image is accepted. Private verified backup:
+`server_results/runpod_m1_a100_2026-09-14/`.
 
 Latest local preparation (2026-09-14): user requests Marlin-referenced M=1 first,
 then one transformer block, then full-model expansion. Future vLLM integration

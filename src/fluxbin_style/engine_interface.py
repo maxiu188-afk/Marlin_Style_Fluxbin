@@ -8,7 +8,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 import torch
-from .deployment import FORMAT, convert_artifact, m1_out, workspace_shape
+from .deployment import KERNELS, FORMAT, convert_artifact, m1_out, workspace_shape
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,10 @@ class LinearBackend(Protocol):
 class M1Backend:
     contract = LinearContract()
 
-    def __init__(self, groups_per_split=8):
+    def __init__(self, groups_per_split=8, *, kernel="v1"):
+        if kernel not in KERNELS:
+            raise ValueError("kernel must be v1 or v2")
+        self.kernel=kernel
         if not isinstance(groups_per_split,int) or not 1<=groups_per_split<=1024:
             raise ValueError('groups_per_split must be 1..1024')
         self.groups_per_split=groups_per_split
@@ -50,4 +53,4 @@ class M1Backend:
         return workspace_shape(out_features,in_features,self.groups_per_split)
 
     def apply_out(self,x,layout,out,workspace):
-        return m1_out(x,layout,out,workspace,groups_per_split=self.groups_per_split)
+        return m1_out(x,layout,out,workspace,groups_per_split=self.groups_per_split,kernel=self.kernel)

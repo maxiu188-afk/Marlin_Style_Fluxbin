@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 import torch
-from fluxbin_style.deployment import (FIELDS, convert_artifact, restore_artifact, decode_layout,
+from fluxbin_style.deployment import (KERNELS, FIELDS, convert_artifact, restore_artifact, decode_layout,
                                       conversion_record, workspace_shape, m1_out, load_extension)
 from fluxbin_style.evaluation import sha256_file, tensor_sha256, atomic_json
 from fluxbin_style.qwen3 import QWEN3_LINEAR_MODULES
@@ -27,6 +27,7 @@ def main():
     p.add_argument('--warmup',type=int,default=20);p.add_argument('--repeats',type=int,default=100)
     p.add_argument('--rounds',type=int,default=7)
     p.add_argument('--mode',choices=('eager','graph'),default='eager')
+    p.add_argument('--kernel',choices=KERNELS,default='v1')
     args=p.parse_args()
     if args.output.exists():raise FileExistsError(args.output)
     if not torch.cuda.is_available():raise RuntimeError('NVIDIA CUDA required; no local fallback')
@@ -52,7 +53,8 @@ def main():
             'timing_scope':'preallocated outputs; two kernel launches plus FP32 scratch reduction; excludes conversion/JIT/load',
             'next_stage':'not_launched','cells':[]}
     try:
-        load_extension()
+        load_extension(args.kernel)
+        if args.kernel!="v1":load_extension("v1")
         for name in QWEN3_LINEAR_MODULES:
             original={f:tensors[name+'.'+f] for f in FIELDS}
             layout=convert_artifact(original)
@@ -66,7 +68,10 @@ def main():
             x=torch.randn(1,k,device='cuda',dtype=dtype)
             y=torch.empty(1,o,device='cuda',dtype=dtype);reference=torch.empty_like(y)
             workspace=torch.empty(workspace_shape(o,k,args.groups_per_split),device='cuda')
-            def packed():return m1_out(x,layout,y,workspace,groups_per_split=args.groups_per_split)
+            y_v1=torch.empty_like(y) if args.kernel!='v1' else None
+            workspace_v1=torch.empty_like(workspace) if args.kernel!='v1' else None
+            def packed():return m1_out(x,layout,y,workspace,groups_per_split=args.groups_per_split,kernel=args.kernel)
+            def baseline_v1():return m1_out(x,layout,y_v1,workspace_v1,groups_per_split=args.groups_per_split,kernel='v1')
             def baseline():return torch.mm(x,dense.t(),out=reference)
             cell={'module':name,'shape':[o,k],'conversion':record,'checks':[]}
             # Multiple inputs plus a cancellation-sensitive alternating-sign probe.
@@ -74,16 +79,22 @@ def main():
                 torch.cuda.manual_seed_all(seed);x.normal_();baseline();packed()
                 saved=y.clone();workspace.fill_(float('nan'));packed()
                 gate=numerical_gate(y,reference);gate['repeat_exact']=bool(torch.equal(saved,y));gate['seed']=seed
+                if args.kernel!='v1':
+                    baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
                 cell['checks'].append(gate)
             x.copy_((torch.arange(k,device='cuda')%2*2-1).to(dtype));baseline();packed()
-            cell['checks'].append(numerical_gate(y,reference))
-            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) for c in cell['checks'])
+            gate=numerical_gate(y,reference)
+            if args.kernel!='v1':
+                baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
+            cell['checks'].append(gate)
+            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and c.get('v1_exact',True) for c in cell['checks'])
             report['cells'].append(cell)
             if not cell['correctness_passed']:raise RuntimeError(f'numerical gate failed: {name}')
             # Fixed random timing input, not the alternating diagnostic input.
             torch.cuda.manual_seed_all(20260914);x.normal_();baseline();packed()
             cell['input_sha256']=tensor_sha256(x)
             functions={'dense':baseline,'packed':packed}
+            if args.kernel!='v1':functions['v1']=baseline_v1
             graphs=[]
             if args.mode=='graph':
                 for fn in functions.values():
@@ -96,13 +107,16 @@ def main():
                 functions={key:graph.replay for key,graph in zip(functions,graphs)}
                 for fn in functions.values():fn()
                 if not numerical_gate(y,reference)['passed']:raise RuntimeError('graph replay numerical gate failed')
+                if args.kernel!='v1' and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
             cell['timings']=paired_cuda_timing(functions,warmup=args.warmup,repeats=args.repeats,rounds=args.rounds)
             stable=all(t['stable'] for t in cell['timings'].values())
             cell['speedup']=cell['timings']['dense']['median_us']/cell['timings']['packed']['median_us'] if stable else None
             cell['timing_stable']=stable
+            if args.kernel!='v1':
+                cell['speedup_vs_v1']=cell['timings']['v1']['median_us']/cell['timings']['packed']['median_us'] if stable else None
             atomic_json(args.output,report)
             # Release graph references before the next cell to avoid retaining weights.
-            del graphs,functions,layout,dense,workspace
+            del graphs,functions,layout,dense,workspace,workspace_v1,y_v1
         report['status']='completed_pending_review' if all(c['timing_stable'] for c in report['cells']) else 'completed_unstable'
     except Exception as exc:
         report['status']='failed';report['error']=f'{type(exc).__name__}: {exc}'

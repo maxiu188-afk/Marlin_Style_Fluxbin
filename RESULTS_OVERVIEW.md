@@ -1,8 +1,15 @@
 # 当前结果总览
 
+2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
+12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
+runners are prepared. No new CUDA/full-model performance result; vLLM remains
+unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+
 2026-09-13：Qwen3-8B 已完成 Linear、全模型量化、补偿修复、scale-only 蒸馏和
 固定 step400 的 test PPL 验收。精度实验按用户决定暂停，后续转向加速研究。
-用户已确认计算服务器关闭。当前尚无 packed CUDA、block 或全模型加速结果。
+9 月 13 日关闭后，9 月 14 日已启动新实例并完成环境验收。2026-09-14 首轮 M=1 packed CUDA 实验已完成：七个真实 Linear 数值通过，Graph
+计时稳定，但首版耗时为 dense BF16 的 2.03–2.26 倍，没有实现加速。
+详见 [M=1 Linear 结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。尚无 block 或全模型速度结果。
 
 ## Qwen3-8B test PPL
 

@@ -111,6 +111,17 @@ class DeploymentTests(unittest.TestCase):
         self.assertTrue(all(m.rows.dtype==torch.float32 for m in candidate.modules()
                             if isinstance(m,PackedHybridLinear)))
 
+    def test_extension_cache_normalizes_default_and_explicit_v1(self):
+        from unittest.mock import patch
+        from fluxbin_style.deployment import _load_extension
+        _load_extension.cache_clear()
+        try:
+            with patch('torch.cuda.is_available',return_value=True), patch('torch.utils.cpp_extension.load') as build:
+                load_extension();load_extension('v1');load_extension('v2');load_extension('v2_r1');load_extension('v2_r2');load_extension('v1')
+                self.assertEqual(build.call_count,4)
+                with self.assertRaises(ValueError):load_extension('unknown')
+        finally:_load_extension.cache_clear()
+
 
 @unittest.skipUnless(torch.cuda.is_available(), 'requires NVIDIA CUDA compiler/device')
 class CUDADeploymentTests(unittest.TestCase):
@@ -136,6 +147,35 @@ class CUDADeploymentTests(unittest.TestCase):
                     graph.replay();torch.cuda.synchronize()
                     self.assertTrue(torch.equal(y,saved))
                     with self.assertRaises(RuntimeError):m1_out(x.expand(2,-1).contiguous(),q,y,w)
+
+    def test_v2_matches_v1_exactly_across_row_and_split_tails(self):
+        for o,g in ((1,1),(7,3),(16,1),(17,10),(31,3),(33,9)):
+            for dtype in (torch.bfloat16,torch.float16):
+                p={k:v.cuda() for k,v in make_payload(o,g).items()}
+                layout=convert_artifact(p)
+                x=torch.randn(1,g*128,device='cuda',dtype=dtype)
+                reference=torch.nn.functional.linear(x,oracle(p,dtype))
+                for gps in (1,4,8,16):
+                    for candidate in ('v2_r1','v2_r2','v2'):
+                        work=[torch.empty(workspace_shape(o,g*128,gps),device='cuda') for _ in range(2)]
+                        outputs=[torch.empty_like(reference) for _ in range(2)]
+                        for variant,y,w in zip(('v1',candidate),outputs,work):
+                            m1_out(x,layout,y,w,groups_per_split=gps,kernel=variant)
+                        self.assertTrue(torch.equal(*outputs))
+                        torch.testing.assert_close(outputs[1],reference,atol=.02,rtol=.02)
+                        expected=outputs[1].clone()
+                        work[1].fill_(float('nan'))
+                        graph=torch.cuda.CUDAGraph()
+                        with torch.cuda.graph(graph):
+                            m1_out(x,layout,outputs[1],work[1],groups_per_split=gps,kernel=candidate)
+                        graph.replay();torch.cuda.synchronize()
+                        self.assertTrue(torch.equal(outputs[1],expected))
+                        stream=torch.cuda.Stream();stream.wait_stream(torch.cuda.current_stream())
+                        with torch.cuda.stream(stream):
+                            m1_out(x,layout,outputs[1],work[1],groups_per_split=gps,kernel=candidate)
+                        torch.cuda.current_stream().wait_stream(stream)
+                        self.assertTrue(torch.equal(outputs[1],expected))
+
 
 
 if __name__=='__main__':unittest.main()

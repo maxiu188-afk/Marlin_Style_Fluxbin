@@ -1,0 +1,12 @@
+{
+  "id": "qwen3-8b-full-m1-v1",
+  "seed": 20260914,
+  "decode_steps": 32,
+  "warmup": 1,
+  "repeats": 3,
+  "prompts": ["Explain why the sky appears blue in simple terms.", "Describe three practical ways to save water at home."],
+  "max_prompt_tokens": 128,
+  "logprob_max_abs_tolerance": 0.05,
+  "max_relative_timing_range": 0.10,
+  "arms": ["decoded_step400", "original_bf16", "packed_step400"]
+}

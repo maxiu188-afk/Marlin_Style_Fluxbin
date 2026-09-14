@@ -58,7 +58,9 @@ def main():
             'disk_free_bytes':shutil.disk_usage(args.output_dir).free,
             'source_sha256':{str(f.relative_to(ROOT)):hashlib.sha256(f.read_bytes()).hexdigest()
                               for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu')},
-            'build_flags':['-O3','--fmad=false','-lineinfo']}
+            'build_flags':['-O3','--fmad=false','-lineinfo'],
+            'candidate_extra_build_flags':{k:[f'-DROWS_PER_WARP={r}','--ptxas-options=-v']
+                                           for k,r in [('v2_r1',1),('v2_r2',2),('v2',4)]}}
     ready=False
     try:
         import torch

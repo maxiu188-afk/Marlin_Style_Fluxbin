@@ -32,7 +32,7 @@ def load_accepted_layer(root, layer):
 
 
 def replace_model_linears(model, artifact_root: Path, *, allow_prefill_fallback=False,
-                          groups_per_split=8):
+                          groups_per_split=8, kernel="v1"):
     """Prepared HF full-model adapter, to be exercised only after block acceptance.
 
     No download, scheduler, attention or KV-cache changes. Default is strict M=1;
@@ -53,8 +53,9 @@ def replace_model_linears(model, artifact_root: Path, *, allow_prefill_fallback=
     for layer,block in enumerate(model.model.layers):
         payload,_=load_accepted_layer(artifact_root,layer)
         modules=replace_block_linears(block,payload,
-            fallback='dense' if allow_prefill_fallback else 'error',groups_per_split=groups_per_split)
+            fallback='dense' if allow_prefill_fallback else 'error',groups_per_split=groups_per_split,kernel=kernel)
         coverage.extend(f'model.layers.{layer}.{m}' for m in modules)
     return {'format': 'fluxbin-hybrid-g128-s8-m1-v1', 'manifest_sha256':MANIFEST_SHA,
             'layers':records,'coverage':coverage,'linear_count':len(coverage),
+            'kernel':kernel,'groups_per_split':groups_per_split,
             'prefill_fallback_enabled':allow_prefill_fallback,'status':'installed_not_validated'}

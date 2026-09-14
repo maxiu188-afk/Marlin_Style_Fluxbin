@@ -32,6 +32,7 @@ def main():
     prior=json.loads(args.linear_result.read_text())
     if prior.get('status')!='completed_pending_review' or prior.get('manifest_sha256')!=MANIFEST_SHA or prior.get('layer')!=args.layer:
         raise ValueError('matching completed stable Linear trial required; review it before this explicit launch')
+    kernel=prior['settings'].get('kernel','v1')
     if prior['settings']['dtype']!='bf16':raise ValueError('BF16 Linear trial required for BF16 block')
     if {c['module'] for c in prior['cells']}!=set(QWEN3_LINEAR_MODULES) or not all(
         c['correctness_passed'] and c['timing_stable'] for c in prior['cells']):
@@ -70,7 +71,7 @@ def main():
                                       device='cuda',output_dtype=torch.bfloat16)
         block.get_submodule(name).weight.copy_(w)
     packed=copy.deepcopy(block)
-    replace_block_linears(packed,payload,groups_per_split=groups_per_split)
+    replace_block_linears(packed,payload,groups_per_split=groups_per_split,kernel=kernel)
     rotary=Qwen3RotaryEmbedding(config,device='cuda')
     torch.manual_seed(20260914);torch.cuda.manual_seed_all(20260914)
     torch.backends.cuda.matmul.allow_tf32=False
@@ -85,7 +86,7 @@ def main():
             'linear_result_sha256':sha256_file(args.linear_result),'source_sha256':sources,
             'runner_sha256':sha256_file(Path(__file__)), 'next_stage':'not_launched',
             'scope':'synthetic hidden inputs, real weights; sequence=1, no KV prefix; eager only',
-            'groups_per_split':groups_per_split,
+            'groups_per_split':groups_per_split,'kernel':kernel,
             'timing_settings':{'warmup':20,'repeats':100,'rounds':7},'checks':[]}
     try:
         for _ in range(3):

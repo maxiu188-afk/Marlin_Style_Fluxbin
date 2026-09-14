@@ -15,6 +15,7 @@ from torch.nn import functional as F
 from .evaluation import materialize_hybrid_s8_weight, tensor_sha256
 
 FORMAT = 'fluxbin-hybrid-g128-s8-m1-v1'
+KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2')
 FIELDS = ('global_sign_codes', 'global_row_scales', 'global_column_scales',
           'refinement_indices', 'refinement_sign_codes',
           'refinement_row_scales', 'refinement_column_scales')
@@ -88,14 +89,25 @@ def conversion_record(source, layout):
             'layout_bytes': sum(v.numel() * v.element_size() for v in layout.values())}
 
 
-@lru_cache(maxsize=1)
-def load_extension():
+def load_extension(kernel="v1"):
+    if kernel not in KERNELS:
+        raise ValueError(f"kernel must be one of {KERNELS}")
+    return _load_extension(kernel)
+
+
+@lru_cache(maxsize=4)
+def _load_extension(kernel):
     if not torch.cuda.is_available():
         raise RuntimeError('M=1 kernel requires NVIDIA CUDA; no CPU/MPS substitution')
     from torch.utils.cpp_extension import load
     root = Path(__file__).resolve().parent / 'csrc'
-    return load(name='fluxbin_m1_v1', sources=[str(root / 'm1.cu')],
-                extra_cuda_cflags=['-O3', '--fmad=false', '-lineinfo'], verbose=True)
+    filename = 'm1.cu' if kernel == 'v1' else 'm1_v2.cu'
+    flags = ['-O3', '--fmad=false', '-lineinfo']
+    if kernel != 'v1':
+        rows = {'v2_r1': 1, 'v2_r2': 2, 'v2': 4}[kernel]
+        flags += [f'-DROWS_PER_WARP={rows}', '--ptxas-options=-v']
+    return load(name=f'fluxbin_m1_{kernel}', sources=[str(root / filename)],
+                extra_cuda_cflags=flags, verbose=True)
 
 
 def workspace_shape(out_features: int, in_features: int, groups_per_split=8):
@@ -105,14 +117,14 @@ def workspace_shape(out_features: int, in_features: int, groups_per_split=8):
     return ((in_features // 128 + groups_per_split - 1) // groups_per_split, out_features)
 
 
-def m1_out(x, layout, out, workspace, *, groups_per_split=8):
+def m1_out(x, layout, out, workspace, *, groups_per_split=8, kernel="v1"):
     """Engine-neutral inference ABI. Caller owns output and per-call workspace.
 
     CUDA current stream; BF16/FP16 input/output; FP32 accumulation. No allocations
     after extension warmup. Only contiguous [1,K] supported. No hidden fallback.
     Workspaces must not be shared by overlapping calls on different streams.
     """
-    load_extension().m1_out(x, layout['codes'], layout['rows'], layout['columns'],
+    load_extension(kernel).m1_out(x, layout['codes'], layout['rows'], layout['columns'],
                             layout['sparse_codes'], layout['sparse_rows'],
                             layout['sparse_columns'], layout['lookup'], out,
                             workspace, groups_per_split)
@@ -126,10 +138,13 @@ class PackedHybridLinear(nn.Module):
     later integration checks, reconstructing on demand (not a prefill speed path).
     Keep this module's FP32 buffers intact: move with .to(device), never .half().
     """
-    def __init__(self, payload, *, bias=None, fallback='error', groups_per_split=8):
+    def __init__(self, payload, *, bias=None, fallback='error', groups_per_split=8, kernel='v1'):
         super().__init__()
         if fallback not in ('error', 'dense'):
             raise ValueError('fallback must be error or dense')
+        if kernel not in KERNELS:raise ValueError('unknown kernel')
+        self.kernel = kernel
+        self.route_counts = {'packed_m1': 0, 'dense_fallback': 0}
         self.out_features, g = validate_artifact(payload)
         self.in_features = g * 128
         self.fallback, self.groups_per_split = fallback, groups_per_split
@@ -156,21 +171,23 @@ class PackedHybridLinear(nn.Module):
             if self.fallback != 'dense':
                 raise ValueError('unsupported input; enable explicit dense fallback if needed')
             self.last_route = 'dense_fallback'
+            self.route_counts['dense_fallback'] += 1
             return F.linear(x, decode_layout(self.layout(), x.dtype), self.bias)
         self.last_route = 'packed_m1'
+        self.route_counts['packed_m1'] += 1
         shape = workspace_shape(self.out_features, self.in_features, self.groups_per_split)
         # Adapter owns one workspace: same-stream sequential model execution only.
         if self._workspace is None or self._workspace.device != x.device:
             self._workspace = torch.empty(shape, device=x.device, dtype=torch.float32)
         y = torch.empty((1, self.out_features), device=x.device, dtype=x.dtype)
         m1_out(x.reshape(1, self.in_features).contiguous(), self.layout(), y,
-               self._workspace, groups_per_split=self.groups_per_split)
+               self._workspace, groups_per_split=self.groups_per_split, kernel=self.kernel)
         if self.bias is not None:
             y = y + self.bias
         return y.reshape(*x.shape[:-1], self.out_features)
 
 
-def replace_block_linears(block, layer_payload, *, fallback='error', groups_per_split=8):
+def replace_block_linears(block, layer_payload, *, fallback='error', groups_per_split=8, kernel='v1'):
     """Replace exactly seven Qwen3 Linears; usable for one block or all 36 blocks."""
     from .qwen3 import QWEN3_LINEAR_MODULES
     expected = {f'{module}.{field}' for module in QWEN3_LINEAR_MODULES for field in FIELDS}
@@ -184,7 +201,7 @@ def replace_block_linears(block, layer_payload, *, fallback='error', groups_per_
         if not isinstance(old, nn.Linear) or (old.out_features, old.in_features) != (o, g * 128):
             raise ValueError(f'Linear shape/type mismatch: {name}')
         replacement = PackedHybridLinear(p, bias=old.bias, fallback=fallback,
-                                         groups_per_split=groups_per_split).to(old.weight.device)
+                                         groups_per_split=groups_per_split,kernel=kernel).to(old.weight.device)
         replacements.append((name, replacement))
     # Validate/build every replacement before mutating the block.
     for name, replacement in replacements:
