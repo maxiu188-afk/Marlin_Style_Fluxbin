@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin current handoff
 
+Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
+On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
+fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route
+checks passed. Numerical differences were retained under the user-authorized
+report-only policy. No full-model speedup was achieved. Details: [full-model results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+
 User follow-up: proceed with full-model timing despite finite numerical differences.
 Runner now has explicit `--numerical-policy report-only`; errors remain recorded,
 coverage/context/nonfinite guards remain active, and original BF16 is the primary

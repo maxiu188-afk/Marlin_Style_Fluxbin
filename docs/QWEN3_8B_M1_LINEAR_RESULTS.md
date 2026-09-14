@@ -118,3 +118,41 @@ max_abs_logprob_error=0.3394165039（上限 0.05）。
 
 失败 JSON、日志和退出码备份到
 `server_results/runpod_m1_sxm4_2026-09-14/full-model/`，保留原始现场。
+
+### 完整模型性能重跑完成（report-only）
+
+用户明确接受数值差异记录后，以 `--numerical-policy report-only` 重跑；未改变
+权重、kernel、输入、数值容差、decode 长度或重复次数。源码 revision
+`d1bcd6da4b8fe6afa210eb286de3baf7a445a077`，仅 runner 的停止策略等修改；底层 src
+hash 与此前环境/block 一致。退出码 0，任务总耗时 135 秒，最终状态
+`completed_with_numerical_differences`。
+
+主要比较对象为原始 BF16 模型。Qwen3-8B、batch=1、HF eager dynamic KV、两个
+固定 prompt、各 32 个 decode steps、每 arm/prompt warmup=1/repeats=3。全部
+decode wall/device timing 的相对极差满足 <=10%；吞吐为 32 / decode wall time。
+
+| Prompt | 原始 BF16 ms/token | packed ms/token | 原始 BF16 tok/s | packed tok/s | BF16/packed 速度比 |
+|---|---:|---:|---:|---:|---:|
+| 0 | 36.036 | 38.617 | 27.750 | 25.895 | 0.9332× |
+| 1 | 36.326 | 37.989 | 27.528 | 26.323 | 0.9562× |
+
+结论：当前完整模型没有加速，packed latency 分别高 7.16% / 4.58%。这是两个
+固定短上下文的测量，不代表所有上下文/serving 工作负载。辅助 decoded-step400
+基线分别为 30.014 / 30.277 tok/s，packed 相对该基线为 0.8628× / 0.8694×。
+
+- 原始 BF16 prefill wall median：36.205 / 36.212 ms；packed：781.886 / 780.345 ms。
+  packed prefill 当前使用逐层按需 dense 重建，开销计入该阶段。
+- 原始 BF16 resident allocated：15.266 GiB；packed：4.924 GiB。运行峰值约
+  15.291 / 5.627 GiB。此为 PyTorch allocated memory，非设备总使用量。
+- packed 加载/转换峰值仍为 15.343 GiB，因为先加载 dense checkpoint 再替换。
+- 所有 packed trace 都有 252 个目标 Linear，各 prefill fallback 1 次、decode
+  packed 32 次；输入 continuation 与 decoded 相同，KV 长度通过。
+- 两个 prompt 都有 1/33 greedy prediction 不同，三次重复中的差异相同。
+  NRMSE 为 0.0115685 / 0.0113527，最大 logprob 差为 0.3394165 / 0.5623779。
+  按用户授权仅记录，不据此中止计时，也不标记为数值等价通过。
+
+结果 SHA256：`36869de3ba17acbcb762d66d6f92cbcb393d19c514449f245c04298cbef32347`。
+远端结果：`/workspace/results/m1-sxm4-20260914-v1/full-model-rows4-reportonly.json`。
+本地原始结果、日志、退出码：`server_results/runpod_m1_sxm4_2026-09-14/full-model-reportonly/`。
+审计核对远端/本地 hash、source/runner/protocol/environment/block 绑定、原始计时
+median/极差/速度比、context 与 routes；未在审计阶段重跑模型。
