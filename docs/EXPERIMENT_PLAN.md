@@ -20,7 +20,7 @@ quality acceptance or measured acceleration is made. See
 `QWEN3_8B_DISTILLED_TEST_RESULTS.md` and `ACCELERATION_HANDOFF.md`.
 
 RunPod image, storage, Template, cache, and restart conventions are defined in
-[`infra/runpod/README.md`](infra/runpod/README.md). The reusable environment is
+[`infra/runpod/README.md`](../infra/runpod/README.md). The reusable environment is
 part of Phase A0. The user now prefers an existing RunPod PyTorch/CUDA template:
 inspect the provided environment and add only missing dependencies. Record its
 base image and actual versions; a custom image is optional later, not an A0

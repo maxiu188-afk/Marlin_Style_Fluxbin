@@ -2,7 +2,7 @@
 
 > 2026-09-13：用户已改为先使用 RunPod 现成 PyTorch/CUDA 模板，按实际缺项补依赖。
 > 以下自定义镜像流程暂缓，不再是开服务器或验证 Linear 的前提。
-> 当前操作入口请看 [8B Linear 指引](../../QWEN3_8B_LINEAR_GUIDE.md)。
+> 当前操作入口请看 [8B Linear 指引](../../docs/QWEN3_8B_LINEAR_GUIDE.md)。
 
 更新：2026-09-12。以下是操作指引，不代表其中的构建、发布或实验已经执行。
 
@@ -194,7 +194,7 @@ PY
 
 ## 7. 环境就绪后才开始 8B A0
 
-按 [EXPERIMENT_PLAN.md](../../EXPERIMENT_PLAN.md) 执行：
+按 [EXPERIMENT_PLAN.md](../../docs/EXPERIMENT_PLAN.md) 执行：
 
 1. 创建新的 8B 配置和 runner，保留历史 32B 配置与产物。
 2. 核对固定模型 revision、tokenizer、36 层 / 252 个 Linear 及权重清单。
@@ -204,7 +204,7 @@ PY
 6. 只有相对 BF16 PPL 差距不超过 5% 的候选进入 packed 部署。
 
 现有 runner 仍有 32B 假设，因此现在没有可以直接复制执行的已验收 8B 全量命令。
-各阶段单独验收，不自动连跑。详细状态见 [CURRENT_HANDOFF.md](../../CURRENT_HANDOFF.md)。
+各阶段单独验收，不自动连跑。详细状态见 [CURRENT_HANDOFF.md](../../docs/CURRENT_HANDOFF.md)。
 
 ## 官方参考
 

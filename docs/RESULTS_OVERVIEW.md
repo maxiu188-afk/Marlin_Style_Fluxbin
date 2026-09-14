@@ -96,5 +96,5 @@ dtype、执行路径和环境不变且无数值依赖分支时，后续只更新
 仍为新权重重做正确性检查，并保留每次计时绑定的权重及代码版本。
 
 历史 32B 的 test PPL 为 BF16 7.610839、pure 17.744707、hybrid 10.433873，
-仅保留为历史算法证据，详见 [README](README.md#historical-accepted-qwen3-32b-result)。
+仅保留为历史算法证据，详见 [README](../README.md#historical-accepted-qwen3-32b-result)。
 当前不新增 32B 全模型实验。

@@ -4,13 +4,13 @@
 before installation and the working environment after CUDA build smoke. Use
 `scripts/record_acceleration_environment.py`; generate a future image bundle with
 `scripts/prepare_acceleration_image.py` only from verified observations. The full
-procedure is in [M1 preparation](../../M1_ACCELERATION_PREPARATION.md). No server
+procedure is in [M1 preparation](../../docs/M1_ACCELERATION_PREPARATION.md). No server
 connection or image build is authorized for the current offline preparation turn.
 The older provisioning/image details below are historical or future guidance.
 
 2026-09-13: custom image work is deferred. The current route uses an existing
 RunPod PyTorch/CUDA template, inspects installed packages, and adds only needed
-dependencies. See [the 8B Linear guide](../../QWEN3_8B_LINEAR_GUIDE.md).
+dependencies. See [the 8B Linear guide](../../docs/QWEN3_8B_LINEAR_GUIDE.md).
 The image lifecycle below remains a future reproducibility option.
 
 This setup minimizes GPU-Pod rebuild work while keeping accepted experiments

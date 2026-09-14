@@ -252,7 +252,7 @@ The user provisioned the A100 Pod; the environment is installed on container
 disk at `/opt/fluxbin-venv`, while model/data/artifacts stay on `/workspace`.
 
 RunPod reconstruction is addressed by the versioned bootstrap image and
-persistent-storage contract in [`infra/runpod/README.md`](infra/runpod/README.md).
+persistent-storage contract in [`infra/runpod/README.md`](../infra/runpod/README.md).
 The intended lifecycle is terminate compute, retain the Network Volume, and
 recreate a Pod from the same Template and immutable image.
 

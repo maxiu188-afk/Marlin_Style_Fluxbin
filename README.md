@@ -1,9 +1,12 @@
 # Marlin-Style FluxBin
 
+Project documentation is collected in [docs/README.md](docs/README.md). Start with
+[the current handoff](docs/CURRENT_HANDOFF.md) for progress and next steps.
+
 2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
 12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
 runners are prepared. No new CUDA/full-model performance result; vLLM remains
-unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
 
 This repository studies a calibrated two-base rank-one binary weight representation.
 The active target is Qwen3-8B; Qwen3-32B remains historical algorithm-quality
@@ -12,17 +15,17 @@ evidence and a source of operator-only stress shapes.
 2026-09-14 first M=1 trial: seven real layer-0 Linears pass numerical checks.
 CUDA Graph timings are stable but packed v1 takes 2.03–2.26x the same-run dense
 BF16 time. This is a negative performance baseline; block/full-model/vLLM remain
-unlaunched. See [M=1 Linear results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+unlaunched. See [M=1 Linear results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
 
 Historical local acceleration preparation: M=1 CUDA prototype and lossless layout,
 Linear and single-block trial entries, full-model replacement adapter, and a
 future vLLM interface are prepared. GPU compilation/correctness/timing remain
-unverified; no server was contacted. Follow [the M=1 preparation guide](M1_ACCELERATION_PREPARATION.md),
+unverified; no server was contacted. Follow [the M=1 preparation guide](docs/M1_ACCELERATION_PREPARATION.md),
 including first-server environment capture and subsequent image preparation.
 
 2026-09-13 closeout: full-model reconstruction, compensation repair, scale-only
 distillation and fixed step400 test PPL have been reviewed. Start with the
-[results overview](RESULTS_OVERVIEW.md) for the evidence and source revisions.
+[results overview](docs/RESULTS_OVERVIEW.md) for the evidence and source revisions.
 
 | Qwen3-8B weights | WikiText-2 test PPL |
 | --- | ---: |
@@ -40,13 +43,13 @@ The final model remains 35.42% above BF16 and does not pass the original quality
 Accuracy experiments are paused by user direction. Research on packed conversion,
 CUDA correctness and acceleration is authorized next, independently of the unmet
 quality gate; no packed CUDA or end-to-end speed result exists yet. Follow
-[the acceleration handoff](ACCELERATION_HANDOFF.md) and
-[the staged plan](EXPERIMENT_PLAN.md).
+[the acceleration handoff](docs/ACCELERATION_HANDOFF.md) and
+[the staged plan](docs/EXPERIMENT_PLAN.md).
 
 The user confirmed the compute server is closed. Before shutdown, the 36-layer
 step400 payload and records were copied and hash-verified on the persistent
 network volume; large weights were not downloaded locally. See
-[storage and restart details](SERVER_SHUTDOWN_READY.md). Use an existing RunPod
+[storage and restart details](docs/SERVER_SHUTDOWN_READY.md). Use an existing RunPod
 PyTorch/CUDA template and restore only missing dependencies on container disk.
 
 The reusable RunPod image, Network Volume, Template, and cache layout are
@@ -215,4 +218,4 @@ the active plan. Scheduler/process completion alone is never treated as
 acceptance.
 
 For the full operational record and exact acceptance boundaries, see
-[`CURRENT_HANDOFF.md`](CURRENT_HANDOFF.md).
+[`CURRENT_HANDOFF.md`](docs/CURRENT_HANDOFF.md).
