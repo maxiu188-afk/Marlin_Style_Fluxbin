@@ -39,14 +39,22 @@ def replace_model_linears(model, artifact_root: Path, *, allow_prefill_fallback=
     enabling prefill explicitly uses slow on-demand dense materialization.
     Returned provenance contains exact coverage. No serving/TP support is implied.
     """
-    from .deployment import replace_block_linears
+    from .deployment import replace_block_linears, validate_artifact, KERNELS, workspace_shape
+    from torch import nn
     from .qwen3_8b import validate_architecture
     validate_architecture(model.config.to_dict())
     if len(model.model.layers)!=36:raise ValueError('expected 36 decoder layers')
-    # Complete file/inventory/shape validation before starting replacement.
+    if kernel not in KERNELS:raise ValueError('unknown kernel')
+    workspace_shape(1,128,groups_per_split)
+    # Complete payload and target validation before starting replacement.
     records=[]
     for layer in range(36):
         payload,entry=load_accepted_layer(artifact_root,layer)
+        for name in QWEN3_LINEAR_MODULES:
+            o,g=validate_artifact({field:payload[name+'.'+field] for field in FIELDS})
+            target=model.model.layers[layer].get_submodule(name)
+            if not isinstance(target,nn.Linear) or (target.out_features,target.in_features)!=(o,g*128):
+                raise ValueError(f'Linear shape/type mismatch: layer {layer} {name}')
         records.append(entry)
     del payload
     coverage=[]

@@ -120,3 +120,27 @@ step400 packed。所有路径使用 step400 decoded 首次运行产生的同一 
 
 本地验证：81 项 unittest，79 通过、2 CUDA skip；包含真实 tiny Qwen3 的合成权重
 缓存/全前缀一致性测试。完整 8B、CUDA 编译、数值稳定性和所有速度均待服务器验证。
+
+## 本地离线汇总与流程检查
+
+服务器结果备份后，在已安装项目环境的本地仓库根目录执行（不需要 GPU）：
+
+```bash
+python scripts/summarize_m1_candidates.py \
+  --batch-dir "$FLUXBIN_RUN_ROOT/candidates" \
+  --output-dir "$FLUXBIN_RUN_ROOT/candidate-summary"
+```
+
+生成 summary.json 与 summary.md，固定展示全部 84 格（12 trial × 7 Linear），
+保留未运行、失败、hash 不匹配及不稳定项。检查 batch/config/result/log hash、
+源码/环境/runner/payload 一致性和输入 hash；从七轮原始样本重算 median、稳定性及
+速度比。eager/Graph 分开给出每个 shape 最快的合格实测配置，不自动选定全模型
+kernel 或启动下一阶段。缺失/无效格不提供速度比，summary 完成本身不代表实验验收。
+
+新增本地流程检查使用合成 tiny Qwen3 的 36 层，实际调用替换逻辑确认 252 个
+Linear 的 kernel/split/fallback 传递；仅 mock 8B 架构尺寸门槛与 payload IO。
+另验证最后一层不匹配时不会先替换前面层，以及 CPU prefill 后严格 decode 拒绝
+CPU 输入、异常后恢复全部 fallback 策略。这不是 GPU packed forward 验证。
+生产替换入口已将全部目标 Linear 与 payload 合同检查前移到首次替换之前。
+
+本轮本地套件 85 项：83 通过、2 CUDA skip；不连接服务器，不接入 vLLM。

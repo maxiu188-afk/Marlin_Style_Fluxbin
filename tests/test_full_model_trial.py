@@ -55,6 +55,41 @@ class FullModelTrialTests(unittest.TestCase):
         bad=copy.deepcopy(block);bad['timings']['packed_step400']['microseconds_per_call'][0]=100
         with self.assertRaises(ValueError):gate(bad)
 
+    def test_36_layer_replacement_and_late_failure_before_mutation(self):
+        from unittest.mock import patch
+        from transformers import Qwen3Config, Qwen3ForCausalLM
+        from fluxbin_style.deployment import PackedHybridLinear
+        from fluxbin_style.deployment_artifacts import replace_model_linears
+        from fluxbin_style.qwen3 import QWEN3_LINEAR_MODULES
+        from test_deployment import make_payload
+        cfg=Qwen3Config(vocab_size=32,hidden_size=128,intermediate_size=128,
+                       num_hidden_layers=36,num_attention_heads=4,num_key_value_heads=2,head_dim=32)
+        model=Qwen3ForCausalLM(cfg).eval()
+        payload={}
+        for name in QWEN3_LINEAR_MODULES:
+            linear=model.model.layers[0].get_submodule(name)
+            payload.update({name+'.'+k:v for k,v in make_payload(linear.out_features,1).items()})
+        # Synthetic tiny dimensions and payload IO only are mocked; real replacement is exercised.
+        with patch('fluxbin_style.qwen3_8b.validate_architecture'), patch(
+                'fluxbin_style.deployment_artifacts.load_accepted_layer',return_value=(payload,{'synthetic':True})):
+            original=model.model.layers[-1].mlp.down_proj
+            model.model.layers[-1].mlp.down_proj=torch.nn.Linear(128,127,bias=False)
+            with self.assertRaisesRegex(ValueError,'layer 35'):
+                replace_model_linears(model,Path('.'),kernel='v2_r2')
+            self.assertFalse(any(isinstance(m,PackedHybridLinear) for m in model.modules()))
+            model.model.layers[-1].mlp.down_proj=original
+            coverage=replace_model_linears(model,Path('.'),kernel='v2_r2',groups_per_split=4,
+                                           allow_prefill_fallback=True)
+        packed=[m for m in model.modules() if isinstance(m,PackedHybridLinear)]
+        self.assertEqual(len(packed),252)
+        self.assertEqual(len(set(coverage['coverage'])),252)
+        self.assertTrue(all(m.kernel=='v2_r2' and m.groups_per_split==4 and m.fallback=='dense' for m in packed))
+        # CPU prefill is allowed; strict decode must fail, and finally must restore all policies.
+        with self.assertRaisesRegex(ValueError,'unsupported input'):
+            decode_trace(model,torch.tensor([[1,2,3]]),steps=2)
+        self.assertTrue(all(m.fallback=='dense' for m in packed))
+        self.assertTrue(all(m.route_counts['dense_fallback']==1 for m in packed))
+
     def test_candidate_suite_is_bounded_and_distinct(self):
         root=Path(__file__).resolve().parents[1]
         cfg=json.loads((root/'configs/acceleration/m1_candidates_v1.json').read_text())

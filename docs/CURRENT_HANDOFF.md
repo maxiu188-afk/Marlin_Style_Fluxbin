@@ -1,5 +1,12 @@
 # Marlin-Style FluxBin current handoff
 
+Offline preparation follow-up: candidate batch summarizer now validates provenance and
+raw timing samples, preserves all 84 cells, and ranks each shape separately by mode.
+Full-model replacement prevalidates all 36 layers before mutation; synthetic CPU tests
+exercise 252 replacements and failure-policy restoration. 85 local tests: 83 pass,
+2 CUDA skips. No new server/GPU evidence. See the existing
+[M1 runbook](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md#本地离线汇总与流程检查).
+
 2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
 12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
 runners are prepared. No new CUDA/full-model performance result; vLLM remains
