@@ -1,5 +1,10 @@
 # 精度暂停、加速研究与关机交接
 
+2026-09-14 更新：先 M=1 kernel → 单个完整 block → 全模型；未来接入 vLLM，
+当前仅保留 engine 接口。本地准备与首次服务器环境记录/后续镜像流程见
+[M1_ACCELERATION_PREPARATION.md](M1_ACCELERATION_PREPARATION.md)。
+本轮不连接服务器，不运行 GPU 实验，不构建或发布镜像。
+
 用户已决定：完成固定 step400 test PPL 后暂停精度实验，项目主要转向加速效果研究。
 最终 test PPL 13.169788495，较未蒸馏直接父版本 14.951611048 降低 11.9173%。
 混合、补偿修复、蒸馏的阶段证据见 `QWEN3_8B_DISTILLED_TEST_RESULTS.md`。

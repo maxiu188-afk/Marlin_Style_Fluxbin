@@ -4,6 +4,12 @@ This repository studies a calibrated two-base rank-one binary weight representat
 The active target is Qwen3-8B; Qwen3-32B remains historical algorithm-quality
 evidence and a source of operator-only stress shapes.
 
+2026-09-14 local acceleration preparation: M=1 CUDA prototype and lossless layout,
+Linear and single-block trial entries, full-model replacement adapter, and a
+future vLLM interface are prepared. GPU compilation/correctness/timing remain
+unverified; no server was contacted. Follow [the M=1 preparation guide](M1_ACCELERATION_PREPARATION.md),
+including first-server environment capture and subsequent image preparation.
+
 2026-09-13 closeout: full-model reconstruction, compensation repair, scale-only
 distillation and fixed step400 test PPL have been reviewed. Start with the
 [results overview](RESULTS_OVERVIEW.md) for the evidence and source revisions.

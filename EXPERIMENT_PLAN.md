@@ -1,5 +1,13 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
+2026-09-14 execution order: start with M=1 on Qwen3-8B, then a single complete
+transformer block, then full-model expansion. M>1 and 32B stress cells are later
+extensions, not part of the first trial. Reserve an engine-neutral interface for
+future vLLM; do not integrate it now. Current work is offline preparation only.
+First new server startup MUST record the environment before and after setup;
+after successful CUDA smoke, prepare an immutable reusable image and validate it
+on a recreated Pod. See `M1_ACCELERATION_PREPARATION.md`.
+
 Status (2026-09-13, latest user direction): accuracy experiments pause after the
 accepted fixed step400 test PPL, **13.169788495**, improved from undistilled
 conditioned hybrid 14.951611048. The persistent step400 artifact is the frozen
@@ -234,8 +242,9 @@ they cannot be inferred from operator results.
 
 1. Stop before full quantization if representative real-Linears violate the
    algorithm contract.
-2. Stop before deployment if no complete quantized arm passes the model-quality
-   gate.
+2. Preserve the failed model-quality decision; under the latest user direction,
+   research correctness/benchmark work may proceed on the fixed step400 artifact.
+   Product deployment acceptance remains separate.
 3. Stop performance promotion for any shape or batch cell that fails numerical
    correctness or timing stability.
 4. If 8B full-model acceleration is weak but 32B stress shapes are strong,

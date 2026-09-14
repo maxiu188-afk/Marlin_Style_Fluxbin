@@ -2,6 +2,21 @@
 
 ## Current status
 
+Latest local preparation (2026-09-14): user requests Marlin-referenced M=1 first,
+then one transformer block, then full-model expansion. Future vLLM integration
+is reserved at an engine-neutral interface only; do not integrate vLLM yet.
+Prepared versioned lossless conversion, an uncompiled CUDA SIMT M=1 prototype,
+Linear trial runner, empty-cache single-block probe and full-model replacement
+adapter. See [M1_ACCELERATION_PREPARATION.md](M1_ACCELERATION_PREPARATION.md).
+Local suite: 75 tests, 74 passed and one CUDA-only test skipped; compileall and
+whitespace checks passed. No server connection, CUDA execution, image build or
+performance claim this turn.
+On the FIRST new server startup, record environment before/after dependency
+setup and run build smoke; only then generate an image bundle from observed
+requirements. Later recreate and revalidate an immutable image to reduce setup.
+The old endpoint remains closed; preserve the network volume and frozen step400.
+
+
 Latest closeout (2026-09-13): the user confirmed the compute server is closed.
 See [RESULTS_OVERVIEW.md](RESULTS_OVERVIEW.md) for the consolidated results.
 Fixed distilled step400 WT2 test PPL is accepted for execution: **13.169788495**,
