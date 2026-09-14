@@ -144,3 +144,12 @@ CPU 输入、异常后恢复全部 fallback 策略。这不是 GPU packed forwar
 生产替换入口已将全部目标 Linear 与 payload 合同检查前移到首次替换之前。
 
 本轮本地套件 85 项：83 通过、2 CUDA skip；不连接服务器，不接入 vLLM。
+
+## 用户指定的性能优先重跑
+
+首轮因全模型数值差异主动退出后，用户明确允许保留差异并完成性能测量。
+使用相同的全模型命令，追加 `--numerical-policy report-only` 并另选新 output 文件。
+原始容差、输入、重复次数及 kernel 均不改；误差与 token 差异继续写入 JSON。
+coverage、相同输入上下文和有限值检查仍保留。默认不传此参数时仍为 strict。
+结果同时记录 `all_numerical_checks_passed` 和 `all_timings_stable`，数值不通过而
+稳定测完的状态为 `completed_with_numerical_differences`。主性能基线为 original BF16。

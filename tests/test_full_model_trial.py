@@ -90,6 +90,22 @@ class FullModelTrialTests(unittest.TestCase):
         self.assertTrue(all(m.fallback=='dense' for m in packed))
         self.assertTrue(all(m.route_counts['dense_fallback']==1 for m in packed))
 
+    def test_report_only_records_difference_but_keeps_execution_guards(self):
+        import importlib.util
+        path=Path(__file__).resolve().parents[1]/'scripts/run_qwen3_8b_full_m1_trial.py'
+        spec=importlib.util.spec_from_file_location('full_runner',path)
+        runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+        row={'coverage_passed':True,'correctness':{'passed':False,'fed_tokens_equal':True,'logits':{'passed':False}}}
+        self.assertTrue(runner.must_abort(row,'strict'))
+        self.assertFalse(runner.must_abort(row,'report-only'))
+        row['coverage_passed']=False
+        self.assertTrue(runner.must_abort(row,'report-only'))
+        row['coverage_passed']=True;row['correctness']['fed_tokens_equal']=False
+        self.assertTrue(runner.must_abort(row,'report-only'))
+        row['correctness']['fed_tokens_equal']=True
+        row['correctness']['logits']['reason']='nonfinite output'
+        self.assertTrue(runner.must_abort(row,'report-only'))
+
     def test_candidate_suite_is_bounded_and_distinct(self):
         root=Path(__file__).resolve().parents[1]
         cfg=json.loads((root/'configs/acceleration/m1_candidates_v1.json').read_text())

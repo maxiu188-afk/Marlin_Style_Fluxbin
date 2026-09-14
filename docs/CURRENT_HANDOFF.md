@@ -1,5 +1,10 @@
 # Marlin-Style FluxBin current handoff
 
+User follow-up: proceed with full-model timing despite finite numerical differences.
+Runner now has explicit `--numerical-policy report-only`; errors remain recorded,
+coverage/context/nonfinite guards remain active, and original BF16 is the primary
+performance baseline. This does not relabel the failed strict trial as passed.
+
 Full-model follow-up: the submitted task exited 1 at packed_step400 prompt 0,
 repeat 0. Coverage (252 Linears) and KV length passed, but the same-weight decoded
 BF16 correctness comparison failed: NRMSE 0.0115685 > 0.005, maximum logprob error

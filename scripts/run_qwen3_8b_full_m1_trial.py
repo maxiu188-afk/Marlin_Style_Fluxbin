@@ -33,11 +33,22 @@ def small_trace(trace):
             'logits_sha256':tensor_sha256(trace['logits'])}
 
 
+def must_abort(row, numerical_policy):
+    check=row['correctness']
+    if not row.get('coverage_passed',True) or not check.get('fed_tokens_equal',True):
+        return True
+    if check.get('logits',{}).get('reason')=='nonfinite output':
+        return True
+    return not check['passed'] and numerical_policy=='strict'
+
+
 @torch.inference_mode()
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('snapshot-root','artifact-root','environment','block-result','output'):
         p.add_argument('--'+name,type=Path,required=True)
+    p.add_argument('--numerical-policy',choices=('strict','report-only'),default='strict',
+                   help='report-only records finite numerical differences without stopping performance measurement')
     args=p.parse_args()
     if args.output.exists():raise FileExistsError(args.output)
     if not torch.cuda.is_available():raise RuntimeError('NVIDIA CUDA required; no CPU/MPS substitution')
@@ -76,7 +87,8 @@ def main():
             'scope':'HF eager, dynamic KV cache, batch1; identical forced continuation from decoded step400',
             'prefill_policy':'packed arm uses explicit on-demand dense reconstruction; included in prefill time',
             'load_policy':'load pinned dense BF16 snapshot, then replace; not direct packed loading',
-            'next_stage':'not_launched','arms':{}}
+            'numerical_policy':args.numerical_policy,'all_numerical_checks_passed':True,
+            'primary_baseline':'original_bf16','next_stage':'not_launched','arms':{}}
     references={};all_stable=True
     try:
         for arm in cfg['arms']:
@@ -120,7 +132,8 @@ def main():
                         row['correctness']=compare_trace(trace,reference,logprob_tolerance=cfg['logprob_max_abs_tolerance'])
                         if arm=='packed_step400':
                             row['coverage_passed']=validate_routes(trace,expected_linears=252,steps=cfg['decode_steps'])
-                        if not row['correctness']['passed'] or not row.get('coverage_passed',True):
+                        report['all_numerical_checks_passed'] &= row['correctness']['passed']
+                        if must_abort(row,args.numerical_policy):
                             arm_record['prompts'].append({'prompt_index':prompt_index,'traces':rows})
                             raise RuntimeError(f'full-model correctness/coverage failed: {arm}:{prompt_index}:{repeat}')
                 timings=summary(traces)
@@ -141,7 +154,10 @@ def main():
                 'decode_wall_speedup_vs_decoded':rows['decoded_step400']['timings']['decode_wall_ms']['median']/candidate if stable else None,
                 'decode_wall_speedup_vs_original':rows['original_bf16']['timings']['decode_wall_ms']['median']/candidate if stable else None})
         report['comparisons']=comparisons
-        report['status']='completed_pending_review' if all_stable else 'completed_unstable'
+        report['all_timings_stable']=all_stable
+        report['status']=('completed_unstable' if not all_stable else
+                          'completed_pending_review' if report['all_numerical_checks_passed'] else
+                          'completed_with_numerical_differences')
     except Exception as exc:
         report.update(status='failed',error=f'{type(exc).__name__}: {exc}');raise
     finally:atomic_json(args.output,report)
