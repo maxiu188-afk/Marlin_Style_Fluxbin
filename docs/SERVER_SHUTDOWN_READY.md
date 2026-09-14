@@ -1,4 +1,27 @@
-# 服务器已关闭：持久化与恢复记录
+# 服务器关机准备与恢复记录
+
+## 2026-09-14：SXM4 实例关机前检查完成
+
+状态：可以由用户关闭计算实例，尚未确认实际关闭；代理未执行关机或删除操作。
+
+- 无 tmux 会话、相关实验进程或 NVIDIA compute 进程。
+- setup/candidates/block/report-only full-model 退出 0；首轮 strict full-model 的退出 1
+  是已记录的数值 gate 失败，原始现场保留。
+- `/workspace` 仍挂载原网络卷 `34au39ljvf`；保留该卷及其模型、snapshot、缓存和结果。
+- step400 manifest SHA256 仍为 `253ab448797ef4d798522875014b7e47a4edb84c5c3c1ca5cf6179edfd339fec`。
+  模型目录存在，本轮关机检查没有再次扫描全部大权重；全模型运行已做完整输入 hash 校验。
+- 服务器 Git 工作区干净，运行代码 revision 为 `d1bcd6d`；之后发布的是本地结果文档。
+- 全部本次小型结果/环境/日志/启动脚本共 68 个文件已归档并下载本机，远端/本地 SHA256
+  一致：`6b08d387c19bf1e50d6a03dd865e092e41955160cfc132832b5476d19d49b1e4`。
+  本地归档：`server_results/runpod_m1_sxm4_2026-09-14/m1-sxm4-20260914-evidence-v1.tar.gz`。
+  远端归档：`/workspace/results/m1-sxm4-20260914-evidence-v1.tar.gz`。
+- `/opt/fluxbin-venv` 在容器磁盘，不应依赖下次保留。恢复使用已记录的软件版本与
+  持久缓存；trial runtime 的 OMP/MKL 线程数均为 1。
+
+完整模型结果已保存：packed 相对原始 BF16 为 0.9332× / 0.9562×，尚无加速；
+按用户要求记录数值差异并完成计时。下次不自动重跑，先按新任务明确优化方向。
+
+## 2026-09-13：历史实例已关闭
 
 2026-09-13：用户已确认关闭计算服务器。以下存储与进程状态来自关机前核查，
 本次未重新连接已关闭实例；下次启动先核验原网络卷和 manifest。

@@ -1,5 +1,10 @@
 # Marlin-Style FluxBin current handoff
 
+Shutdown readiness (2026-09-14): live check found no experiment/tmux/GPU compute
+processes. All 68 small-evidence files were archived, downloaded and hash-verified.
+Keep network volume `34au39ljvf`; user may close compute. Actual shutdown has not
+been confirmed and was not performed by the agent. See [shutdown record](SERVER_SHUTDOWN_READY.md).
+
 Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
 On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
 fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route
