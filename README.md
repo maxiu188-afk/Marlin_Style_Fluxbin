@@ -1,5 +1,13 @@
 # Marlin-Style FluxBin
 
+Latest GPU evidence (2026-09-14, A100 SXM4): all 85 tests passed; bounded candidate
+batch passed correctness in 84/84 cells, with 77/84 stable timings. The selected
+v2/gps8 block passed correctness/stability but took 1213.783 us vs decoded BF16
+1049.944 us (0.8650x speedup). User explicitly requested full-model measurement
+regardless of block speed; full-model task `m1-sxm4-full` was submitted and observed
+running, not accepted. See [SXM4 results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
+Earlier unlaunched/preparation statements below are historical.
+
 Project documentation is collected in [docs/README.md](docs/README.md). Start with
 [the current handoff](docs/CURRENT_HANDOFF.md) for progress and next steps.
 

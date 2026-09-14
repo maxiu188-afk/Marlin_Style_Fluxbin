@@ -58,3 +58,46 @@ kernel 内部瓶颈归因。尚未运行 profiler，不能断言是访存、同�
 下一步先做有界的 M=1 kernel 瓶颈定位及优化，保留 v1 数值/速度基线与冻结权重；
 不因该轮 kernel 变慢直接推进 block/full-model，也不修改量化语义或数值容限。
 本轮没有启动 block、full-model、vLLM 或新的精度实验。
+
+## A100 SXM4 候选批次与 block（2026-09-14）
+
+新服务器 A100 SXM4 80GB，driver 580.126.20，torch 2.8.0+cu128；与上次 PCIe
+结果分开。源码 `6ba5076b1d40b20aec709fed9d3cdd0de97c5b12`，原网络卷与固定 step400。
+统一 trial OMP/MKL/torch CPU 线程为 1，配置已记录在新 environment.json。
+
+6 组固定配置 × eager/Graph × 7 Linear：84 格数值检查通过，77 格计时稳定。
+批次运行约 91 秒，未放宽容差；所有稳定格的 packed 都慢于同轮 decoded dense。
+按七项 packed median 之和，从所有格均稳定的 Graph trial 中选择 rows4（v2，
+groups_per_split=8）进入 block；该和不是 block latency，也不是统计显著最优证明。
+
+| rows4 Graph | dense μs | packed μs | dense/packed |
+|---|---:|---:|---:|
+| q_proj | 24.055 | 62.995 | 0.382 |
+| k_proj | 8.224 | 24.189 | 0.340 |
+| v_proj | 8.485 | 24.194 | 0.351 |
+| o_proj | 22.444 | 50.465 | 0.445 |
+| gate_proj | 64.484 | 116.396 | 0.554 |
+| up_proj | 64.460 | 116.990 | 0.551 |
+| down_proj | 64.969 | 117.646 | 0.552 |
+
+单 block（layer 0，synthetic hidden，sequence=1、空 KV、eager）：三次数值与
+repeat-exact 检查通过，七个 packed Linear 覆盖通过，三条路径七轮计时稳定。
+original BF16 1044.932 μs；decoded step400 BF16 1049.944 μs；packed 1213.783 μs。
+packed 相对 decoded 的 speedup 为 0.8650×，即 latency 高 15.6%。
+
+用户明确要求不以 block 的速度结果阻止完整模型实验。完整模型 v2/gps8 已于
+13:00:15 UTC 独立启动（tmux `m1-sxm4-full`），最后观察 Python PID 4562 运行中；
+尚未验收，不能外推速度。输出 `/workspace/results/m1-sxm4-20260914-v1/full-model-rows4.json`。
+
+证据备份：`server_results/runpod_m1_sxm4_2026-09-14/`（private，Git-ignored）。
+本地审计重算计时与检查来源 hash，未在审计时独立重跑 forward。
+
+- environment SHA256：`beb77aaae97cd276935f1a3d8aec713679adc70ff034079e86b53332f8df2bda`
+- batch SHA256：`53398c5e59db588cb69067e64e18fecc67aa598aefa11846a4e663e3b2096d9e`
+- block SHA256：`ac0b458351411869f13a2076e8d5a8aa4c472e6dd796d1a3e0f56a613f2e6bd9`
+
+环境恢复：依赖阶段约 54 秒，首次四 variant 编译/smoke 221.29 秒；全套 85 测试
+162.74 秒，无跳过。观察到 ninja 文件系统等待与合成 CPU 小模型高线程开销，
+但没有 profiler 定量归因。限制 CPU 线程后专项测试/新记录阶段约 25 秒，此时已有
+编译缓存，不能把全部差异归因于线程设置。ptxas 显示三个 v2 行复用版本主 kernel
+分别使用 40/44/56 registers、0 spill；这不等于已经测得 occupancy 或主要瓶颈。

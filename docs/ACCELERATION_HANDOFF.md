@@ -1,5 +1,13 @@
 # 精度暂停、加速研究与关机交接
 
+Latest GPU evidence (2026-09-14, A100 SXM4): all 85 tests passed; bounded candidate
+batch passed correctness in 84/84 cells, with 77/84 stable timings. The selected
+v2/gps8 block passed correctness/stability but took 1213.783 us vs decoded BF16
+1049.944 us (0.8650x speedup). User explicitly requested full-model measurement
+regardless of block speed; full-model task `m1-sxm4-full` was submitted and observed
+running, not accepted. See [SXM4 results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+Earlier unlaunched/preparation statements below are historical.
+
 2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
 12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
 runners are prepared. No new CUDA/full-model performance result; vLLM remains
