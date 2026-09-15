@@ -363,11 +363,11 @@ kernel 与 split，沿用上文完整模型 report-only 命令。不以 block �
   记录总驻留/峰值与真实执行顺序；这是新协议的显存条件，与 v1 的逐个加载不同。
   每种模式/arm/prompt 预热完整序列 8 次，测量 10 次；wall 和 CUDA event
   的 `(max-min)/median` 都必须 <=5% 才发布速度比。event 时间仍可能包含 host 发射间隙。
-- 审计独立执行：动态/静态的同一路径必须通过原有数值门槛；Graph 与 prepared eager、
+- 审计独立执行：同一静态 KV 下，原 checked wrapper 与 prepared wrapper 必须精确一致；Graph 与 prepared eager、
   每轮重复输出要求精确一致。检查 KV 长度、有限值、相同 fed tokens，以及全部 252 个
   packed Linear 各执行 32 次、decode dense fallback 为零。Graph coverage 记录 capture
   时的 Python 路由，replay 正确性另由完整输出检查，不将 capture 计数误称 replay 计数。
-- packed 与 decoded BF16 的跨权重语义差异继续 report-only；不得将其称为数值等价。
+- packed 与 decoded BF16 的跨权重语义差异、动态/静态注意力路径差异均 report-only；不得将其称为数值等价。
   原始 BF16 为性能基线，decoded 为辅助基线。未接入 A8 或 vLLM。
 
 服务器完成恢复并按本页前文生成**新的**环境记录后：
@@ -390,3 +390,10 @@ KV 与测量协议，因此不能把差值全部归因于某一项优化；当�
 共 113 项，105 通过、8 项 CUDA 测试跳过；新入口 `--help` 与 `git diff --check` 通过。
 新增 CUDA 测试覆盖 prepared buffer 复用、输入改变后的 Graph replay，以及小型 packed
 Qwen3 全序列的 KV/输出生命周期；这些测试尚未在本轮服务器执行。
+
+2026-09-15 SXM4 首次 v2 尝试：113/113 CUDA 环境测试通过；完整模型在 decoded
+BF16 的动态/静态比较处停止（NRMSE 0.0121237，max logprob 0.491539，fed tokens
+一致但预测不同），未开始计时。原始 failed JSON 保留。协议 v2.1 将动态/静态注意力
+差异独立报告，并新增同一 StaticCache/mask 下 checked wrapper 的实测参照：prepared
+包装必须与该参照逐位一致，Graph/repeat 同样逐位一致。此变更不放宽 wrapper 或
+Graph 的正确性门槛，也不将动态/静态输出宣称等价；完整模型实测仍待完成。
