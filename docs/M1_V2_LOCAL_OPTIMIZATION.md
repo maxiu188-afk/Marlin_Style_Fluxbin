@@ -106,7 +106,11 @@ python scripts/run_m1_linear_benchmark.py \
 输出 `speedup` 仍是 dense/候选；另加 `speedup_vs_v1`，并记录 v1 同轮计时。
 增加 v1 对照后，三项计时全部稳定才报告速度比；保留每轮原始样本。
 
-## kernel v3：Marlin 流水与 MMA 适配（本地实现，待 CUDA 验证）
+## kernel v3：Marlin 流水与 MMA 适配
+
+2026-09-15 更新：下述待验证描述属于本地准备阶段。现已在 A100 PCIe 编译并通过
+全部 91 项测试；v3 gps4 比 v1/v2 快但仍慢于 dense，全模型未实现加速，第二个
+prompt 的辅助基线计时不稳定。详见 [GPU 结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
 
 这里的 v3 指 deployment kernel，与历史 32B 算法 artifact 的 v3 无关。
 新增 `src/fluxbin_style/csrc/m1_v3.cu`，参考本地 Marlin revision

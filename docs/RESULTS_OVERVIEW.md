@@ -1,5 +1,14 @@
 # 当前结果总览
 
+Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
+The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
+Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.
+Full-model report-only run exited 0 in 312s: prompt 0 achieved 0.86887x original BF16
+speed; prompt 1 has an unstable auxiliary decoded baseline, so overall status is
+`completed_unstable`. No full-model speedup. Evidence downloaded/hash-verified;
+no experiment processes remain. See [v3 results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+Earlier preparation and SXM4 statements below are historical.
+
 Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
 On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
 fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route

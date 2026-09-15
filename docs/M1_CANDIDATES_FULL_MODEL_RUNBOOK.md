@@ -43,8 +43,9 @@ python scripts/record_acceleration_environment.py \
 export FLUXBIN_NEW_ENVIRONMENT_JSON="$FLUXBIN_RUN_ROOT/environment/environment.json"
 ```
 
-`--build-smoke` 会编译全部四个 kernel variant，测试 FP16/BF16、行/split 尾部、
-workspace 覆写、非默认 stream、Graph 及同 split 的 v1 精确一致性。没有 CUDA
+`--build-smoke` 会编译全部五个 kernel variant，测试 FP16/BF16、行/split 尾部、
+workspace 覆写、非默认 stream、Graph；v2 要求同 split 的 v1 精确一致性，v3
+检查 dense 数值容差与自身重复一致性。没有 CUDA
 不能标记 ready；新 smoke 失败不得继续。基础镜像可识别时填真实 tag/digest。
 
 ## 分阶段明确启动

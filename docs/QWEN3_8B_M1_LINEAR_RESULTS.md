@@ -156,3 +156,77 @@ decode wall/device timing 的相对极差满足 <=10%；吞吐为 32 / decode wa
 本地原始结果、日志、退出码：`server_results/runpod_m1_sxm4_2026-09-14/full-model-reportonly/`。
 审计核对远端/本地 hash、source/runner/protocol/environment/block 绑定、原始计时
 median/极差/速度比、context 与 routes；未在审计阶段重跑模型。
+
+
+## 2026-09-15 v3 MMA / A100 PCIe
+
+源码 `9438bae0fe10b60db74296f5c3bde437d6f02882`，A100 80GB PCIe，driver
+580.159.04，Python 3.12.3，torch 2.8.0+cu128，CUDA toolkit 12.8。
+本轮 GPU 与上一轮 SXM4 不同，不将跨机器耗时差归因于 kernel。
+
+恢复依赖至 pip check 用时 57 秒，CUDA build/smoke 约 98 秒；完整 91 项测试
+全部通过，总准备流程 221 秒。v3 FP16/BF16 主 kernel 均使用 76 registers、
+17,472 B shared memory，无 spill。基础镜像仍只知 RunPod 默认模板，digest 未确认。
+
+固定新配置 `configs/acceleration/m1_marlin_candidates_v1.json` 完成 12 trials，
+84/84 数值检查通过，67/84 格计时稳定。本地下载后重新校验汇总同样为 67/84。
+v3 与 v1 逐位一致仅为诊断；dense 数值检查和 repeat/Graph 检查保留。
+
+| 完整稳定 Graph trial | 七个 packed Linear 耗时之和 (µs) |
+|---|---:|
+| v1 gps8 | 540.846 |
+| v2 gps8 | 501.606 |
+| v3 gps4 | 401.408 |
+| v3 不分 split | 989.256 |
+
+v3 gps8/gps16 Graph 含不稳定格，不能给出完整稳定速度结论。
+选择 v3 gps4 Graph 作为 block/full-model 配置；上述求和不是单 block 延迟。
+其同轮 dense BF16 合计 258.212 µs，v3 仍慢于 dense。
+
+| Linear | 同权重 dense BF16 µs | v3 gps4 µs | 同轮 v1 gps4 µs |
+|---|---:|---:|---:|
+| q_proj | 23.020 | 43.121 | 49.777 |
+| k_proj | 8.264 | 20.490 | 17.388 |
+| v_proj | 8.294 | 20.347 | 17.316 |
+| o_proj | 23.173 | 42.977 | 49.674 |
+| gate_proj | 64.041 | 91.668 | 134.953 |
+| up_proj | 64.061 | 91.597 | 135.209 |
+| down_proj | 67.359 | 91.208 | 136.643 |
+
+layer-0 empty-cache block 的三次数值/重复、七条 packed 路径和七轮计时均通过：
+original BF16 619.991 µs、decoded step400 BF16 617.523 µs、packed v3 713.380 µs。
+相对 original BF16 延迟增加约 15.1%。按用户要求继续运行完整模型，不由 block
+速度决定是否提交；全模型使用 original BF16 主性能基线、report-only 数值策略。
+
+证据保存在服务器 `/workspace/results/m1-pcie-20260915-v3/`，本地私有备份
+`server_results/runpod_m1_v3_pcie_2026-09-15/`。原始 JSON/log 不提交 Git。
+
+### 同轮完整模型结果
+
+`m1-v3-full` / `full-model-mma-split4-reportonly.json`，退出码 0，用时 312 秒，
+状态 `completed_unstable`。312 秒包含模型预检、加载、转换、warmup 和测量，
+不等于纯 decode 用时。固定两个 prompt、32 次 decode、三次测量，未改协议。
+
+| Prompt | original BF16 wall ms / tok/s | packed v3 wall ms / tok/s | 正式速度比 |
+|---|---:|---:|---:|
+| 0 | 672.206 / 47.604 | 773.655 / 41.362 | 0.86887× |
+| 1 | 676.218 / 47.322 | 735.850 / 43.487 | 不报告：辅助 decoded timing 不稳定 |
+
+Prompt 0 的 v3 延迟增加 15.09%，没有全模型加速。Prompt 1 的 original 和 packed
+自身计时均稳定，但辅助 decoded BF16 的 wall/device 相对极差为 10.4823% / 10.4868%，
+超过固定 10% 门槛；保持 runner 的整组无效标记，不事后修改门槛或选择样本。
+其 decoded BF16 三次 wall 样本为 689.175 / 695.152 / 762.043 ms。
+本轮未自动重跑不稳定格。
+
+两个 prompt 的 packed 六条 trace 全部通过 252 路覆盖、相同 fed tokens 和 KV
+长度检查（分别 43 / 42）。每个 prompt 1/33 predictions 不同、三次 logits hash
+完全重复；NRMSE 分别 0.0112171 / 0.0128938，max logprob difference 为
+0.411823 / 0.627422。按 report-only 保留，不宣称严格数值等价。
+original BF16 / packed 常驻 allocated 显存分别 15.266 / 4.924 GiB。
+
+本地核验 source/environment/block hash 链、计时中位数、候选汇总及路径检查通过。
+完整模型 JSON SHA256：
+`45a369dc6b89e3afbdf53dd37d925e1bb2f35988ddfdb12cd73e91a2dad0d343`。
+所有本轮结果和四个阶段 job 日志已打包下载并校验，archive SHA256：
+`36a08564bbb21353ead50a8da9a06d9d47b7567e1e487df957dc39883fca9860`。
+末次检查无 GPU compute 进程、无 tmux session；未关闭实例或删除网络卷。
