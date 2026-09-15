@@ -1,5 +1,7 @@
 # 精度暂停、加速研究与关机交接
 
+Local preparation (2026-09-15): prepared full-model v2 adds bound packed Linear buffers, real-prefix static KV, interleaved 8-warmup/10-repeat timing and a complete 32-step CUDA Graph comparison. Original BF16 remains the primary baseline. CUDA validation and performance are pending; historical v1 results are unchanged. See [protocol and launch commands](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+
 Latest GPU result (2026-09-15, A100 80GB PCIe): 106 tests passed, 168/168
 Linear numerical cells passed, 154/168 timing cells stable. Selected
 `v5_p1024/gps1` achieved 2.1285x isolated Graph / 2.0219x isolated eager speed

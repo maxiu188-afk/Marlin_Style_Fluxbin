@@ -341,3 +341,52 @@ python scripts/summarize_m1_candidates.py \
 选定通过数值与稳定性审阅的 Linear JSON 后，block/full-model 自动继承对应
 kernel 与 split，沿用上文完整模型 report-only 命令。不以 block 速度决定是否
 提交完整模型。新增候选仍未在服务器编译或测量。
+
+## 2026-09-15：prepared full-model v2（本地实现，GPU 待验证）
+
+新入口 `scripts/run_qwen3_8b_prepared_m1_trial.py` 使用独立的
+`configs/acceleration/qwen3_8b_full_m1_v2.json`；旧 v1 runner、配置和历史结果保留。
+本轮直接测完整模型，不以单 block 的速度作为启动条件。
+
+- 固定 `v5_p1024/gps1`，保持原来的 Qwen3-8B、step400 权重、两个真实 prompt、
+  seed、batch=1、32 个相同 continuation token；主基线仍为原始 BF16。
+- packed Linear 在预填充后绑定固定参数、输出和 workspace，计时内不重新构造布局字典、
+  分配 packed 输出或更新 Python 审计计数。保留输入与 native 参数检查。
+  输出复用仅支持串行单请求；绑定期间权重不可变，退出上下文或移动模块会解除绑定。
+- 使用真实 prompt 预填充 StaticCache。每次测量前恢复 prefix KV 和长度；
+  32 步中位置和有效注意力范围逐步增长。不是固定位置反复测一个 token，
+  也不是随机初始化 KV。固定 token 的 Graph 不代表自由生成或服务吞吐。
+- 比较 `prepared_eager` 和 `sequence_graph`：后者一次 replay 整段 32 步，包含
+  embedding、全部 36 层、输出头和每步 argmax，以及 packed 的 LUT 构建与归约。
+  reset、prefill、capture、校验和 CPU 输出拷贝均在 decode 计时外。
+- 三个模型及两组 prompt cache 同时驻留，轮换 arm 顺序并交替两种模式。
+  记录总驻留/峰值与真实执行顺序；这是新协议的显存条件，与 v1 的逐个加载不同。
+  每种模式/arm/prompt 预热完整序列 8 次，测量 10 次；wall 和 CUDA event
+  的 `(max-min)/median` 都必须 <=5% 才发布速度比。event 时间仍可能包含 host 发射间隙。
+- 审计独立执行：动态/静态的同一路径必须通过原有数值门槛；Graph 与 prepared eager、
+  每轮重复输出要求精确一致。检查 KV 长度、有限值、相同 fed tokens，以及全部 252 个
+  packed Linear 各执行 32 次、decode dense fallback 为零。Graph coverage 记录 capture
+  时的 Python 路由，replay 正确性另由完整输出检查，不将 capture 计数误称 replay 计数。
+- packed 与 decoded BF16 的跨权重语义差异继续 report-only；不得将其称为数值等价。
+  原始 BF16 为性能基线，decoded 为辅助基线。未接入 A8 或 vLLM。
+
+服务器完成恢复并按本页前文生成**新的**环境记录后：
+
+```bash
+python -m unittest discover -s tests -p test_static_decode.py -v
+python scripts/run_qwen3_8b_prepared_m1_trial.py \
+  --snapshot-root "$FLUXBIN_SNAPSHOT_ROOT" \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
+  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output "$FLUXBIN_RUN_ROOT/full-model-prepared-v2.json"
+```
+
+使用项目已有的持久任务方式提交上述命令。GPU 测试必须执行而非 skip；若 Graph capture、
+同路径数值或路由失败，runner 写入 failed 并停止，不静默降级。CPU 测试只验证小型模型的
+缓存/上下文/恢复语义，不能证明 CUDA 可捕获或性能提升。v1 到 v2 同时改变了包装路径、
+KV 与测量协议，因此不能把差值全部归因于某一项优化；当前 GPU 结论仍是 v1 全模型慢于 BF16。
+
+本地验证（macOS arm64，2026-09-15）：`python -m unittest discover -s tests`
+共 113 项，105 通过、8 项 CUDA 测试跳过；新入口 `--help` 与 `git diff --check` 通过。
+新增 CUDA 测试覆盖 prepared buffer 复用、输入改变后的 Graph replay，以及小型 packed
+Qwen3 全序列的 KV/输出生命周期；这些测试尚未在本轮服务器执行。

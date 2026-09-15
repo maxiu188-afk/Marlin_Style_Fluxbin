@@ -199,11 +199,73 @@ class PackedHybridLinear(nn.Module):
         self.register_buffer('bias', None if bias is None else bias.detach().clone())
         self.register_buffer('_workspace', None, persistent=False)
         self.last_route = 'not_called'
+        self._decode_binding = None
+        self._decode_audit = False
+        self.register_buffer('_decode_output', None, persistent=False)
+
+    def clear_prepared_decode(self):
+        self._decode_binding = None
+        self._decode_output = None
+        self._decode_audit = False
+
+    def _apply(self, fn, recurse=True):
+        # A device/dtype move invalidates captured tensor references.
+        self.clear_prepared_decode()
+        return super()._apply(fn, recurse=recurse)
+
+    def _prepare_decode_layout(self):
+        """Validate immutable buffers before binding a serial decode path."""
+        layout = self.layout()
+        device = self.codes.device
+        if device.type != 'cuda':raise ValueError('prepared decode requires CUDA')
+        if any(t.device != device or not t.is_contiguous() for t in layout.values()):
+            raise ValueError('contiguous same-device layout required')
+        if any(layout[n].dtype != torch.float32 for n in
+               ('rows','columns','sparse_rows','sparse_columns')):
+            raise ValueError('FP32 scales required')
+        extension = load_extension(self.kernel)
+        # Activation dtype is selected explicitly by the enclosing model runner.
+        return layout, extension
+
+    def bind_prepared_decode(self, dtype):
+        """Bind serial [1,1,K] inference; outputs alias a reusable module buffer.
+
+        Finish consumers on the same stream before another call. No concurrent
+        requests. Clear the binding before modifying/replacing any weight buffer.
+        """
+        if self._decode_binding is not None:raise ValueError('decode already bound')
+        if dtype not in (torch.float16,torch.bfloat16):raise ValueError('FP16/BF16 required')
+        layout, extension = self._prepare_decode_layout()
+        device = self.codes.device
+        self._workspace = torch.empty(workspace_shape(self.out_features,self.in_features,
+            self.groups_per_split,kernel=self.kernel),device=device,dtype=torch.float32)
+        self._decode_output = torch.empty((1,self.out_features),device=device,dtype=dtype)
+        output = self._decode_output
+        shaped = output.view(1,1,self.out_features)
+        args = (layout['codes'],layout['rows'],layout['columns'],layout['sparse_codes'],
+                layout['sparse_rows'],layout['sparse_columns'],
+                layout['indices'] if self.kernel in FACTORED_KERNELS else layout['lookup'],
+                output,self._workspace,self.groups_per_split)
+        native = extension.m1_out
+        expected = (1,1,self.in_features)
+        def apply(x):
+            if torch.is_grad_enabled():raise RuntimeError('prepared decode is inference only')
+            if tuple(x.shape)!=expected or x.dtype!=dtype or x.device!=device or not x.is_contiguous():
+                raise ValueError('prepared decode input shape/dtype/device/stride mismatch')
+            if self._decode_audit:
+                self.route_counts['packed_m1'] += 1
+                self.last_route = 'packed_m1'
+            native(x.view(1,self.in_features),*args)
+            if self.bias is not None:output.add_(self.bias)
+            return shaped
+        self._decode_binding = apply
 
     def layout(self):
         return {name: getattr(self, name) for name in LAYOUT_FIELDS}
 
     def forward(self, x):
+        if self._decode_binding is not None:
+            return self._decode_binding(x)
         if torch.is_grad_enabled():
             raise RuntimeError('packed inference requires no_grad/inference_mode')
         if x.ndim < 2 or x.shape[-1] != self.in_features:
