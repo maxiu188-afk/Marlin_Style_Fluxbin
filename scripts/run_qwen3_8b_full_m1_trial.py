@@ -4,13 +4,14 @@ from __future__ import annotations
 import argparse
 import gc
 import json
+import math
 import statistics
 import time
 from pathlib import Path
 import torch
 from fluxbin_style.evaluation import atomic_json,sha256_file,tensor_sha256,materialize_hybrid_s8_weight
 from fluxbin_style.deployment_artifacts import MANIFEST_SHA,load_accepted_layer,replace_model_linears
-from fluxbin_style.deployment import FIELDS,load_extension
+from fluxbin_style.deployment import FIELDS,KERNELS,load_extension
 from fluxbin_style.qwen3 import QWEN3_LINEAR_MODULES
 from fluxbin_style.full_model_trial import decode_trace,compare_trace,validate_routes
 from fluxbin_style.trial_gates import validate_block_gate
@@ -42,6 +43,34 @@ def must_abort(row, numerical_policy):
     return not check['passed'] and numerical_policy=='strict'
 
 
+def validate_trial_block(block, *, source_sha256, environment_sha256, allow_unstable=False):
+    """Explicit research override for block TIMING only; do not rewrite evidence.
+
+    Kept at the runner boundary so this launch-policy change does not invalidate
+    already measured kernel/source evidence. Default uses the original gate.
+    """
+    if not allow_unstable or block.get('status')!='completed_unstable':
+        return validate_block_gate(block,source_sha256=source_sha256,environment_sha256=environment_sha256)
+    if (block.get('stage')!='single_block_empty_cache_m1' or block.get('layer')!=0
+        or block.get('manifest_sha256')!=MANIFEST_SHA or block.get('kernel_coverage')!=7
+        or block.get('source_sha256')!=source_sha256 or block.get('environment_sha256')!=environment_sha256):
+        raise ValueError('block provenance/coverage mismatch')
+    kernel,gps=block.get('kernel'),block.get('groups_per_split')
+    if kernel not in KERNELS or not isinstance(gps,int) or not 1<=gps<=1024:
+        raise ValueError('unknown kernel/split')
+    checks=block.get('checks',[])
+    if len(checks)!=3 or not all(c.get('passed') and c.get('repeat_exact') for c in checks):
+        raise ValueError('block numerical/repeat gates not passed')
+    timings=block.get('timings',{})
+    if set(timings)!={'original_bf16','decoded_step400_bf16','packed_step400'}:
+        raise ValueError('incomplete block timing')
+    for t in timings.values():
+        values=t.get('microseconds_per_call',[])
+        if len(values)!=7 or not all(math.isfinite(v) and v>0 for v in values):
+            raise ValueError('invalid block timing samples')
+    return kernel,gps
+
+
 @torch.inference_mode()
 def main():
     p=argparse.ArgumentParser(description=__doc__)
@@ -49,6 +78,8 @@ def main():
         p.add_argument('--'+name,type=Path,required=True)
     p.add_argument('--numerical-policy',choices=('strict','report-only'),default='strict',
                    help='report-only records finite numerical differences without stopping performance measurement')
+    p.add_argument('--allow-unstable-block-timing',action='store_true',
+                   help='Explicitly permit an unstable block timing; numerical/route/provenance gates remain required')
     args=p.parse_args()
     if args.output.exists():raise FileExistsError(args.output)
     if not torch.cuda.is_available():raise RuntimeError('NVIDIA CUDA required; no CPU/MPS substitution')
@@ -60,7 +91,8 @@ def main():
         or env['torch']['devices'][0]['name']!=torch.cuda.get_device_name(0)):
         raise ValueError('runtime differs from environment record')
     block=json.loads(args.block_result.read_text())
-    kernel,gps=validate_block_gate(block,source_sha256=sources,environment_sha256=sha256_file(args.environment))
+    kernel,gps=validate_trial_block(block,source_sha256=sources,environment_sha256=sha256_file(args.environment),
+                                  allow_unstable=args.allow_unstable_block_timing)
     pinned=json.loads((ROOT/'configs/evaluation/qwen3_8b_wikitext2_distilled_step400_v1.json').read_text())
     if args.snapshot_root.name!=pinned['model']['revision']:raise ValueError('snapshot revision drift')
     for name,digest in pinned['model_preflight_files'].items():
@@ -82,6 +114,8 @@ def main():
             'protocol_sha256':sha256_file(PROTOCOL),'source_sha256':sources,
             'runner_sha256':sha256_file(Path(__file__)),
             'block_result_sha256':sha256_file(args.block_result),'environment_sha256':sha256_file(args.environment),
+            'block_timing_policy':'allow_unstable' if args.allow_unstable_block_timing else 'strict',
+            'block_status':block['status'],
             'manifest_sha256':MANIFEST_SHA,'payloads':payload_records,'kernel':kernel,'groups_per_split':gps,
             'arithmetic':'factored_fp32_v1' if kernel=='v4' else 'combined_weight_activation_dtype_v1',
             'numerical_reference':'legacy decoded BF16 full model; v4 structural FP64 reference is Linear-only',

@@ -10,6 +10,27 @@ from fluxbin_style.deployment_artifacts import MANIFEST_SHA
 
 
 class FullModelTrialTests(unittest.TestCase):
+    def test_unstable_block_override_only_relaxes_timing(self):
+        import importlib.util
+        path=Path(__file__).resolve().parents[1]/'scripts/run_qwen3_8b_full_m1_trial.py'
+        spec=importlib.util.spec_from_file_location('full_runner_timing',path)
+        runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+        block={'status':'completed_unstable','stage':'single_block_empty_cache_m1',
+               'layer':0,'manifest_sha256':MANIFEST_SHA,'kernel_coverage':7,
+               'source_sha256':{'a':'b'},'environment_sha256':'env','kernel':'v4','groups_per_split':4,
+               'checks':[{'passed':True,'repeat_exact':True} for _ in range(3)],
+               'timings':{k:{'stable':False,'microseconds_per_call':[10.]*6+[20.]}
+                          for k in ('original_bf16','decoded_step400_bf16','packed_step400')}}
+        def gate(b,allow=True):
+            return runner.validate_trial_block(b,source_sha256={'a':'b'},environment_sha256='env',allow_unstable=allow)
+        before=copy.deepcopy(block)
+        self.assertEqual(gate(block),('v4',4));self.assertEqual(block,before)
+        with self.assertRaises(ValueError):gate(block,False)
+        for field,value in (('checks',[]),('kernel_coverage',6),('source_sha256',{}),('status','failed')):
+            with self.subTest(field=field),self.assertRaises(ValueError):gate({**block,field:value})
+        bad=copy.deepcopy(block);bad['timings']['packed_step400']['microseconds_per_call'][0]=float('nan')
+        with self.assertRaises(ValueError):gate(bad)
+
     def test_cached_context_matches_full_prefix_and_replay(self):
         from transformers import Qwen3Config, Qwen3ForCausalLM
         torch.manual_seed(17)
