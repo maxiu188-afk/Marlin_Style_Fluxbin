@@ -363,7 +363,8 @@ def main() -> None:
         raise FileExistsError(args.output_dir)
     args.output_dir.mkdir(parents=True)
     gptq = config["gptq"]
-    from gptqmodel import BACKEND, FORMAT, GPTQConfig, GPTQModel
+    from gptqmodel import BACKEND, GPTQConfig, GPTQModel
+    from gptqmodel.quantization import FORMAT
 
     offload = args.output_dir / "offload"
     quant_config = GPTQConfig(
