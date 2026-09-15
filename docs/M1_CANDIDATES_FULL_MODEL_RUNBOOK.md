@@ -178,3 +178,85 @@ python scripts/summarize_m1_candidates.py \
 仍按本手册的持久会话/超时方式运行。先看 correctness、ptxas register/spill 和
 同轮 dense/v1/v3 数据；不把本地测试通过写成 GPU 加速。后续 full-model 的主要速度
 基线是原始 BF16，数值差异可按既定 report-only 策略记录。
+
+## v3 瓶颈诊断准备（2026-09-15，尚未执行）
+
+本次先诊断未改动的 v3/gps4，不同时改 kernel、算法舍入或量化格式。
+入口 `scripts/profile_m1_bottleneck.py` 使用 layer-0 已接受 payload，固定 BF16、
+M=1、seed=20260914、gps4，选择 k_proj、q_proj、gate_proj、down_proj 四种形状。
+不需要完整模型 snapshot，也不重复全模型 shard 校验。环境仍必须 source-matched。
+
+1. 普通进程执行 timing 模式：dense/v1/v2/v3 同轮 Graph，warmup20、100 repeats、
+   7 rounds、10% 稳定性门槛；所有对照用同一 gps4，不冒充上轮 gps8 基线。
+2. 独立进程执行 profile 模式：先完成 JIT、dense 重建、数值与重复检查、20 次
+   warmup，再用 CUDA profiler start/stop 包住三次指定 arm 调用。
+   先采四个形状的 v3 与 dense，共八份报告；每进程最多采六次 kernel launch。
+3. 分别看 v3 主 kernel 和 finish reduction：DRAM/L2 实际流量及命中、shared
+   bank conflicts、SM/Tensor pipe 利用率、eligible warps、issue rate、stall、
+   指令类型和 source/SASS。区分 FP32 重建/转换、地址与位操作、barrier 等候。
+4. profiler 内的时间不用于速度比，不能把分离微基准耗时直接相加或相减当作
+   融合 kernel 的组成成本。只有 counters/stall/指令共同支持才提出归因。
+
+先检查 `ncu --version`、`ncu --list-sets`，确认 detailed set 存在，并检查 GPU
+counter 权限；若权限拒绝，记录原始错误，不自行更改主机驱动安全设置。
+
+```bash
+python scripts/profile_m1_bottleneck.py --mode timing --module mlp.gate_proj \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output "$FLUXBIN_RUN_ROOT/gate-timing.json"
+
+ncu --profile-from-start off --set detailed --launch-count 6 \
+  --cache-control none --clock-control none \
+  -o "$FLUXBIN_RUN_ROOT/gate-v3" \
+  python scripts/profile_m1_bottleneck.py --mode profile --arm v3 --module mlp.gate_proj \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output "$FLUXBIN_RUN_ROOT/gate-v3-capture.json"
+```
+
+其余 module 分别替换为 self_attn.k_proj、self_attn.q_proj、mlp.down_proj，
+dense capture 使用 `--arm dense`，每次使用新 output 名。持久 tmux 中单任务串行，
+每进程 timeout 300s，失败保存报告后检查，不启动无界 profile。
+默认不主动冲刷缓存，报告必须注明 warmup/replay 条件：重复单 Linear 的 packed
+权重可能命中 L2，不能把它等同全模型 streaming。若缓存状态妨碍解释，再单独
+补充明确标记的 cold-cache profile（非正式速度），不混入本次固定 timing。
+
+判读顺序：若归并占比高，优化 split/归并；若主 kernel 的 memory pipe/DRAM
+达到高利用且 load stall 主导，处理流量/布局；若 Tensor pipe 低、FP32/整数指令
+与依赖 stall 主导，优化重建/fragment 生成；若 barrier/shared 冲突突出，改流水。
+这些是待检验假设，不是已经测出的瓶颈。暂不加入会被编译器删除计算或显著改变
+寄存器压力的“空解码/空 MMA”变体来声称精确归因。
+
+Nsight replay、cache control 与 profiling overhead 的边界见
+[NVIDIA Profiling Guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/)。
+
+## 持久环境复用（本地入口已准备，服务器待验证）
+
+`scripts/prepare_persistent_runtime.py` 在持久卷创建新的 Linux venv，而非搬迁
+现有 venv。必须使用模板基础 Python，先确认网络卷真实挂载并恢复 nvcc/c++/ninja
+的 PATH。模板 PyTorch 仍经 system-site-packages 复用，Python/CUDA/系统工具仍在
+容器镜像；持久盘并不能代替基础镜像。
+
+```bash
+python scripts/prepare_persistent_runtime.py --persist-root "$PERSIST_ROOT" \
+  --output-dir "$FLUXBIN_RUN_ROOT/runtime-restore" \
+  --image-reference runpod-default-unresolved
+source "$FLUXBIN_RUN_ROOT/runtime-restore/runtime.sh"
+```
+
+首次在 environments/<fingerprint>/venv 安装锁定依赖和 editable 项目；随后兼容
+启动跳过安装，只核对 pip check、锁定版本和导入。指纹包括 Python、架构、libc、
+基础 package 版本、torch/CUDA、编译器、GPU capability、lock、项目依赖元数据及
+固定解释器/仓库路径。变化就建新环境，不修改旧环境；未完成安装的目录不会被
+当作成功缓存。不同进程不得同时修改同一已准备 venv。
+
+生成 runtime.json 记录总恢复和导入时间，runtime.sh 设置 venv、nvcc 和兼容
+extension cache。首次新命名空间仍会编译，不承诺立即复用旧 namespace 的二进制。
+源码修改触发必要 JIT；完整 GPU 测试只在首次/相关改动后运行，重复开机仍需
+新的环境记录和小型真实 CUDA 调用确认，不能仅凭 venv 存在宣称 ready。
+
+网络盘大量小文件访问可能拖慢安装/导入/JIT，且运行期间仍需该挂载可访问。
+完成 warmup 后纯 GPU kernel 并不读取 venv 文件；但 lazy import/动态加载可能
+影响 eager wall time，故需记录独立进程的首次/再次 import 时间和正式计时稳定性。
+先试直接复用持久 venv，若导入成本抵消收益，再把依赖 wheelhouse 持久保存并
+在本地容器盘新建 venv；不要直接复制含绝对路径的 venv 到另一位置。
+[Python venv 文档](https://docs.python.org/3/library/venv.html)说明了不可移植性。

@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin current handoff
 
+Next local preparation (2026-09-15): `profile_m1_bottleneck.py` provides bounded
+real-weight timing and profiler capture; `prepare_persistent_runtime.py` prepares
+fingerprinted persistent Linux venv reuse. Neither has run on the GPU server yet.
+Local suite: 93 tests, 90 passed and 3 CUDA skips. Commands and diagnostic limits:
+[runbook](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+
 Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
 The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
 Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.
