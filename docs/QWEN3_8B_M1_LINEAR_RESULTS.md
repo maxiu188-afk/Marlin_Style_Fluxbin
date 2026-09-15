@@ -1,5 +1,26 @@
 # Qwen3-8B 首轮 M=1 Linear 结果
 
+## 内积实现与现有证据（2026-09-15）
+
+不能直接照搬 Marlin 的便宜 INT4 解包，但可参考流水、布局和调度；v3 实际
+使用了 MMA。v4 起改用分解内积，v5 起使用 LUT，不能再描述成 Marlin 内积。
+
+| 实现 | Inner compute | 当前证据 |
+|---|---|---|
+| v1 | 每权重重建、舍入 BF16，再 SIMT 点积 | PCIe Graph 七项 540.846 us（v3 同轮） |
+| v2 | 保留重建，改善 shared 访问及多行复用 | PCIe 同轮 501.606 us；另轮 SXM4 全模型 0.9332x/0.9562x |
+| v3 | 重建后的 BF16 送 MMA，三阶段流水 | PCIe 同轮 401.408 us，dense 258.212；全模型 prompt0 0.86887x，prompt1 未通过整组稳定性 |
+| v4 | 列 scale 外提、SIMT sign-add；每行每组四次 warp_sum | SXM4 七项 462.531 us，dense 256.030；同轮 v3 412.883 us；全模型 0.83063x/0.83143x |
+| v4_late | 每 lane 先乘 row scale 累加，每行每 split 最后归约一次 | 本地实现，GPU 待验证 |
+| v5 | 每线程持有输出行，8-sign LUT；运行时拆交织符号位 | 本地实现，GPU 待验证 |
+| v5_p256/p512/p1024 | 离线 byte planes，直接取 LUT 索引；比较三个行 tile | 本地实现，GPU 待验证 |
+
+Linear 数字为七个独立 Graph Linear 耗时之和，不是 block 延迟；不能跨 GPU
+作因果比较。全模型速度比为 original BF16 / packed，均是 report-only 数值
+策略下的计时结果，不意味着旧 dense BF16 数值等价。详细来源与门槛见下文。
+新候选的实现、检查和运行配置见 `M1_V2_LOCAL_OPTIMIZATION.md` 与
+`M1_CANDIDATES_FULL_MODEL_RUNBOOK.md`。
+
 2026-09-14：**真实权重的数值门槛通过，但首版 kernel 未实现加速**。
 CUDA Graph 轮七项计时均稳定，kernel 耗时为同轮 dense BF16 的 2.03–2.26 倍。
 这是保留的优化基线，不是 block/full-model/vLLM 或产品部署结果。

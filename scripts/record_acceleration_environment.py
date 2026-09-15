@@ -60,7 +60,9 @@ def main():
                               for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu','.cuh')},
             'build_flags':['-O3','--fmad=false','-lineinfo'],
             'candidate_extra_build_flags':{k:[f'-DROWS_PER_WARP={r}','--ptxas-options=-v']
-                                           for k,r in [('v2_r1',1),('v2_r2',2),('v2',4)]} | {k:['--ptxas-options=-v'] for k in ('v3','v4','v5')}}
+                                           for k,r in [('v2_r1',1),('v2_r2',2),('v2',4)]} | {k:['--ptxas-options=-v'] for k in ('v3','v4','v4_late','v5')} |
+                {f'v5_p{rows}':['--ptxas-options=-v','-DPLANAR_CODES=1',f'-DLUT_ROWS={rows}']
+                 for rows in (256,512,1024)}}
     ready=False
     try:
         import torch

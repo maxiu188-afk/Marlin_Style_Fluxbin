@@ -1,0 +1,72 @@
+{
+  "id": "m1-inner-compute-candidates-v1",
+  "dtype": "bf16",
+  "layer": 0,
+  "modes": [
+    "eager",
+    "graph"
+  ],
+  "timeout_seconds_per_trial": 300,
+  "candidates": [
+    {
+      "id": "v3_split4",
+      "kernel": "v3",
+      "groups_per_split": 4
+    },
+    {
+      "id": "v4_split4",
+      "kernel": "v4",
+      "groups_per_split": 4
+    },
+    {
+      "id": "v5_split1",
+      "kernel": "v5",
+      "groups_per_split": 1
+    },
+    {
+      "id": "late_split4",
+      "kernel": "v4_late",
+      "groups_per_split": 4
+    },
+    {
+      "id": "late_split16",
+      "kernel": "v4_late",
+      "groups_per_split": 16
+    },
+    {
+      "id": "late_split32",
+      "kernel": "v4_late",
+      "groups_per_split": 32
+    },
+    {
+      "id": "planes256_split1",
+      "kernel": "v5_p256",
+      "groups_per_split": 1
+    },
+    {
+      "id": "planes256_split4",
+      "kernel": "v5_p256",
+      "groups_per_split": 4
+    },
+    {
+      "id": "planes512_split1",
+      "kernel": "v5_p512",
+      "groups_per_split": 1
+    },
+    {
+      "id": "planes512_split4",
+      "kernel": "v5_p512",
+      "groups_per_split": 4
+    },
+    {
+      "id": "planes1024_split1",
+      "kernel": "v5_p1024",
+      "groups_per_split": 1
+    },
+    {
+      "id": "planes1024_split4",
+      "kernel": "v5_p1024",
+      "groups_per_split": 4
+    }
+  ]
+}

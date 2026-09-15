@@ -287,3 +287,35 @@ v4 gps1/2/4/8/16，eager/Graph 共 12 trial。按原 runbook 的 --config 入口
 随机输入、1024 行边界、K split 尾部、NaN workspace 覆写、非默认 stream 与 Graph。
 CUDA 测试已准备但未执行；没有连接服务器或生成新的性能证据。
 新增 `.cuh` 纳入 wheel 和环境/Linear/block/full-model 源码 hash 链。
+
+
+## 延后归约与离线 byte planes：2026-09-15
+
+`v4_late` 是单独的 `m1_v4_late.cu`，保留原 v4 作为同轮对照。每 lane 对其
+局部 global/sparse partial 应用相应组的 row scales，再累加所有组；每行每个
+K split 最后只做一次 warp_sum。不是全 K 必然只归约一次：仍有独立 split
+结果和最终 reduction。组长为 gps 时，完整 split 的 warp_sum 次数由 4*gps
+降为 1；所有 lane 做 row-scale FMA，FP32 加法次序改变，沿用结构参照与原容差，
+不要求 v4 bit-match。激活变换及三次 launch 仍计时。
+
+`v5_p256/p512/p1024` 是 v5 的编译期专化，分别使用 256/512/1024 行 tile。
+`convert_artifact(..., kernel=...)` 离线将 global codes 转为 `[G,O,2,16]`，
+sparse codes 转为 `[G,O,2,1]`；每个 byte 已是一个 base 的八个 sign bits。
+符号位数量不变，反转换逐位无损，既不增加一份常驻原符号布局，也不改 scales。
+使用独立 format `fluxbin-hybrid-g128-s8-m1-planar-v1`；模型适配器与预留的
+engine interface 都通过所选 kernel 转换。旧布局仍用于旧 kernel。
+
+LUT 内层直接取 byte 索引，不再调用 pattern()；建表、34,816 B shared、FP32
+累加及 split reduction 与 v5 相同。较小 tile 增加 CTA 数但重复建表更多，固定
+候选比较该取舍，不提前选胜者。Linear benchmark 的 v1 诊断单独使用旧布局，
+不会把 planar 数据传给旧 kernel；原始 BF16 全模型主性能基线不变。
+
+本地完整测试 105 项：100 通过、5 CUDA 跳过。新增离线布局穷举 65,536 种编码、
+还原、FP64 结构参照一致性、字节数相等、后端和模型预填充适配测试。
+CUDA tests 已包含 v4_late、三种 planar tile、tail/stream/Graph/FP16/BF16，
+尚未执行，不宣称 NVCC 编译或加速通过。
+
+静态分析边界：payload bytes/time 是有效带宽，不是 DRAM transaction 实测。
+CUDA 源操作数不能直接等同 SASS 指令数；发射、shuffle、依赖延迟存在重叠，
+不能简单相加来证明 45 us 的耗时归因。以上修改针对已确认的重复工作，
+不把静态估算当作经过 profiler 验证的瓶颈比例或硬性能上限。

@@ -314,3 +314,30 @@ python scripts/run_qwen3_8b_full_m1_trial.py \
 
 服务器执行使用持久会话，保留日志、退出码和原始 JSON；本地测试通过不等于
 CUDA 正确性或性能验收。vLLM 接口可选择 v5，但不连接 serving 框架。
+
+
+## Inner compute 增量候选（2026-09-15）
+
+新配置 `configs/acceleration/m1_inner_compute_candidates_v1.json`，12 个配置、
+eager/Graph 共 24 trials。保留 v3/gps4、v4/gps4、v5/gps1；新增 v4_late 的
+GPS 4/16/32，以及 v5_p256/p512/p1024 的 GPS 1/4。GPS 表示每个 K split 的组数。
+其余输入、精度和计时协议不变。每 trial 上限 300 秒，整批最坏超过两小时；
+正常实际耗时以日志为准，使用持久会话，不沿用旧整批 3700 秒 timeout。
+
+按上文重新生成 source-bound 环境记录并通过 CUDA smoke，然后运行：
+
+```bash
+python scripts/run_m1_candidate_batch.py \
+  --config configs/acceleration/m1_inner_compute_candidates_v1.json \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
+  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output-dir "$FLUXBIN_RUN_ROOT/inner-candidates"
+python scripts/summarize_m1_candidates.py \
+  --config configs/acceleration/m1_inner_compute_candidates_v1.json \
+  --batch-dir "$FLUXBIN_RUN_ROOT/inner-candidates" \
+  --output-dir "$FLUXBIN_RUN_ROOT/inner-summary"
+```
+
+选定通过数值与稳定性审阅的 Linear JSON 后，block/full-model 自动继承对应
+kernel 与 split，沿用上文完整模型 report-only 命令。不以 block 速度决定是否
+提交完整模型。新增候选仍未在服务器编译或测量。

@@ -1,10 +1,10 @@
 # Marlin-Style FluxBin
 
-Local v5 LUT-A16 preparation (2026-09-15): eight-sign FP32 lookup tables,
-row-owned accumulation, fused table construction, no A8 quantization. Linear,
-block and full-model entry points are connected; vLLM remains unconnected.
-Local suite: 97 passed, 5 CUDA skips. NVCC, GPU correctness and performance are
-pending; v4 remains the latest GPU evidence. See [v5 run commands](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md#v5-lut-a16-本地准备2026-09-15).
+Local inner-compute candidates (2026-09-15): `v4_late` reduces once per row/K
+split; `v5_p256/p512/p1024` consume lossless offline byte planes and remove online
+sign de-interleaving. Legacy v4/v5 remain available. No A8 or serving integration.
+Local suite: 100 passed, 5 CUDA skips. All new CUDA builds/performance remain
+pending; v4 is the latest GPU result. [Run commands](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md#inner-compute-增量候选2026-09-15).
 
 Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
 checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.

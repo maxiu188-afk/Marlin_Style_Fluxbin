@@ -15,7 +15,10 @@ from torch.nn import functional as F
 from .evaluation import materialize_hybrid_s8_weight, tensor_sha256
 
 FORMAT = 'fluxbin-hybrid-g128-s8-m1-v1'
-KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2', 'v3', 'v4', 'v5')
+PLANAR_KERNELS = ('v5_p256', 'v5_p512', 'v5_p1024')
+FACTORED_KERNELS = ('v4', 'v4_late', 'v5') + PLANAR_KERNELS
+KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2', 'v3') + FACTORED_KERNELS
+PLANAR_FORMAT = 'fluxbin-hybrid-g128-s8-m1-planar-v1'
 FIELDS = ('global_sign_codes', 'global_row_scales', 'global_column_scales',
           'refinement_indices', 'refinement_sign_codes',
           'refinement_row_scales', 'refinement_column_scales')
@@ -51,8 +54,35 @@ def validate_artifact(p: Mapping[str, torch.Tensor]) -> tuple[int, int]:
     return o, g
 
 
-def convert_artifact(p: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
+def _compact_even(word):
+    word = word & 0x5555
+    word = (word | (word >> 1)) & 0x3333
+    word = (word | (word >> 2)) & 0x0f0f
+    return ((word | (word >> 4)) & 0xff).to(torch.uint8)
+
+
+def _to_planes(codes):
+    word = codes[..., 0::2].int() | (codes[..., 1::2].int() << 8)
+    return torch.stack((_compact_even(word), _compact_even(word >> 1)), dim=-2)
+
+
+def _from_planes(codes):
+    def spread(x):
+        x = x.int()
+        x = (x | (x << 4)) & 0x0f0f
+        x = (x | (x << 2)) & 0x3333
+        return (x | (x << 1)) & 0x5555
+    word = spread(codes[..., 0, :]) | (spread(codes[..., 1, :]) << 1)
+    return torch.stack((word & 0xff, word >> 8), dim=-1).flatten(-2).to(torch.uint8)
+
+
+def layout_format(layout):
+    return PLANAR_FORMAT if layout['codes'].ndim == 4 else FORMAT
+
+
+def convert_artifact(p: Mapping[str, torch.Tensor], *, kernel='v1') -> dict[str, torch.Tensor]:
     """Permute only; preserve sign bits, FP32 scales and selected columns."""
+    if kernel not in KERNELS:raise ValueError('unknown kernel')
     o, g = validate_artifact(p)
     ix = p['refinement_indices'].to(torch.int16)
     lookup = torch.full((g, 128), -1, dtype=torch.int16, device=ix.device)
@@ -65,14 +95,21 @@ def convert_artifact(p: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
         p['refinement_row_scales'].permute(2, 1, 0),
         p['refinement_column_scales'].permute(1, 2, 0), lookup,
     )
-    return {k: v.contiguous().clone() for k, v in zip(LAYOUT_FIELDS, values)}
+    result = {k: v.contiguous().clone() for k, v in zip(LAYOUT_FIELDS, values)}
+    if kernel in PLANAR_KERNELS:
+        for key in ('codes', 'sparse_codes'):
+            result[key] = _to_planes(result[key]).contiguous()
+    return result
 
 
 def restore_artifact(p: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]:
-    g, o, _ = p['codes'].shape
-    values = (p['codes'].permute(1, 0, 2).reshape(o, g * 32),
+    g, o = p['codes'].shape[:2]
+    codes, sparse = p['codes'], p['sparse_codes']
+    if codes.ndim == 4:
+        codes, sparse = _from_planes(codes), _from_planes(sparse)
+    values = (codes.permute(1, 0, 2).reshape(o, g * 32),
               p['rows'].permute(2, 1, 0), p['columns'].permute(2, 0, 1),
-              p['indices'], p['sparse_codes'].permute(1, 0, 2).reshape(o, g * 2),
+              p['indices'], sparse.permute(1, 0, 2).reshape(o, g * 2),
               p['sparse_rows'].permute(2, 1, 0), p['sparse_columns'].permute(2, 0, 1))
     return {k: v.contiguous() for k, v in zip(FIELDS, values)}
 
@@ -84,7 +121,7 @@ def decode_layout(p: Mapping[str, torch.Tensor], dtype=torch.bfloat16) -> torch.
 
 
 def conversion_record(source, layout):
-    return {'format': FORMAT, 'source': {k: tensor_sha256(v) for k, v in source.items()},
+    return {'format': layout_format(layout), 'source': {k: tensor_sha256(v) for k, v in source.items()},
             'layout': {k: tensor_sha256(v) for k, v in layout.items()},
             'layout_bytes': sum(v.numel() * v.element_size() for v in layout.values())}
 
@@ -95,18 +132,22 @@ def load_extension(kernel="v1"):
     return _load_extension(kernel)
 
 
-@lru_cache(maxsize=7)
+@lru_cache(maxsize=len(KERNELS))
 def _load_extension(kernel):
     if not torch.cuda.is_available():
         raise RuntimeError('M=1 kernel requires NVIDIA CUDA; no CPU/MPS substitution')
     from torch.utils.cpp_extension import load
     root = Path(__file__).resolve().parent / 'csrc'
     filename = {'v1':'m1.cu','v3':'m1_v3.cu','v4':'m1_v4.cu','v5':'m1_v5.cu'}.get(kernel,'m1_v2.cu')
+    if kernel == 'v4_late':filename = 'm1_v4_late.cu'
+    if kernel in PLANAR_KERNELS:filename = 'm1_v5.cu'
     flags = ['-O3', '--fmad=false', '-lineinfo']
     if kernel.startswith('v2'):
         rows = {'v2_r1': 1, 'v2_r2': 2, 'v2': 4}[kernel]
         flags += [f'-DROWS_PER_WARP={rows}', '--ptxas-options=-v']
-    if kernel in ('v3','v4','v5'):flags += ['--ptxas-options=-v']
+    if kernel == 'v3' or kernel in FACTORED_KERNELS:flags += ['--ptxas-options=-v']
+    if kernel in PLANAR_KERNELS:
+        flags += ['-DPLANAR_CODES=1', f'-DLUT_ROWS={kernel[4:]}']
     return load(name=f'fluxbin_m1_{kernel}', sources=[str(root / filename)],
                 extra_cuda_cflags=flags, verbose=True)
 
@@ -117,7 +158,7 @@ def workspace_shape(out_features: int, in_features: int, groups_per_split=8, *, 
             or not 1<=out_features<=65536 or not 128<=in_features<=131072 or in_features % 128):
         raise ValueError('invalid group/split dimensions')
     splits = (in_features // 128 + groups_per_split - 1) // groups_per_split
-    if kernel == 'v4':return (in_features // 128 * 272 + splits*out_features,)
+    if kernel in ('v4','v4_late'):return (in_features // 128 * 272 + splits*out_features,)
     return (splits, out_features)
 
 
@@ -130,7 +171,7 @@ def m1_out(x, layout, out, workspace, *, groups_per_split=8, kernel="v1"):
     """
     load_extension(kernel).m1_out(x, layout['codes'], layout['rows'], layout['columns'],
                             layout['sparse_codes'], layout['sparse_rows'],
-                            layout['sparse_columns'], layout['indices'] if kernel in ('v4','v5') else layout['lookup'], out,
+                            layout['sparse_columns'], layout['indices'] if kernel in FACTORED_KERNELS else layout['lookup'], out,
                             workspace, groups_per_split)
     return out
 
@@ -153,7 +194,7 @@ class PackedHybridLinear(nn.Module):
         self.in_features = g * 128
         self.fallback, self.groups_per_split = fallback, groups_per_split
         workspace_shape(self.out_features, self.in_features, groups_per_split)
-        for name, value in convert_artifact(payload).items():
+        for name, value in convert_artifact(payload,kernel=kernel).items():
             self.register_buffer(name, value)
         self.register_buffer('bias', None if bias is None else bias.detach().clone())
         self.register_buffer('_workspace', None, persistent=False)

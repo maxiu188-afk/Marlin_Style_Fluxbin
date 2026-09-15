@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explicit M=1 Linear trial on frozen step400 payloads; never launches a block/model job."""
 from __future__ import annotations
+from fluxbin_style.deployment import FACTORED_KERNELS, PLANAR_KERNELS
 import argparse
 import json
 from pathlib import Path
@@ -52,20 +53,22 @@ def main():
             'inputs':'seeded synthetic activations on real step400 weights',
             'baseline':'same-input dense BF16/FP16 matmul using decoded step400 weights',
             'timing_scope':'preallocated outputs; packed compute plus split reduction; v4 includes activation transform; v5 includes LUT construction and split reduction; v3/v5 single split directly stores output; excludes conversion/JIT/load',
-            'v1_comparison_policy':'diagnostic_only' if args.kernel in ('v3','v4','v5') else 'exact',
-            'numerical_reference':REFERENCE if args.kernel in ('v4','v5') else 'combined_weight_activation_dtype_v1',
+            'v1_comparison_policy':'diagnostic_only' if args.kernel in ('v3',)+FACTORED_KERNELS else 'exact',
+            'numerical_reference':REFERENCE if args.kernel in FACTORED_KERNELS else 'combined_weight_activation_dtype_v1',
             'next_stage':'not_launched','cells':[]}
     try:
         load_extension(args.kernel)
         if args.kernel!="v1":load_extension("v1")
         for name in QWEN3_LINEAR_MODULES:
             original={f:tensors[name+'.'+f] for f in FIELDS}
-            layout=convert_artifact(original)
+            layout=convert_artifact(original,kernel=args.kernel)
             restored=restore_artifact(layout)
             if any(not torch.equal(original[f],restored[f]) for f in FIELDS):
                 raise ValueError('conversion changed payload')
             record=conversion_record(original,layout)
             layout={k:v.cuda() for k,v in layout.items()}
+            v1_layout=({k:v.cuda() for k,v in convert_artifact(original).items()}
+                       if args.kernel in PLANAR_KERNELS else layout)
             dense=decode_layout(layout,dtype)
             o,k=dense.shape
             x=torch.randn(1,k,device='cuda',dtype=dtype)
@@ -74,12 +77,12 @@ def main():
             y_v1=torch.empty_like(y) if args.kernel!='v1' else None
             workspace_v1=torch.empty(workspace_shape(o,k,args.groups_per_split),device='cuda') if args.kernel!='v1' else None
             def packed():return m1_out(x,layout,y,workspace,groups_per_split=args.groups_per_split,kernel=args.kernel)
-            def baseline_v1():return m1_out(x,layout,y_v1,workspace_v1,groups_per_split=args.groups_per_split,kernel='v1')
+            def baseline_v1():return m1_out(x,v1_layout,y_v1,workspace_v1,groups_per_split=args.groups_per_split,kernel='v1')
             def baseline():return torch.mm(x,dense.t(),out=reference)
             cell={'module':name,'shape':[o,k],'conversion':record,'checks':[]}
             def check_output():
                 legacy=numerical_gate(y,reference)
-                if args.kernel not in ('v4','v5'):return legacy
+                if args.kernel not in FACTORED_KERNELS:return legacy
                 gate=structural_gate(y,structural_reference(x,layout))
                 gate['legacy_dense_bf16']=legacy
                 return gate
@@ -96,7 +99,7 @@ def main():
             if args.kernel!='v1':
                 baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
             cell['checks'].append(gate)
-            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel in ('v3','v4','v5') or c.get('v1_exact',True)) for c in cell['checks'])
+            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel in ('v3',)+FACTORED_KERNELS or c.get('v1_exact',True)) for c in cell['checks'])
             report['cells'].append(cell)
             if not cell['correctness_passed']:raise RuntimeError(f'numerical gate failed: {name}')
             # Fixed random timing input, not the alternating diagnostic input.
@@ -116,7 +119,7 @@ def main():
                 functions={key:graph.replay for key,graph in zip(functions,graphs)}
                 for fn in functions.values():fn()
                 if not check_output()['passed']:raise RuntimeError('graph replay numerical gate failed')
-                if args.kernel not in ('v1','v3','v4','v5') and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
+                if args.kernel not in ('v1','v3')+FACTORED_KERNELS and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
             cell['timings']=paired_cuda_timing(functions,warmup=args.warmup,repeats=args.repeats,rounds=args.rounds)
             stable=all(t['stable'] for t in cell['timings'].values())
             cell['speedup']=cell['timings']['dense']['median_us']/cell['timings']['packed']['median_us'] if stable else None

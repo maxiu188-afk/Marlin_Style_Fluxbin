@@ -5,10 +5,11 @@ A future serving adapter owns weight loading/sharding, streams, workspace and
 scheduler policy; the backend owns only layout conversion and the Linear op.
 """
 from __future__ import annotations
+from .deployment import FACTORED_KERNELS, PLANAR_KERNELS
 from dataclasses import dataclass
 from typing import Mapping, Protocol
 import torch
-from .deployment import KERNELS, FORMAT, convert_artifact, m1_out, workspace_shape
+from .deployment import KERNELS, FORMAT, PLANAR_FORMAT, convert_artifact, m1_out, workspace_shape
 
 
 @dataclass(frozen=True)
@@ -43,13 +44,14 @@ class M1Backend:
         if kernel not in KERNELS:
             raise ValueError(f"kernel must be one of {KERNELS}")
         self.kernel=kernel
-        if kernel in ('v4','v5'):self.contract=LinearContract(arithmetic='factored_fp32_v1')
+        if kernel in FACTORED_KERNELS:self.contract=LinearContract(arithmetic='factored_fp32_v1',
+            format=PLANAR_FORMAT if kernel in PLANAR_KERNELS else FORMAT)
         if not isinstance(groups_per_split,int) or not 1<=groups_per_split<=1024:
             raise ValueError('groups_per_split must be 1..1024')
         self.groups_per_split=groups_per_split
 
     def convert(self, artifact):
-        return convert_artifact(artifact)
+        return convert_artifact(artifact,kernel=self.kernel)
 
     def workspace_shape(self, out_features, in_features):
         return workspace_shape(out_features,in_features,self.groups_per_split,kernel=self.kernel)

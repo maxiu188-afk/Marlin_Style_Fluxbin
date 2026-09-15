@@ -11,8 +11,16 @@
 
 #include "lut8.cuh"
 
+#ifndef PLANAR_CODES
+#define PLANAR_CODES 0
+#endif
+#ifndef LUT_ROWS
+#define LUT_ROWS 1024
+#endif
 constexpr int kThreads = 256;
-constexpr int kRows = 1024;
+constexpr int kRows = LUT_ROWS;
+constexpr int kRowsPerThread = kRows / kThreads;
+static_assert(kRows == 256 || kRows == 512 || kRows == 1024, "unsupported row tile");
 constexpr int kTables = 34; // 16 global tables/base, one sparse table/base
 
 template<class T, bool SingleSplit>
@@ -23,10 +31,10 @@ __global__ void lut_m1(const T* x, const uint8_t* codes, const float* rows,
   __shared__ float lut[kTables * 256];
   int t = threadIdx.x, lane = t % 32, warp = t / 32;
   int first = blockIdx.x * kRows + t;
-  float result[4] = {};
+  float result[kRowsPerThread] = {};
   int end = min(G, (int(blockIdx.y) + 1) * gps);
   for (int g = blockIdx.y * gps; g < end; ++g) {
-    // Build tables directly from x*column in this CTA. The 1024 output rows
+    // Build tables directly from x*column in this CTA. The output row tile
     // amortize construction; no transformed-activation global workspace.
     for (int bank = warp; bank < kTables; bank += kThreads / 32) {
       float values[8];
@@ -46,7 +54,7 @@ __global__ void lut_m1(const T* x, const uint8_t* codes, const float* rows,
     }
     __syncthreads();
     #pragma unroll
-    for (int r = 0; r < 4; ++r) {
+    for (int r = 0; r < kRowsPerThread; ++r) {
       int o = first + r*kThreads;
       if (o < O) {
         // Each row occupies exactly 32 aligned bytes. Vector loads avoid
@@ -57,13 +65,25 @@ __global__ void lut_m1(const T* x, const uint8_t* codes, const float* rows,
         float d0 = 0.f, d1 = 0.f;
         #pragma unroll
         for (int chunk = 0; chunk < 16; ++chunk) {
+#if PLANAR_CODES
+          unsigned p0 = (words[chunk/4] >> (8*(chunk%4))) & 0xffu;
+          unsigned p1 = (words[4+chunk/4] >> (8*(chunk%4))) & 0xffu;
+#else
           unsigned word = words[chunk/2] >> (16*(chunk%2));
-          d0 += lut[chunk*256 + fluxbin_lut::pattern(word)];
-          d1 += lut[(16+chunk)*256 + fluxbin_lut::pattern(word >> 1)];
+          unsigned p0 = fluxbin_lut::pattern(word);
+          unsigned p1 = fluxbin_lut::pattern(word >> 1);
+#endif
+          d0 += lut[chunk*256 + p0];
+          d1 += lut[(16+chunk)*256 + p1];
         }
         unsigned sp = reinterpret_cast<const uint16_t*>(sparse)[g*O+o];
+#if PLANAR_CODES
+        float s0 = lut[32*256 + (sp & 0xffu)];
+        float s1 = lut[33*256 + (sp >> 8)];
+#else
         float s0 = lut[32*256 + fluxbin_lut::pattern(sp)];
         float s1 = lut[33*256 + fluxbin_lut::pattern(sp >> 1)];
+#endif
         int off = (g*O+o)*2;
         result[r] = __fmaf_rn(rows[off], d0, result[r]);
         result[r] = __fmaf_rn(rows[off+1], d1, result[r]);
@@ -74,7 +94,7 @@ __global__ void lut_m1(const T* x, const uint8_t* codes, const float* rows,
     __syncthreads(); // all consumers finish before the next group overwrites LUT
   }
   #pragma unroll
-  for (int r = 0; r < 4; ++r) {
+  for (int r = 0; r < kRowsPerThread; ++r) {
     int o = first + r*kThreads;
     if (o < O) {
       partial[blockIdx.y*O+o] = result[r];
@@ -130,7 +150,12 @@ void m1_out(torch::Tensor x, torch::Tensor codes, torch::Tensor rows,
   TORCH_CHECK(indices.scalar_type() == at::kShort, "int16 indices required");
   for (const auto& t : {rows, cols, sr, sc, workspace})
     TORCH_CHECK(t.scalar_type() == at::kFloat, "FP32 scales/workspace required");
+#if PLANAR_CODES
+  TORCH_CHECK(codes.dim() == 4 && codes.size(2) == 2 && codes.size(3) == 16,
+              "planar codes must be [G,O,2,16]");
+#else
   TORCH_CHECK(codes.dim() == 3 && codes.size(2) == 32, "codes must be [G,O,32]");
+#endif
   int64_t G = codes.size(0), O = codes.size(1);
   TORCH_CHECK(G > 0 && O > 0 && G <= 1024 && O <= 65536 && gps > 0 && gps <= 1024,
               "dimensions/split outside v1 bounds");
@@ -138,7 +163,11 @@ void m1_out(torch::Tensor x, torch::Tensor codes, torch::Tensor rows,
   TORCH_CHECK(x.size(1) == G*128, "K mismatch");
   TORCH_CHECK(rows.sizes() == at::IntArrayRef({G,O,2}) && sr.sizes() == rows.sizes(), "row shape");
   TORCH_CHECK(cols.sizes() == at::IntArrayRef({G,128,2}), "column shape");
+#if PLANAR_CODES
+  TORCH_CHECK(sparse.sizes() == at::IntArrayRef({G,O,2,1}), "planar sparse code shape");
+#else
   TORCH_CHECK(sparse.sizes() == at::IntArrayRef({G,O,2}), "sparse code shape");
+#endif
   TORCH_CHECK(sc.sizes() == at::IntArrayRef({G,8,2}), "sparse column shape");
   TORCH_CHECK(indices.sizes() == at::IntArrayRef({G,8}), "v5 indices shape");
   TORCH_CHECK(out.sizes() == at::IntArrayRef({1,O}) && out.scalar_type() == x.scalar_type(), "output mismatch");

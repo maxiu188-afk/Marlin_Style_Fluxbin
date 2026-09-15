@@ -1,5 +1,6 @@
 """Offline inspection of a fixed candidate batch. Never launches/promotes trials."""
 from __future__ import annotations
+from .deployment import FACTORED_KERNELS
 import json
 import math
 import statistics
@@ -75,14 +76,14 @@ def summarize_batch(root: Path, config_path: Path):
                         if module in input_hashes and input_hashes[module]!=digest:raise ValueError('timing input drift')
                         input_hashes[module]=digest
                         checks=cell['checks']
-                        if c['kernel'] in ('v4','v5'):
+                        if c['kernel'] in FACTORED_KERNELS:
                             from .factored_reference import REFERENCE
                             if result.get('numerical_reference')!=REFERENCE or not all(x.get('reference')==REFERENCE for x in checks):
                                 raise ValueError('factored structural reference missing')
                         if (len(checks)!=4 or not cell['correctness_passed'] or
                             not all(x.get('passed') is True for x in checks) or
                             not all(x.get('repeat_exact') is True for x in checks[:3]) or
-                            (c['kernel'] not in ('v1','v3','v4','v5') and not all(x.get('v1_exact') is True for x in checks))):
+                            (c['kernel'] not in ('v1','v3')+FACTORED_KERNELS and not all(x.get('v1_exact') is True for x in checks))):
                             raise ValueError('correctness gate failed/incomplete')
                         names=('dense','packed') if c['kernel']=='v1' else ('dense','packed','v1')
                         measured={n:timing(cell['timings'][n]) for n in names}

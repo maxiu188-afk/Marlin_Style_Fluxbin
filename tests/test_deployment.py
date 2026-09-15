@@ -2,7 +2,7 @@ import unittest
 import torch
 from torch import nn
 from fluxbin_style.deployment import (
-    FIELDS, PackedHybridLinear, convert_artifact, restore_artifact,
+    FIELDS, PLANAR_KERNELS, PackedHybridLinear, convert_artifact, restore_artifact,
     decode_layout, m1_out, workspace_shape, load_extension, replace_block_linears,
 )
 from fluxbin_style.evaluation import materialize_hybrid_s8_weight
@@ -128,6 +128,13 @@ class DeploymentTests(unittest.TestCase):
                 load_extension('v5')
                 self.assertEqual(build.call_count,7)
                 self.assertTrue(build.call_args.kwargs['sources'][0].endswith('m1_v5.cu'))
+                load_extension('v4_late')
+                self.assertTrue(build.call_args.kwargs['sources'][0].endswith('m1_v4_late.cu'))
+                for kernel in PLANAR_KERNELS:
+                    load_extension(kernel)
+                    self.assertIn('-DPLANAR_CODES=1',build.call_args.kwargs['extra_cuda_cflags'])
+                    self.assertIn(f'-DLUT_ROWS={kernel[4:]}',build.call_args.kwargs['extra_cuda_cflags'])
+                self.assertEqual(build.call_count,11)
                 with self.assertRaises(ValueError):load_extension('unknown')
         finally:_load_extension.cache_clear()
 
@@ -136,51 +143,53 @@ class DeploymentTests(unittest.TestCase):
 class CUDADeploymentTests(unittest.TestCase):
     def test_v4_factored_reference_tail_split_stream_graph(self):
         from fluxbin_style.factored_reference import structural_reference,structural_gate
-        for o,g in ((1,1),(17,3),(65,10)):
-            for dtype in (torch.bfloat16,torch.float16):
-                layout={k:v.cuda() for k,v in convert_artifact(make_payload(o,g)).items()}
-                for basis in (True,False):
-                    x=torch.randn(1,g*128,device='cuda',dtype=dtype)
-                    if basis:x.zero_();x[0,int(layout['indices'][0,0])]=1
-                    ref=structural_reference(x,layout)
-                    for gps in (1,4,1024):
-                        w=torch.full(workspace_shape(o,g*128,gps,kernel='v4'),float('nan'),device='cuda')
-                        y=torch.empty(1,o,device='cuda',dtype=dtype)
-                        def run():m1_out(x,layout,y,w,groups_per_split=gps,kernel='v4')
-                        run();self.assertTrue(structural_gate(y,ref)['passed'])
-                        saved=y.clone();stream=torch.cuda.Stream()
-                        stream.wait_stream(torch.cuda.current_stream())
-                        with torch.cuda.stream(stream):w.fill_(float('nan'));run()
-                        torch.cuda.current_stream().wait_stream(stream)
-                        self.assertTrue(torch.equal(saved,y));self.assertTrue(torch.isfinite(w).all())
-                        graph=torch.cuda.CUDAGraph()
-                        with torch.cuda.graph(graph):run()
-                        graph.replay();torch.cuda.synchronize()
-                        self.assertTrue(torch.equal(saved,y))
+        for kernel in ('v4','v4_late'):
+            for o,g in ((1,1),(17,3),(65,10)):
+                for dtype in (torch.bfloat16,torch.float16):
+                    layout={k:v.cuda() for k,v in convert_artifact(make_payload(o,g),kernel=kernel).items()}
+                    for basis in (True,False):
+                        x=torch.randn(1,g*128,device='cuda',dtype=dtype)
+                        if basis:x.zero_();x[0,int(layout['indices'][0,0])]=1
+                        ref=structural_reference(x,layout)
+                        for gps in (1,4,1024):
+                            w=torch.full(workspace_shape(o,g*128,gps,kernel=kernel),float('nan'),device='cuda')
+                            y=torch.empty(1,o,device='cuda',dtype=dtype)
+                            def run():m1_out(x,layout,y,w,groups_per_split=gps,kernel=kernel)
+                            run();self.assertTrue(structural_gate(y,ref)['passed'])
+                            saved=y.clone();stream=torch.cuda.Stream()
+                            stream.wait_stream(torch.cuda.current_stream())
+                            with torch.cuda.stream(stream):w.fill_(float('nan'));run()
+                            torch.cuda.current_stream().wait_stream(stream)
+                            self.assertTrue(torch.equal(saved,y));self.assertTrue(torch.isfinite(w).all())
+                            graph=torch.cuda.CUDAGraph()
+                            with torch.cuda.graph(graph):run()
+                            graph.replay();torch.cuda.synchronize()
+                            self.assertTrue(torch.equal(saved,y))
 
     def test_v5_lut_reference_tail_split_stream_graph(self):
         from fluxbin_style.factored_reference import structural_reference,structural_gate
-        for o,g in ((1,1),(17,3),(65,10),(1025,2)):
-            for dtype in (torch.bfloat16,torch.float16):
-                layout={k:v.cuda() for k,v in convert_artifact(make_payload(o,g)).items()}
-                for basis in (True,False):
-                    x=torch.randn(1,g*128,device='cuda',dtype=dtype)
-                    if basis:x.zero_();x[0,int(layout['indices'][0,0])]=1
-                    ref=structural_reference(x,layout)
-                    for gps in (1,4,1024):
-                        w=torch.full(workspace_shape(o,g*128,gps,kernel='v5'),float('nan'),device='cuda')
-                        y=torch.empty(1,o,device='cuda',dtype=dtype)
-                        def run():m1_out(x,layout,y,w,groups_per_split=gps,kernel='v5')
-                        run();self.assertTrue(structural_gate(y,ref)['passed'])
-                        saved=y.clone();stream=torch.cuda.Stream()
-                        stream.wait_stream(torch.cuda.current_stream())
-                        with torch.cuda.stream(stream):w.fill_(float('nan'));run()
-                        torch.cuda.current_stream().wait_stream(stream)
-                        self.assertTrue(torch.equal(saved,y));self.assertTrue(torch.isfinite(w).all())
-                        graph=torch.cuda.CUDAGraph()
-                        with torch.cuda.graph(graph):run()
-                        graph.replay();torch.cuda.synchronize()
-                        self.assertTrue(torch.equal(saved,y))
+        for kernel in ('v5',)+PLANAR_KERNELS:
+            for o,g in ((1,1),(17,3),(65,10),(1025,2)):
+                for dtype in (torch.bfloat16,torch.float16):
+                    layout={k:v.cuda() for k,v in convert_artifact(make_payload(o,g),kernel=kernel).items()}
+                    for basis in (True,False):
+                        x=torch.randn(1,g*128,device='cuda',dtype=dtype)
+                        if basis:x.zero_();x[0,int(layout['indices'][0,0])]=1
+                        ref=structural_reference(x,layout)
+                        for gps in (1,4,1024):
+                            w=torch.full(workspace_shape(o,g*128,gps,kernel=kernel),float('nan'),device='cuda')
+                            y=torch.empty(1,o,device='cuda',dtype=dtype)
+                            def run():m1_out(x,layout,y,w,groups_per_split=gps,kernel=kernel)
+                            run();self.assertTrue(structural_gate(y,ref)['passed'])
+                            saved=y.clone();stream=torch.cuda.Stream()
+                            stream.wait_stream(torch.cuda.current_stream())
+                            with torch.cuda.stream(stream):w.fill_(float('nan'));run()
+                            torch.cuda.current_stream().wait_stream(stream)
+                            self.assertTrue(torch.equal(saved,y));self.assertTrue(torch.isfinite(w).all())
+                            graph=torch.cuda.CUDAGraph()
+                            with torch.cuda.graph(graph):run()
+                            graph.replay();torch.cuda.synchronize()
+                            self.assertTrue(torch.equal(saved,y))
 
     def test_oracle_tail_split_stream_graph_and_repeated_calls(self):
         load_extension()

@@ -12,19 +12,29 @@ def structural_reference(x, layout):
     No BF16 weight rounding. This is high precision, not exact real arithmetic.
     Only one group's dense weights exist at a time; no full-model dense copy.
     """
-    g, o, _ = layout['codes'].shape
+    g, o = layout['codes'].shape[:2]
     if tuple(x.shape) != (1, g*128):raise ValueError('expected [1,G*128]')
     result = torch.zeros(o, device=x.device, dtype=torch.float64)
     k = torch.arange(128, device=x.device)
     j = torch.arange(8, device=x.device)
     for group in range(g):
-        q = layout['codes'][group][:,k//4].long() >> (2*(k%4))
-        signs = torch.stack(((q&1)*2-1, ((q>>1)&1)*2-1), dim=-1).double()
+        if layout['codes'].ndim == 4:
+            codes = layout['codes'][group]
+            signs = torch.stack([((codes[:,b,:][:,k//8].long() >> (k%8))&1)*2-1
+                                 for b in range(2)], dim=-1).double()
+        else:
+            q = layout['codes'][group][:,k//4].long() >> (2*(k%4))
+            signs = torch.stack(((q&1)*2-1, ((q>>1)&1)*2-1), dim=-1).double()
         rows = layout['rows'][group].double()
         cols = layout['columns'][group].double()
         w = (signs * rows[:,None,:] * cols[None,:,:]).sum(-1)
-        sq = layout['sparse_codes'][group][:,j//4].long() >> (2*(j%4))
-        ss = torch.stack(((sq&1)*2-1, ((sq>>1)&1)*2-1), dim=-1).double()
+        if layout['sparse_codes'].ndim == 4:
+            codes = layout['sparse_codes'][group]
+            ss = torch.stack([((codes[:,b,:][:,j//8].long() >> (j%8))&1)*2-1
+                              for b in range(2)], dim=-1).double()
+        else:
+            sq = layout['sparse_codes'][group][:,j//4].long() >> (2*(j%4))
+            ss = torch.stack(((sq&1)*2-1, ((sq>>1)&1)*2-1), dim=-1).double()
         delta = (ss * layout['sparse_rows'][group].double()[:,None,:] *
                  layout['sparse_columns'][group].double()[None,:,:]).sum(-1)
         w[:,layout['indices'][group].long()] += delta

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Explicit full Qwen3-8B cached M=1 trial after matching block gate. No vLLM."""
 from __future__ import annotations
+from fluxbin_style.deployment import FACTORED_KERNELS
 import argparse
 import gc
 import json
@@ -117,7 +118,7 @@ def main():
             'block_timing_policy':'allow_unstable' if args.allow_unstable_block_timing else 'strict',
             'block_status':block['status'],
             'manifest_sha256':MANIFEST_SHA,'payloads':payload_records,'kernel':kernel,'groups_per_split':gps,
-            'arithmetic':'factored_fp32_v1' if kernel in ('v4','v5') else 'combined_weight_activation_dtype_v1',
+            'arithmetic':'factored_fp32_v1' if kernel in FACTORED_KERNELS else 'combined_weight_activation_dtype_v1',
             'numerical_reference':'legacy decoded BF16 full model; factored structural FP64 reference is Linear-only',
             'prompt_token_sha256':[tensor_sha256(x) for x in prompts],
             'scope':'HF eager, dynamic KV cache, batch1; identical forced continuation from decoded step400',
