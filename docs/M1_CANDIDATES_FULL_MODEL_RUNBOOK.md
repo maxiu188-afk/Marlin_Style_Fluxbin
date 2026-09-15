@@ -181,6 +181,9 @@ python scripts/summarize_m1_candidates.py \
 
 ## v3 瓶颈诊断准备（2026-09-15，尚未执行）
 
+后续用户已取消诊断：本节入口保留但暂停，不继续准备全模型 profiler、不启动采样。
+新的候选方向与静态归因边界见 [优化说明](M1_V2_LOCAL_OPTIMIZATION.md)。
+
 本次先诊断未改动的 v3/gps4，不同时改 kernel、算法舍入或量化格式。
 入口 `scripts/profile_m1_bottleneck.py` 使用 layer-0 已接受 payload，固定 BF16、
 M=1、seed=20260914、gps4，选择 k_proj、q_proj、gate_proj、down_proj 四种形状。

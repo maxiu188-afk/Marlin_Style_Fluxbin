@@ -1,6 +1,13 @@
 # Marlin-Style FluxBin current handoff
 
-Next local preparation (2026-09-15): `profile_m1_bottleneck.py` provides bounded
+Latest direction (2026-09-15): user cancelled diagnostic preparation/execution.
+Prioritize a candidate that factors column scales into activations and applies row
+scales after sign dot products, with a separate sparse contribution. Static cost
+estimates are hypotheses, not measured bottleneck attribution. Existing numerical
+references/results remain intact; a new candidate needs an explicit reference.
+See [design and evidence boundaries](M1_V2_LOCAL_OPTIMIZATION.md).
+
+Earlier local preparation (retained, paused): `profile_m1_bottleneck.py` provides bounded
 real-weight timing and profiler capture; `prepare_persistent_runtime.py` prepares
 fingerprinted persistent Linux venv reuse. Neither has run on the GPU server yet.
 Local suite: 93 tests, 90 passed and 3 CUDA skips. Commands and diagnostic limits:

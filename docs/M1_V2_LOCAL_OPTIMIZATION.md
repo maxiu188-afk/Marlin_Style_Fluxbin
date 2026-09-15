@@ -150,3 +150,62 @@ gps=1/2/8/1024、BF16/FP16、one-hot/random、workspace 污染、非默认 strea
 
 本地验证：91 项测试，88 通过、3 项 CUDA 测试跳过；wheel 打包通过，并检查包含
 `m1_v3.cu` 和 Marlin 许可证。wheel 构建不编译 CUDA 扩展，不能视为 NVCC 验证。
+
+## 下一步：外提 scale，避免逐权重浮点重建
+
+2026-09-15 用户取消诊断实验，提出以上方向；本节记录候选设计，尚未实现或
+运行新 kernel，也未修改旧 oracle。已提交的孤立 Linear profiler 保留但暂停，
+全模型 profiler 准备未实施。持久环境复用入口继续保留。
+
+### 实测与静态推断分开
+
+同轮 v3/gps4 Graph q_proj [4096,4096] 的 dense/packed 时间为
+23.019519 / 43.120642 µs，速度比是 **0.53384×**，不是 0.43×。
+主要 codes 与 row scales 合计 3.125 bit/weight；完整转换 layout 实际为
+6,597,120 bytes，还包括 column scales、indices 与 lookup。
+用完整 layout 字节数除以 packed 时间得到约 153.0 GB/s；它只是按唯一存储字节
+计算的有效速率，不是实测 DRAM throughput。CTA 重复读取、L2 命中、激活和
+workspace 流量尚未由计数器测量。
+
+按 dense 唯一权重字节/23.019519 µs 得到约 1457.7 GB/s，再据此折算 packed
+约 4.53 µs，只能当作理想参考。跨 GH200/A100、不同形状和缓存状态的 roofline
+达成率不能直接等价；QBB A8/BMMA 实测也不能用另一 SIMT sign-add kernel 的
+静态指令数解释。未在这里重新验收用户提供的 QBB 1.82× 那个具体实验。
+
+代码确实逐权重进行符号提取、row/column 乘法、sparse lookup 和类型转换。
+但“13 条指令 + 16 B shared/weight”、ALU 11 µs、LDS 14 µs、总下限 15–25 µs
+均是尚未验证的静态估算，不是性能上限结论：编译器复用、广播、实际 SASS、
+流水重叠和依赖链会改变结果。剩余耗时不能全部归因于 occupancy/barrier。
+运算与 scale 流量也会随 base 数变化，不能称为完全与 base 数无关。
+
+### 候选计算方式
+
+每个 group 中 global column scales 不含输出行维，因此可复用：
+
+```text
+z[b,k] = FP32(x[k]) * col[g,k,b]
+global[o] = sum_b row[g,o,b] * sum_k sign[g,o,k,b] * z[b,k]
+sparse[o] = sum_b sparse_row[g,o,b] *
+            sum_{j=0..7} sparse_sign[g,o,j,b] *
+                         (FP32(x[index[g,j]]) * sparse_col[g,j,b])
+y[o] = sum_g (global[o] + sparse[o])
+```
+
+先考虑两路 activation 变换复用与 8 个 sparse 位置单独计算，再选择 sign-add、
+LUT 或其他适合该结构的实现；不把普通 FP16 MMA 当作必须保留的约束。
+不重新量化，不改 payload。该重排在实数运算下等价，但与旧的
+“合并权重先舍入 BF16 再点积”并非同一浮点程序。
+
+### 新参考的边界
+
+新候选应独立标明 reference/version，保留旧 dense-BF16 重建参照和历史报告。
+将固定 FP32 payload 系数提升到 FP64 后计算结构权重及点积，可作为高精度诊断
+参照；候选 FP32 累积另行规定容差。不能把 FP32 本身称为“精确重建”，也不能
+保证改变舍入次序就必然更接近原始 BF16 模型或改善全模型误差/PPL。
+去掉权重 BF16 舍入减少一种误差来源，但乘加、归并和激活变换仍会舍入。
+
+v3 已经不要求与 v1 逐位一致，只要求算子 dense 数值门槛和自身重复一致性；
+全模型采用 report-only。旧全模型不通过数值门槛不能证明换 oracle 后会通过。
+后续同时记录候选对结构高精度参照、旧 dense-BF16 参照的误差；完整模型主速度
+基线继续为 original BF16。新参照的最终容差与实现验收需随候选明确记录，
+不通过覆盖或改写旧结果来获得“通过”。
