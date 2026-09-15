@@ -99,7 +99,9 @@ test_tokens="$protocol_root/qbbnew-qwen3-wikitext2-tokens-6109964.safetensors"
 
 Keep GPTQModel in a quantization-only venv because its NumPy constraint differs
 from the already frozen PPL environment. On the target image, which already
-provides CUDA PyTorch 2.8, prepare it with:
+provides CUDA PyTorch 2.8, prepare it with the explicitly pinned
+`torchao==0.16.0`. Do not allow pip to select torchao 0.18: its Python API uses
+PyTorch interfaces absent from 2.8.
 
 ```bash
 python3 -m venv --system-site-packages /opt/fluxbin-gptq-w3-venv
