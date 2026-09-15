@@ -83,6 +83,8 @@ def main():
             'runner_sha256':sha256_file(Path(__file__)),
             'block_result_sha256':sha256_file(args.block_result),'environment_sha256':sha256_file(args.environment),
             'manifest_sha256':MANIFEST_SHA,'payloads':payload_records,'kernel':kernel,'groups_per_split':gps,
+            'arithmetic':'factored_fp32_v1' if kernel=='v4' else 'combined_weight_activation_dtype_v1',
+            'numerical_reference':'legacy decoded BF16 full model; v4 structural FP64 reference is Linear-only',
             'prompt_token_sha256':[tensor_sha256(x) for x in prompts],
             'scope':'HF eager, dynamic KV cache, batch1; identical forced continuation from decoded step400',
             'prefill_policy':'packed arm uses explicit on-demand dense reconstruction; included in prefill time',

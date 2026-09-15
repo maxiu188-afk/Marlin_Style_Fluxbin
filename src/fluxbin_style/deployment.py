@@ -15,7 +15,7 @@ from torch.nn import functional as F
 from .evaluation import materialize_hybrid_s8_weight, tensor_sha256
 
 FORMAT = 'fluxbin-hybrid-g128-s8-m1-v1'
-KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2', 'v3')
+KERNELS = ('v1', 'v2_r1', 'v2_r2', 'v2', 'v3', 'v4')
 FIELDS = ('global_sign_codes', 'global_row_scales', 'global_column_scales',
           'refinement_indices', 'refinement_sign_codes',
           'refinement_row_scales', 'refinement_column_scales')
@@ -95,27 +95,30 @@ def load_extension(kernel="v1"):
     return _load_extension(kernel)
 
 
-@lru_cache(maxsize=5)
+@lru_cache(maxsize=6)
 def _load_extension(kernel):
     if not torch.cuda.is_available():
         raise RuntimeError('M=1 kernel requires NVIDIA CUDA; no CPU/MPS substitution')
     from torch.utils.cpp_extension import load
     root = Path(__file__).resolve().parent / 'csrc'
-    filename = {'v1':'m1.cu','v3':'m1_v3.cu'}.get(kernel,'m1_v2.cu')
+    filename = {'v1':'m1.cu','v3':'m1_v3.cu','v4':'m1_v4.cu'}.get(kernel,'m1_v2.cu')
     flags = ['-O3', '--fmad=false', '-lineinfo']
     if kernel.startswith('v2'):
         rows = {'v2_r1': 1, 'v2_r2': 2, 'v2': 4}[kernel]
         flags += [f'-DROWS_PER_WARP={rows}', '--ptxas-options=-v']
-    if kernel == 'v3':flags += ['--ptxas-options=-v']
+    if kernel in ('v3','v4'):flags += ['--ptxas-options=-v']
     return load(name=f'fluxbin_m1_{kernel}', sources=[str(root / filename)],
                 extra_cuda_cflags=flags, verbose=True)
 
 
-def workspace_shape(out_features: int, in_features: int, groups_per_split=8):
+def workspace_shape(out_features: int, in_features: int, groups_per_split=8, *, kernel='v1'):
+    if kernel not in KERNELS:raise ValueError('unknown kernel')
     if (not isinstance(groups_per_split,int) or not 1<=groups_per_split<=1024
             or not 1<=out_features<=65536 or not 128<=in_features<=131072 or in_features % 128):
         raise ValueError('invalid group/split dimensions')
-    return ((in_features // 128 + groups_per_split - 1) // groups_per_split, out_features)
+    splits = (in_features // 128 + groups_per_split - 1) // groups_per_split
+    if kernel == 'v4':return (in_features // 128 * 272 + splits*out_features,)
+    return (splits, out_features)
 
 
 def m1_out(x, layout, out, workspace, *, groups_per_split=8, kernel="v1"):
@@ -127,7 +130,7 @@ def m1_out(x, layout, out, workspace, *, groups_per_split=8, kernel="v1"):
     """
     load_extension(kernel).m1_out(x, layout['codes'], layout['rows'], layout['columns'],
                             layout['sparse_codes'], layout['sparse_rows'],
-                            layout['sparse_columns'], layout['lookup'], out,
+                            layout['sparse_columns'], layout['indices'] if kernel=='v4' else layout['lookup'], out,
                             workspace, groups_per_split)
     return out
 
@@ -176,7 +179,7 @@ class PackedHybridLinear(nn.Module):
             return F.linear(x, decode_layout(self.layout(), x.dtype), self.bias)
         self.last_route = 'packed_m1'
         self.route_counts['packed_m1'] += 1
-        shape = workspace_shape(self.out_features, self.in_features, self.groups_per_split)
+        shape = workspace_shape(self.out_features, self.in_features, self.groups_per_split, kernel=self.kernel)
         # Adapter owns one workspace: same-stream sequential model execution only.
         if self._workspace is None or self._workspace.device != x.device:
             self._workspace = torch.empty(shape, device=x.device, dtype=torch.float32)

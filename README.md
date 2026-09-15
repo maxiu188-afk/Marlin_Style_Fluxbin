@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin
 
+Local v4 implementation: column-scaled activations are prepared once per group,
+then sign dot products are row-scaled, with eight sparse positions handled separately.
+The new structural FP64 Linear reference is independent of legacy BF16 weights;
+all three launches are timed. CUDA compilation/performance remain unvalidated.
+See [v4 contract](docs/M1_V2_LOCAL_OPTIMIZATION.md).
+
 Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
 The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
 Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.

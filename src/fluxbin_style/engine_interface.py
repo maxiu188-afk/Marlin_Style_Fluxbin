@@ -20,6 +20,7 @@ class LinearContract:
     scale_dtype: torch.dtype = torch.float32
     group_size: int = 128
     sparse_columns: int = 8
+    arithmetic: str = 'combined_weight_activation_dtype_v1'
     minimum_compute_capability: tuple[int, int] = (8, 0)
     fused_qkv: bool = False
     tensor_parallel: bool = False
@@ -30,7 +31,7 @@ class LinearBackend(Protocol):
     contract: LinearContract
 
     def convert(self, artifact: Mapping[str, torch.Tensor]) -> dict[str, torch.Tensor]: ...
-    def workspace_shape(self, out_features: int, in_features: int) -> tuple[int, int]: ...
+    def workspace_shape(self, out_features: int, in_features: int) -> tuple[int, ...]: ...
     def apply_out(self, x: torch.Tensor, layout: Mapping[str, torch.Tensor],
                   out: torch.Tensor, workspace: torch.Tensor) -> torch.Tensor: ...
 
@@ -42,6 +43,7 @@ class M1Backend:
         if kernel not in KERNELS:
             raise ValueError(f"kernel must be one of {KERNELS}")
         self.kernel=kernel
+        if kernel=='v4':self.contract=LinearContract(arithmetic='factored_fp32_v1')
         if not isinstance(groups_per_split,int) or not 1<=groups_per_split<=1024:
             raise ValueError('groups_per_split must be 1..1024')
         self.groups_per_split=groups_per_split
@@ -50,7 +52,7 @@ class M1Backend:
         return convert_artifact(artifact)
 
     def workspace_shape(self, out_features, in_features):
-        return workspace_shape(out_features,in_features,self.groups_per_split)
+        return workspace_shape(out_features,in_features,self.groups_per_split,kernel=self.kernel)
 
     def apply_out(self,x,layout,out,workspace):
         return m1_out(x,layout,out,workspace,groups_per_split=self.groups_per_split,kernel=self.kernel)

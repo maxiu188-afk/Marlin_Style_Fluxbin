@@ -10,6 +10,7 @@ from fluxbin_style.deployment import (KERNELS, FIELDS, convert_artifact, restore
 from fluxbin_style.evaluation import sha256_file, tensor_sha256, atomic_json
 from fluxbin_style.qwen3 import QWEN3_LINEAR_MODULES
 from fluxbin_style.acceleration_checks import numerical_gate, paired_cuda_timing
+from fluxbin_style.factored_reference import REFERENCE, structural_reference, structural_gate
 
 ROOT=Path(__file__).resolve().parents[1]
 from fluxbin_style.deployment_artifacts import MANIFEST_SHA, load_accepted_layer
@@ -50,8 +51,9 @@ def main():
             'runner_sha256':sha256_file(Path(__file__)), 'settings':{k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},
             'inputs':'seeded synthetic activations on real step400 weights',
             'baseline':'same-input dense BF16/FP16 matmul using decoded step400 weights',
-            'timing_scope':'preallocated outputs; packed compute plus split reduction (v3 single split directly stores output); excludes conversion/JIT/load',
-            'v1_comparison_policy':'diagnostic_mma_reduction' if args.kernel=='v3' else 'exact',
+            'timing_scope':'preallocated outputs; packed compute plus split reduction; v4 includes activation transform, v3 single split directly stores output; excludes conversion/JIT/load',
+            'v1_comparison_policy':'diagnostic_only' if args.kernel in ('v3','v4') else 'exact',
+            'numerical_reference':REFERENCE if args.kernel=='v4' else 'combined_weight_activation_dtype_v1',
             'next_stage':'not_launched','cells':[]}
     try:
         load_extension(args.kernel)
@@ -68,27 +70,33 @@ def main():
             o,k=dense.shape
             x=torch.randn(1,k,device='cuda',dtype=dtype)
             y=torch.empty(1,o,device='cuda',dtype=dtype);reference=torch.empty_like(y)
-            workspace=torch.empty(workspace_shape(o,k,args.groups_per_split),device='cuda')
+            workspace=torch.empty(workspace_shape(o,k,args.groups_per_split,kernel=args.kernel),device='cuda')
             y_v1=torch.empty_like(y) if args.kernel!='v1' else None
-            workspace_v1=torch.empty_like(workspace) if args.kernel!='v1' else None
+            workspace_v1=torch.empty(workspace_shape(o,k,args.groups_per_split),device='cuda') if args.kernel!='v1' else None
             def packed():return m1_out(x,layout,y,workspace,groups_per_split=args.groups_per_split,kernel=args.kernel)
             def baseline_v1():return m1_out(x,layout,y_v1,workspace_v1,groups_per_split=args.groups_per_split,kernel='v1')
             def baseline():return torch.mm(x,dense.t(),out=reference)
             cell={'module':name,'shape':[o,k],'conversion':record,'checks':[]}
+            def check_output():
+                legacy=numerical_gate(y,reference)
+                if args.kernel!='v4':return legacy
+                gate=structural_gate(y,structural_reference(x,layout))
+                gate['legacy_dense_bf16']=legacy
+                return gate
             # Multiple inputs plus a cancellation-sensitive alternating-sign probe.
             for seed in (20260914,20260915,20260916):
                 torch.cuda.manual_seed_all(seed);x.normal_();baseline();packed()
                 saved=y.clone();workspace.fill_(float('nan'));packed()
-                gate=numerical_gate(y,reference);gate['repeat_exact']=bool(torch.equal(saved,y));gate['seed']=seed
+                gate=check_output();gate['repeat_exact']=bool(torch.equal(saved,y));gate['seed']=seed
                 if args.kernel!='v1':
                     baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
                 cell['checks'].append(gate)
             x.copy_((torch.arange(k,device='cuda')%2*2-1).to(dtype));baseline();packed()
-            gate=numerical_gate(y,reference)
+            gate=check_output()
             if args.kernel!='v1':
                 baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
             cell['checks'].append(gate)
-            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel=='v3' or c.get('v1_exact',True)) for c in cell['checks'])
+            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel in ('v3','v4') or c.get('v1_exact',True)) for c in cell['checks'])
             report['cells'].append(cell)
             if not cell['correctness_passed']:raise RuntimeError(f'numerical gate failed: {name}')
             # Fixed random timing input, not the alternating diagnostic input.
@@ -107,8 +115,8 @@ def main():
                     graphs.append(graph)
                 functions={key:graph.replay for key,graph in zip(functions,graphs)}
                 for fn in functions.values():fn()
-                if not numerical_gate(y,reference)['passed']:raise RuntimeError('graph replay numerical gate failed')
-                if args.kernel not in ('v1','v3') and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
+                if not check_output()['passed']:raise RuntimeError('graph replay numerical gate failed')
+                if args.kernel not in ('v1','v3','v4') and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
             cell['timings']=paired_cuda_timing(functions,warmup=args.warmup,repeats=args.repeats,rounds=args.rounds)
             stable=all(t['stable'] for t in cell['timings'].values())
             cell['speedup']=cell['timings']['dense']['median_us']/cell['timings']['packed']['median_us'] if stable else None

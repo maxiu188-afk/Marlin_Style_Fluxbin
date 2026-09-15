@@ -87,6 +87,8 @@ def main():
             'runner_sha256':sha256_file(Path(__file__)), 'next_stage':'not_launched',
             'scope':'synthetic hidden inputs, real weights; sequence=1, no KV prefix; eager only',
             'groups_per_split':groups_per_split,'kernel':kernel,
+            'arithmetic':'factored_fp32_v1' if kernel=='v4' else 'combined_weight_activation_dtype_v1',
+            'numerical_reference':'legacy decoded BF16 block (compatibility check, not structural FP64)',
             'timing_settings':{'warmup':20,'repeats':100,'rounds':7},'checks':[]}
     try:
         for _ in range(3):

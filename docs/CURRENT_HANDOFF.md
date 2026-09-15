@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin current handoff
 
+Local v4 implementation: column-scaled activations are prepared once per group,
+then sign dot products are row-scaled, with eight sparse positions handled separately.
+The new structural FP64 Linear reference is independent of legacy BF16 weights;
+all three launches are timed. CUDA compilation/performance remain unvalidated.
+See [v4 contract](M1_V2_LOCAL_OPTIMIZATION.md).
+
 Latest direction (2026-09-15): user cancelled diagnostic preparation/execution.
 Prioritize a candidate that factors column scales into activations and applies row
 scales after sign dot products, with a separate sparse contribution. Static cost

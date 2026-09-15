@@ -209,3 +209,46 @@ v3 已经不要求与 v1 逐位一致，只要求算子 dense 数值门槛和自
 后续同时记录候选对结构高精度参照、旧 dense-BF16 参照的误差；完整模型主速度
 基线继续为 original BF16。新参照的最终容差与实现验收需随候选明确记录，
 不通过覆盖或改写旧结果来获得“通过”。
+
+
+## v4 已实现：全局激活变换 + 符号点积（本地，待 GPU）
+
+新增 `m1_v4.cu`，显式选择 `kernel='v4'`；v1–v3 源码和默认 kernel 不变。
+不再重建逐元素 BF16 权重，不用 MMA，不重新量化。运算合同为 `factored_fp32_v1`：
+
+1. `prepare_x` 每 group 一次，计算 256 个 global x×column FP32 乘积及
+   16 个 sparse 乘积；使用 8 个已验证 indices，供所有输出行复用。
+2. `factored_m1` 每 CTA 16 行、128 threads，每 warp 4 行；读取 packed signs，
+   用符号位操作和 FP32 加法求两路点积。warp 归并后由 lane0 用 FP32 FMA
+   乘 row scale 并累加，sparse 只遍历 8 个选中位置，不逐 K 查询 lookup。
+3. 固定次序 FP32 split 归并，最后一次转换 BF16/FP16。即使单 split，目前仍
+   保留 finish kernel；总共三个 launch，全部计入性能，不隐藏变换和归并成本。
+
+变换缓冲区按 lane 读取次序排列；共享内存 272 个 float，global 每组两次 CTA
+barrier。它仍有变换 launch、shared staging、shuffle reduction、split scratch
+等成本，不能据静态代码宣称超过 BF16 或已经消除瓶颈。
+
+`workspace_shape(O,K,gps,kernel='v4')` 返回一维 FP32 缓冲区：
+`G*272 + ceil(G/gps)*O` 个元素。前部存变换激活，后部存 partial；调用者预分配，
+每次全部覆写，无算子内分配。旧 kernel 的二维 workspace ABI 保留。HF adapter
+和保留的 engine 接口均按 kernel 分配，vLLM 仍未接入。
+
+新增 `factored_reference.py` 的 `hybrid-structural-fp64-v1`：将现有 FP32 payload
+系数提升 FP64，逐 group 重建并与输入做 FP64 点积，不做权重 BF16 舍入。
+这是高精度参照而非实数精确解。新 Linear gate 保留输出 dtype 容差：
+BF16 elementwise factor .02 / NRMSE .005；FP16 .002 / .0005。
+同时记录旧 dense BF16 误差与 v1 输出差异，它们不作为 v4 Linear 主数值 gate。
+计时 baseline 仍是旧 decoded BF16 matmul，高精度参照不进入计时。
+
+block 保留旧 dense BF16 兼容性检查；完整模型继续用旧 decoded BF16 记录数值
+差异、original BF16 作为主性能基线，允许显式 report-only。prefill 的 dense
+fallback 仍采用原先舍入权重，不能称为整条模型已切到结构 FP64 参照。
+
+新候选配置 `configs/acceleration/m1_factored_candidates_v1.json`：v3/gps4 对照、
+v4 gps1/2/4/8/16，eager/Graph 共 12 trial。按原 runbook 的 --config 入口运行。
+源码已变，上机必须新建 source-matched environment 并通过 v4 CUDA 测试，旧
+环境/Linear/block 记录不能直接作为新源码的晋级凭据。当前没有 CUDA 编译、
+性能或全模型 v4 结果；诊断 profiler 仍暂停。
+
+本地验证：98 项测试，94 通过、4 项 CUDA 跳过；CLI 参数检查、wheel 打包和
+源码/参照打包检查通过。wheel 不编译 CUDA，不能代替上机验收。

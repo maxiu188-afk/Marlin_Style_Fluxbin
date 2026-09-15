@@ -105,4 +105,25 @@ class CandidateSummaryTests(unittest.TestCase):
             self.assertEqual(row['packed_us'],12)
             self.assertIsNone(row['speedup_dense'])
 
+    def test_factored_suite_requires_explicit_structural_reference(self):
+        from fluxbin_style.factored_reference import REFERENCE
+        with tempfile.TemporaryDirectory() as temp:
+            root=Path(temp);fixture(root)
+            cfg=json.loads(CONFIG.read_text())
+            next(c for c in cfg['candidates'] if c['id']=='rows2')['kernel']='v4'
+            config=root/'factored-config.json';config.write_text(json.dumps(cfg))
+            batch=json.loads((root/'batch.json').read_text());batch['config_sha256']=sha256_file(config)
+            (root/'batch.json').write_text(json.dumps(batch))
+            def factored(r):
+                r['settings']['kernel']='v4';r['numerical_reference']=REFERENCE
+                for c in r['cells']:
+                    for check in c['checks']:
+                        check.update(v1_exact=False,reference=REFERENCE,legacy_dense_bf16={'passed':False})
+            mutate(root,factored)
+            rows=[r for r in summarize_batch(root,config)['rows'] if r['trial']=='rows2-graph']
+            self.assertTrue(all(r['eligible'] for r in rows))
+            mutate(root,lambda r:r.pop('numerical_reference'))
+            rows=[r for r in summarize_batch(root,config)['rows'] if r['trial']=='rows2-graph']
+            self.assertTrue(all(not r['eligible'] for r in rows))
+
 if __name__=='__main__':unittest.main()

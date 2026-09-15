@@ -122,12 +122,39 @@ class DeploymentTests(unittest.TestCase):
                 v3=build.call_args_list[-1].kwargs
                 self.assertTrue(v3['sources'][0].endswith('m1_v3.cu'))
                 self.assertIn('--ptxas-options=-v',v3['extra_cuda_cflags'])
+                load_extension('v4')
+                self.assertEqual(build.call_count,6)
+                self.assertTrue(build.call_args.kwargs['sources'][0].endswith('m1_v4.cu'))
                 with self.assertRaises(ValueError):load_extension('unknown')
         finally:_load_extension.cache_clear()
 
 
 @unittest.skipUnless(torch.cuda.is_available(), 'requires NVIDIA CUDA compiler/device')
 class CUDADeploymentTests(unittest.TestCase):
+    def test_v4_factored_reference_tail_split_stream_graph(self):
+        from fluxbin_style.factored_reference import structural_reference,structural_gate
+        for o,g in ((1,1),(17,3),(65,10)):
+            for dtype in (torch.bfloat16,torch.float16):
+                layout={k:v.cuda() for k,v in convert_artifact(make_payload(o,g)).items()}
+                for basis in (True,False):
+                    x=torch.randn(1,g*128,device='cuda',dtype=dtype)
+                    if basis:x.zero_();x[0,int(layout['indices'][0,0])]=1
+                    ref=structural_reference(x,layout)
+                    for gps in (1,4,1024):
+                        w=torch.full(workspace_shape(o,g*128,gps,kernel='v4'),float('nan'),device='cuda')
+                        y=torch.empty(1,o,device='cuda',dtype=dtype)
+                        def run():m1_out(x,layout,y,w,groups_per_split=gps,kernel='v4')
+                        run();self.assertTrue(structural_gate(y,ref)['passed'])
+                        saved=y.clone();stream=torch.cuda.Stream()
+                        stream.wait_stream(torch.cuda.current_stream())
+                        with torch.cuda.stream(stream):w.fill_(float('nan'));run()
+                        torch.cuda.current_stream().wait_stream(stream)
+                        self.assertTrue(torch.equal(saved,y));self.assertTrue(torch.isfinite(w).all())
+                        graph=torch.cuda.CUDAGraph()
+                        with torch.cuda.graph(graph):run()
+                        graph.replay();torch.cuda.synchronize()
+                        self.assertTrue(torch.equal(saved,y))
+
     def test_oracle_tail_split_stream_graph_and_repeated_calls(self):
         load_extension()
         for o,g in ((1,1),(7,3),(17,10)):
