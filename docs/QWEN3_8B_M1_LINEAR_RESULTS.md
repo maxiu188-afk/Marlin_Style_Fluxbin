@@ -230,3 +230,84 @@ original BF16 / packed 常驻 allocated 显存分别 15.266 / 4.924 GiB。
 所有本轮结果和四个阶段 job 日志已打包下载并校验，archive SHA256：
 `36a08564bbb21353ead50a8da9a06d9d47b7567e1e487df957dc39883fca9860`。
 末次检查无 GPU compute 进程、无 tmux session；未关闭实例或删除网络卷。
+
+
+## 2026-09-15 v4 factored / A100 SXM4
+
+本轮 kernel 源码来自 `c94c61f`；准备环境修复后测候选/块的 Git revision 为
+`7f0f066`。GPU 为 A100-SXM4-80GB，driver 570.124.06，Python 3.12.3、
+torch 2.8.0+cu128。v4 不逐权重舍入 BF16，Linear 以结构 FP64 参照验收，
+旧 dense BF16 误差另记；这与 v3 的算子数值语义不同。
+
+CUDA 专项 10 项通过，首次新 cache 编译/专项执行约 369.7 秒；完整 98 项通过。
+v4 prepare kernel 18 registers，主 kernel 45 registers / 1,088 B shared，
+finish 32 registers；均无 spill。三个 launch 全部计时，没有隐藏激活变换成本。
+
+固定 12 trials 完成，84/84 数值检查通过，80/84 计时稳定；下载后本地汇总复核
+同为 80/84。v4 gps4 是完整稳定的 v4 配置中 packed Graph 求和最小者，但
+**没有超过同轮 v3，更没有超过 dense BF16**。
+
+| Graph 配置 | Packed 七个 Linear 求和 µs | 同轮 dense 求和 µs | 状态 |
+|---|---:|---:|---|
+| v3 gps4 | 412.883 | 259.988 | 全部稳定 |
+| v4 gps1 | 470.598 | 256.737 | 全部稳定 |
+| v4 gps2 | 458.638 | 256.756 | 含不稳定格，不作为完整稳定候选 |
+| v4 gps4 | 462.531 | 256.030 | 全部稳定，选定 v4 |
+| v4 gps8 | 500.245 | 256.343 | 全部稳定 |
+| v4 gps16 | 584.619 | 255.668 | 全部稳定 |
+
+| Linear | v4 gps4 µs | 同轮 dense BF16 µs |
+|---|---:|---:|
+| q_proj | 48.128 | 23.178 |
+| k_proj | 19.185 | 8.555 |
+| v_proj | 19.263 | 8.482 |
+| o_proj | 43.352 | 20.698 |
+| gate_proj | 110.406 | 64.630 |
+| up_proj | 110.678 | 64.590 |
+| down_proj | 111.518 | 65.898 |
+
+这些是孤立 Linear 的实测，不是全模型归因证据。v4 gps4 的结构 FP64 NRMSE
+最大约 0.001729，旧 decoded BF16 NRMSE 最大约 0.002719；都保留原始记录。
+
+block 数值/重复/7 条 packed 路径通过，但计时为 `completed_unstable`：
+original BF16 / decoded BF16 / packed v4 中位数 896.012 / 896.616 / 1069.787 µs。
+它们只作不稳定测量记录，不给正式 block 速度结论。用户要求无论 block 速度
+都提交完整模型；新增显式 `--allow-unstable-block-timing`（默认关闭），保留数值、
+路径、来源与有限样本检查，不修改 block JSON。full runner revision `42d971a`，
+入口相关 7 项本地测试通过，kernel/src hashes 未改变。完整模型仍独立判断计时
+稳定性，以 original BF16 为主基线，数值使用 report-only。
+
+证据位置：服务器 `/workspace/results/m1-sxm4-20260915-v4/`，本地私有目录
+`server_results/runpod_m1_v4_sxm4_2026-09-15/`。
+
+
+### v4 完整模型验收
+
+任务 `m1-v4-full` 退出 0，用时 119 秒，状态
+`completed_with_numerical_differences`。服务器执行了 7 项 full-runner 入口测试并
+通过。block 的不稳定状态保留；完整模型三条 arm、两个 prompt 的 wall/device
+计时全部通过原 10% 稳定性门槛，没有重选样本或放宽全模型 timing gate。
+
+| Prompt | Original BF16 wall ms / tok/s | Packed v4 wall ms / tok/s | Original/packed |
+|---|---:|---:|---:|
+| 0 | 837.430 / 38.212 | 1008.182 / 31.740 | 0.830634× |
+| 1 | 836.138 / 38.271 | 1005.659 / 31.820 | 0.831433× |
+
+v4 相对 original BF16 的延迟增加约 20.39% / 20.27%，没有完整模型加速。
+外提 scale 的这一版 SIMT 实现未达成目标；该负面结果也不能单独量化具体 stall
+或判定整个分解算法的性能上限。未运行用户已经取消的 profiler。
+
+每个 prompt 三次 trace 均通过 252 条路覆盖、同 fed tokens、KV 长度（43/42）
+检查，packed predictions 对 decoded BF16 均为 1/33 不同、三次 logits hash
+一致。NRMSE 0.01124996 / 0.01256111，max logprob difference 0.40623474 /
+0.53112793；按 report-only 留存，未宣称旧 dense-BF16 数值等价。
+original BF16 / packed v4 常驻 allocated 为 15.266 / 4.922 GiB，packed 运行
+峰值约 5.660 GiB；载入仍为先 dense 后替换，峰值约 15.343 GiB。
+
+本地重核 source/environment/block hash 链、中位数与稳定性、候选汇总、路径检查。
+完整模型 JSON SHA256：
+`bee8ac440428b2251e543024a3beafb5a006a0a73ba8ebc850c2909c36e0fb2d`。
+包含原始失败安装、恢复、本地环境、测试、候选、block、full 日志的归档已下载
+并与服务器 SHA256 对齐：
+`bfb17131ea4987cef0ef6f6e4c9e9582aae27ade78bd13c64eacd50919bbbcb4`。
+末次检查无 GPU compute 进程或 tmux session；实例未由代理关闭，网络卷保留。

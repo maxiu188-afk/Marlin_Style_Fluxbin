@@ -252,3 +252,7 @@ v4 gps1/2/4/8/16，eager/Graph 共 12 trial。按原 runbook 的 --config 入口
 
 本地验证：98 项测试，94 通过、4 项 CUDA 跳过；CLI 参数检查、wheel 打包和
 源码/参照打包检查通过。wheel 不编译 CUDA，不能代替上机验收。
+
+2026-09-15 GPU 更新：v4 已编译，98 项测试通过。外提版实测仍慢于 v3/dense，
+完整模型速度为 original BF16 的 0.83063× / 0.83143×；详见
+[完整结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。此前待验证描述属于本地实现阶段。

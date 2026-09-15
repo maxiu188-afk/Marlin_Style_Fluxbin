@@ -232,7 +232,11 @@ dense capture 使用 `--arm dense`，每次使用新 output 名。持久 tmux �
 Nsight replay、cache control 与 profiling overhead 的边界见
 [NVIDIA Profiling Guide](https://docs.nvidia.com/nsight-compute/ProfilingGuide/)。
 
-## 持久环境复用（本地入口已准备，服务器待验证）
+## 持久环境复用
+
+2026-09-15 已实测：本次卷的持久 venv 导入约 30 秒，本地仅约 3 秒；
+默认改用本地 venv，持久保存依赖和编译缓存。详见 [环境结果](RUNPOD_M1_SETUP_RESULTS.md)。
+下述为可选持久 venv 入口，不能保证比本地重建更快。
 
 `scripts/prepare_persistent_runtime.py` 在持久卷创建新的 Linux venv，而非搬迁
 现有 venv。必须使用模板基础 Python，先确认网络卷真实挂载并恢复 nvcc/c++/ninja
@@ -263,3 +267,9 @@ extension cache。首次新命名空间仍会编译，不承诺立即复用旧 n
 先试直接复用持久 venv，若导入成本抵消收益，再把依赖 wheelhouse 持久保存并
 在本地容器盘新建 venv；不要直接复制含绝对路径的 venv 到另一位置。
 [Python venv 文档](https://docs.python.org/3/library/venv.html)说明了不可移植性。
+
+
+v4 全模型启动策略补充：若 block 数值、重复、路径、来源检查均通过，仅计时
+不稳定，用户已要求仍跑完整模型，可显式追加 `--allow-unstable-block-timing`。
+原 block JSON/status/hash 不改，完整模型本身的 timing gate 不放宽。
+默认不传参数仍要求稳定 block；该选项不允许数值失败或缺失/非有限样本。

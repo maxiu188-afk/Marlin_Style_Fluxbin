@@ -1,5 +1,14 @@
 # 当前结果总览
 
+Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
+checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.
+Full-model report-only completed in 119s with both prompts stable: 0.83063x /
+0.83143x original BF16 speed, no acceleration. Unstable block timing was explicitly
+allowed without changing numerical/route/provenance gates. Raw evidence is backed
+up and hash-verified; no experiment processes remain. Persistent venv reuse took
+36.9s (30.2s imports), versus local imports 2.8–3.1s; trials used local venv.
+See [v4 results](QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier local/pending statements are historical.
+
 Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
 The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
 Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.

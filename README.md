@@ -1,5 +1,14 @@
 # Marlin-Style FluxBin
 
+Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
+checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.
+Full-model report-only completed in 119s with both prompts stable: 0.83063x /
+0.83143x original BF16 speed, no acceleration. Unstable block timing was explicitly
+allowed without changing numerical/route/provenance gates. Raw evidence is backed
+up and hash-verified; no experiment processes remain. Persistent venv reuse took
+36.9s (30.2s imports), versus local imports 2.8–3.1s; trials used local venv.
+See [v4 results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier local/pending statements are historical.
+
 Local v4 implementation: column-scaled activations are prepared once per group,
 then sign dot products are row-scaled, with eight sparse positions handled separately.
 The new structural FP64 Linear reference is independent of legacy BF16 weights;

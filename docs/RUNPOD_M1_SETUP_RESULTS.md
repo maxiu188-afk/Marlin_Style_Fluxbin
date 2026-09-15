@@ -55,3 +55,32 @@ cd /workspace/repos/marlin-style-fluxbin
 安装前后依赖和系统工具版本已保留。基础镜像仅有用户提供的“RunPod 默认模板”
 描述，名称/digest 未确认；因此当前不能生成通过不可变基础镜像检查的构建材料，
 更不能声称已验证复用镜像。后续补齐镜像身份，再构建、重建 Pod 并复验。
+
+
+## 2026-09-15：持久 venv 实测与本地运行选择
+
+本轮 A100 SXM4 / torch 2.8.0+cu128，环境指纹
+`dde6b7a5959177b7fecf0206`。首次在 `/workspace/environments/<fingerprint>/venv`
+安装；从任务开始到退出为 495 秒（04:20:41Z–04:28:56Z），包含 OS 工具、venv、
+依赖安装和检查。依赖已安装、pip check 已通过，但冷导入超过 30 秒而退出。
+不把该失败时间当作单纯 pip install 用时。
+
+修复 `prepare_persistent_runtime.py`：导入检查单独允许 120 秒，新增显式
+`--resume-incomplete`；不重复安装，必须再次通过锁定版本、pip check 和导入后
+才写 ready marker。首次失败日志保留。恢复检查耗时 46.125 秒（导入 37.387），
+同实例新进程再次复用耗时 36.888 秒（导入 30.159）。这不是新 Pod 冷启动验证。
+
+作为对照，容器本地 `/opt/fluxbin-venv` 新建独立环境，锁定依赖安装到 pip check
+约 32 秒；两次独立进程导入为 3.132 / 2.799 秒，总准备约 38 秒。
+因此本轮正式实验使用 `runtime-local.sh`，不直接使用持久 venv。持久副本保留；
+默认建议持久保存模型/包缓存/编译缓存，运行时在容器本地建立独立 venv。
+不要把 venv 简单复制到另一路径；持续使用相同基础模板仍很重要。
+
+CUDA 专项与完整 98 项测试在持久 venv 通过；本地环境另存 `env-local`，与
+`env-after` 的全部包版本和 src hashes 一致，链接记录在
+`runtime-validation-link.json`。候选又在本地 venv 对全部真实 Linear 数值进行
+检查。没有因为迁移环境就省略数值检查，也未把网络盘延迟当作 GPU 算子成本。
+
+首次新 namespace 编译 CUDA 专项约 369.7 秒，后续复用编译缓存；并非每次都
+必须重编所有 variants。基础镜像名称/digest 仍未知，不能声称任意模板都可复用。
+完整证据见 `server_results/runpod_m1_v4_sxm4_2026-09-15/` 的私有归档。
