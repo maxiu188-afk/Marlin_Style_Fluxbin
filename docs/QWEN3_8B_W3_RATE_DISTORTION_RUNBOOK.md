@@ -1,7 +1,8 @@
 # Qwen3-8B uniform W3 vs QBB rate--distortion runbook
 
-Status: code prepared locally on 2026-09-15; no server was started and no new
-quality result exists yet.
+Status: W3 and QBB FP16-scale artifacts completed on A100 PCIe on 2026-09-15;
+the full four-arm input/hash preflight passed, but PPL has not been launched.
+See `QWEN3_8B_W3_RATE_DISTORTION_STATUS.md` before resuming at Stage 3.
 
 ## Question and frozen boundary
 
@@ -79,7 +80,7 @@ substitute a different snapshot or recreate either token artifact.
 ```bash
 project_root=/workspace/repos/marlin-style-fluxbin
 snapshot_root=/workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218
-calibration_root=/workspace/data/qwen3-8b-c4-calibration-256x2048-v1
+calibration_root=/workspace/repos/marlin-style-fluxbin/artifacts/qwen3-8b-c4-v1
 protocol_root=/workspace/data/qwen3-wikitext2-v1
 qbb_root=/workspace/models/fluxbin/qwen3-8b-hybrid-distilled-step400-v1
 gptq_root=/workspace/models/fluxbin/qwen3-8b-gptq-w3-g128-sym-v1
