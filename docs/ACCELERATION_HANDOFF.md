@@ -1,148 +1,62 @@
-# 精度暂停、加速研究与关机交接
+# 加速实验合同与恢复交接
 
-Latest GPU result (2026-09-15, A100 SXM4 80GB, prepared v2.1): full-model
-32-step sequence Graph achieved **1.381x / 1.383x original BF16 speed**, with
-both prompts stable (all Graph timing spans <0.12%). Eager timing was unstable
-at the 5% threshold, so aggregate status is `completed_unstable`. All 113 GPU
-tests passed; checked/prepared wrappers and Graph outputs were exact in all six
-arm/prompt cells. Dynamic/static attention and packed/decoded numerical differences
-remain report-only. Evidence downloaded/hash-verified; GPU processes exited.
-See [full-model results](QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier pending statements below are historical.
+更新：2026-09-15。最新结果为 prepared v2.1 全模型 Graph 对原始 BF16
+1.381x / 1.383x，两组稳定；同轮 eager 不稳定。当前状态见
+[当前交接](CURRENT_HANDOFF.md)，逐轮证据见[加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
+本页保存有效合同，不追加已过期的“下一步”快照。
 
-Local preparation (2026-09-15): prepared full-model v2 adds bound packed Linear buffers, real-prefix static KV, interleaved 8-warmup/10-repeat timing and a complete 32-step CUDA Graph comparison. Original BF16 remains the primary baseline. CUDA validation and performance are pending; historical v1 results are unchanged. See [protocol and launch commands](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+## 固定模型与权重
 
-Latest GPU result (2026-09-15, A100 80GB PCIe): 106 tests passed, 168/168
-Linear numerical cells passed, 154/168 timing cells stable. Selected
-`v5_p1024/gps1` achieved 2.1285x isolated Graph / 2.0219x isolated eager speed
-(seven Linear time sums), but full-model speed was only 0.87696x / 0.86674x
-original BF16. All full-model timings were stable; numerical differences remain
-report-only. Block dense timing was unstable. Evidence downloaded/hash-verified;
-no experiment processes remain. See [latest results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+- Qwen3-8B revision `b968826d9c46dd6066d109eabc6255188de91218`。
+- 36 层、252 个 Linear，固定 hybrid distilled step400；embedding、norm、lm_head 保留原参数。
+- 表示：2 个 global bases + 2 个 sparse refinement bases，group=128、每组 8 个修正列。
+- payload 目录：`/workspace/models/fluxbin/qwen3-8b-hybrid-distilled-step400-v1/`。
+- manifest SHA256：`253ab448797ef4d798522875014b7e47a4edb84c5c3c1ca5cf6179edfd339fec`。
+- snapshot：`/workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218`。
 
-Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
-checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.
-Full-model report-only completed in 119s with both prompts stable: 0.83063x /
-0.83143x original BF16 speed, no acceleration. Unstable block timing was explicitly
-allowed without changing numerical/route/provenance gates. Raw evidence is backed
-up and hash-verified; no experiment processes remain. Persistent venv reuse took
-36.9s (30.2s imports), versus local imports 2.8–3.1s; trials used local venv.
-See [v4 results](QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier local/pending statements are historical.
+上述路径是既有服务器存储位置，执行时通过环境变量指定，不写入通用代码。
+大权重未下载本机；小型结果、环境、日志和验收备份留在 Git-ignored `server_results/`。
+step400 test PPL 13.169788495，原质量门槛未通过；用户授权性能研究先行，精度工作暂停。
 
-Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
-The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
-Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.
-Full-model report-only run exited 0 in 312s: prompt 0 achieved 0.86887x original BF16
-speed; prompt 1 has an unstable auxiliary decoded baseline, so overall status is
-`completed_unstable`. No full-model speedup. Evidence downloaded/hash-verified;
-no experiment processes remain. See [v3 results](QWEN3_8B_M1_LINEAR_RESULTS.md).
-Earlier preparation and SXM4 statements below are historical.
+## 当前执行与数值参照
 
-Local kernel follow-up: explicit `v3` now implements three-stage cp.async staging,
-register fragment double buffering and FP16/BF16 Tensor Core MMA for hybrid M=1.
-It retains the v1 layout and a deterministic split reduction, with a direct-store
-single-split path. This is implementation preparation only: no NVCC/GPU validation
-or speed result yet. See [kernel design](M1_V2_LOCAL_OPTIMIZATION.md) and the new fixed Marlin candidate config.
+当前 kernel 为 `v5_p1024/gps1`，离线符号 byte planes + A16 LUT；
+列 scale 与激活组合，row scale 在分解内积外应用。转换不得重新量化或改变符号、
+索引和 scales。Linear 用结构 FP64 参照；旧重建后 BF16 路径另行保留。
 
-Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
-On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
-fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route
-checks passed. Numerical differences were retained under the user-authorized
-report-only policy. No full-model speedup was achieved. Details: [full-model results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+prepared v2.1 在真实前缀预填充后绑定固定布局、输出和 workspace，使用 StaticCache。
+绑定只支持串行单请求，输出复用；权重变化前解除绑定，不作为并发 serving 接口。
+同一静态注意力下，原 checked wrapper 与 prepared wrapper 必须逐位一致；
+Graph/eager 和正式重复也必须逐位一致，检查有限值、KV 长度、相同 fed tokens、
+252 条 packed 路由和零 decode dense fallback。不得静默回退或跳过失败。
 
-Full-model follow-up: the submitted task exited 1 at packed_step400 prompt 0,
-repeat 0. Coverage (252 Linears) and KV length passed, but the same-weight decoded
-BF16 correctness comparison failed: NRMSE 0.0115685 > 0.005, maximum logprob error
-0.3394165 > 0.05, and 1/33 greedy predictions differed. No accepted full-model
-speedup is available. This supersedes the earlier observed-running status.
+packed/decoded BF16、动态/静态注意力的差异以原阈值计算并 report-only 记录，
+不称为数值等价。首次 v2 的失败记录保留；当前配置文件名为 v2，内部协议 ID 为 v2.1。
 
-Latest GPU evidence (2026-09-14, A100 SXM4): all 85 tests passed; bounded candidate
-batch passed correctness in 84/84 cells, with 77/84 stable timings. The selected
-v2/gps8 block passed correctness/stability but took 1213.783 us vs decoded BF16
-1049.944 us (0.8650x speedup). User explicitly requested full-model measurement
-regardless of block speed; full-model task `m1-sxm4-full` was submitted and observed
-running, not accepted. See [SXM4 results](QWEN3_8B_M1_LINEAR_RESULTS.md).
-Earlier unlaunched/preparation statements below are historical.
+## 性能口径
 
-2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
-12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
-runners are prepared. No new CUDA/full-model performance result; vLLM remains
-unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+主基线是原始 BF16，decoded step400 BF16 是辅助基线。固定两个真实 prompt、
+batch1、32 个来自 decoded 路径的相同 continuation token。每轮恢复前缀 KV，
+后续位置逐步增长；不是随机 KV 或固定位置单 token 重放。
 
-最新进度（2026-09-14）：首次环境/CUDA smoke 已验收，M=1 的七个真实 layer-0
-Linear 数值门槛通过。Graph 计时稳定，但 v1 耗时为 dense BF16 的 2.03–2.26 倍。
-先保留负面基线并定位/优化 M=1 kernel；尚未启动 block/full-model/vLLM。
-详见 [M=1 结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。下列关机与离线准备段落为历史记录。
+prepared eager / sequence Graph 都包含 embedding、全部 block、LM head、argmax，
+以及 packed LUT 构建/归约；load、conversion、prefill、reset、capture、CPU 审计不计入 decode。
+三模型与两组缓存同时驻留，轮换 arm/mode，8 轮预热、10 轮测量。
+wall 和 CUDA event 极差/中位数均 <=5% 才发布该比较的速度比；event 仍可能包含 host 发射间隙。
 
-2026-09-14 更新：先 M=1 kernel → 单个完整 block → 全模型；未来接入 vLLM，
-当前仅保留 engine 接口。本地准备与首次服务器环境记录/后续镜像流程见
-[M1_ACCELERATION_PREPARATION.md](M1_ACCELERATION_PREPARATION.md)。
-本轮不连接服务器，不运行 GPU 实验，不构建或发布镜像。
+Linear、block、完整模型分别报告。单 block 不作为全模型启动条件，不外推 Linear 时间和。
+旧动态 KV v1 的 1 轮预热/3 轮测量/10% 稳定性结果不追溯改写。
+跨 GPU、KV、驻留策略和协议的差异不作单因素因果判断。当前未接入 A8 或 vLLM。
 
-用户已决定：完成固定 step400 test PPL 后暂停精度实验，项目主要转向加速效果研究。
-最终 test PPL 13.169788495，较未蒸馏直接父版本 14.951611048 降低 11.9173%。
-混合、补偿修复、蒸馏的阶段证据见 `QWEN3_8B_DISTILLED_TEST_RESULTS.md`。
-这次没有运行 CUDA 性能实验，不宣称任何加速数值。
+## 恢复与后续工作
 
-## 已持久化的性能研究起点
+最后一次服务器任务已退出、无 GPU 进程，证据备份完成；用户尚未确认本实例关闭。
+关闭计算实例时保留 `/workspace` 网络卷 `34au39ljvf`、模型、结果及缓存。
+`/opt/fluxbin-venv` 在容器盘，重启后按
+`infra/runpod/requirements-linear-a100-v1.lock` 建立本机独立环境，不跨机器复制 venv。
+复用模板 torch 和兼容编译缓存，最近恢复约 40 秒；基础镜像 digest 未确认，镜像自动化暂缓。
 
-网络卷挂载 `/workspace`，来源 `mfs#euro.runpod.net:9421`，卷路径
-`/networkvolumes/34au39ljvf`。蒸馏权重已另存并逐文件 SHA256 校验到：
-
-```text
-/workspace/models/fluxbin/qwen3-8b-hybrid-distilled-step400-v1/
-  manifest.json
-  payloads/layer-000.safetensors ... layer-035.safetensors
-  result.json / acceptance.json / provenance.json
-  normalizers.json / validation_protocol.json
-  test-ppl-result.json / test-ppl-acceptance.json
-```
-
-36 层 packed 权重约 2.54 GiB；源作业的权重和最终 optimizer state 也继续保留。
-这个目录保存量化的 252 个 Linear，不是可直接 from_pretrained 的完整 HF checkpoint。
-重建整个模型还需要已保留的原始 pinned snapshot 中的 embedding、norm、lm_head、
-tokenizer/config：
-
-```text
-/workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218
-```
-
-`manifest.json` 记录全部文件校验值和原始 snapshot 依赖。step400 被固定为第一版
-性能实验输入；不按未来精度结果追溯修改已测版本。
-
-## 权重更新与加速结论
-
-在以下条件不变时，后续仅改变 FP32 scales 通常不改变运算量、访存规模和预期性能：
-量化格式、2 个 global bases + 2 个 sparse refinement bases、g128/s8、矩阵形状、
-固定符号和索引、布局、dtype、batch/sequence、kernel dispatch、软硬件环境。
-这也是本项目把精度迭代与加速研究分开的前提。
-
-每次性能报告仍记录权重 manifest、kernel 和环境版本。若 kernel 有数值依赖的
-跳零/剪枝/压缩分支，或者后续改变索引、位宽、稀疏度、layout、算子路径，则需
-重新确认性能；不能无条件断言任意权重修改都不影响速度。只改变 scales 时也需
-为新权重重做数值正确性检查，但既有固定配置的计时结论仍属于其原测量条件。
-
-## 后续加速实验顺序（本次不启动）
-
-1. 先冻结执行语义：输入/累积 dtype、scale 应用顺序、支持形状、数值容限及 fallback。
-2. 从现有算法 packed 格式转换成单独版本的 kernel layout，不重新量化。
-   CPU/reference 解码与最终算法权重一致；检查不改变符号/索引/scales。
-3. Linear correctness → Linear 计时 → block → full-model；每级分别验收。
-4. 固定 GPU、batch/token、warmup/repeats、同步与计时范围；说明转换/打包是否计入，
-   与相同输入/输出和 dtype 的 baseline 对照。不得用 PPL 或 weight SSE 代替速度证据。
-5. 暂停新增蒸馏、校准和精度参数搜索；以后恢复精度实验使用新的版本目录。
-
-原 5%/10% PPL 门槛的数值结果仍留在报告中；用户此次明确授权性能研究先行，
-不再以质量门槛未通过阻止研究性 correctness/benchmark。产品部署适用性仍需单独判断。
-
-## 关闭和下次恢复
-
-- 关闭计算实例时保留上述网络卷；不要删除卷或持久目录。
-- `/opt/fluxbin-venv` 属于 container disk，下次需要按既有 lock 恢复；不用重装模板的 torch。
-- 环境锁：`infra/runpod/requirements-linear-a100-v1.lock`，本轮 torch 2.8.0+cu128、
-  transformers 5.14.1、datasets 5.0.0、safetensors 0.8.0。
-- 本地已备份小型结果/验收/曲线/数据/日志/环境记录，位于
-  `server_results/runpod_hybrid_pcie_2026-09-13/`，不入 Git；大权重按用户选择不下载本机。
-- 下次先提供新 SSH 地址，确认网络卷挂载，再校验 manifest 和 snapshot；
-  使用 Git 拉取源码，建立该机器独立环境，然后开始性能工程。
-- 用户已确认计算服务器关闭；此前由代理完成关机准备，未通过工具关闭或删除实例。
-  存储状态以上次关机前校验为准，下次启动重新核验。
+下一次先核对 Git/存储/权重，再生成匹配源码的环境记录、跑 CUDA 检查并使用新的结果目录。
+入口与命令见[运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)。本次文档整理不启动实验。
+未来若只更新 scales，须重做新权重的正确性检查；性能结论仍绑定原 manifest 和执行环境。
+只有格式、形状、索引、dtype、dispatch 和无数据相关分支均不变时，才可认为计算/访存规模不变。

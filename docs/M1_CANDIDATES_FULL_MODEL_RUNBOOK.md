@@ -1,8 +1,76 @@
-# M=1 候选批次与全模型运行准备
+# M=1 候选与完整模型运行手册
 
-2026-09-14，本地准备；未连接服务器，未编译或测试新 CUDA 候选。保留 v1
-负面结果。vLLM 接口保留，未接入。当前目标是一次上机完成一批有界实验，
-安装/测试本身耗时不长，暂不投入复杂镜像自动化。
+更新：2026-09-15。默认完整模型入口为下方 prepared v2.1；最新 Graph 两组均稳定，
+相对原始 BF16 加速 1.381x/1.383x，eager 不稳定。详见
+[加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)和[有效合同](ACCELERATION_HANDOFF.md)。
+本页后半保留旧候选、动态 KV v1 和历史命令供复现，不表示应再次顺序执行全部实验。
+vLLM 尚未接入；诊断、A8 和镜像自动化不因阅读本手册自动恢复。
+
+## 当前完整模型：prepared v2.1（SXM4 已验证）
+
+新入口 `scripts/run_qwen3_8b_prepared_m1_trial.py` 使用独立的
+`configs/acceleration/qwen3_8b_full_m1_v2.json`；旧 v1 runner、配置和历史结果保留。
+本轮直接测完整模型，不以单 block 的速度作为启动条件。
+
+- 固定 `v5_p1024/gps1`，保持原来的 Qwen3-8B、step400 权重、两个真实 prompt、
+  seed、batch=1、32 个相同 continuation token；主基线仍为原始 BF16。
+- packed Linear 在预填充后绑定固定参数、输出和 workspace，计时内不重新构造布局字典、
+  分配 packed 输出或更新 Python 审计计数。保留输入与 native 参数检查。
+  输出复用仅支持串行单请求；绑定期间权重不可变，退出上下文或移动模块会解除绑定。
+- 使用真实 prompt 预填充 StaticCache。每次测量前恢复 prefix KV 和长度；
+  32 步中位置和有效注意力范围逐步增长。不是固定位置反复测一个 token，
+  也不是随机初始化 KV。固定 token 的 Graph 不代表自由生成或服务吞吐。
+- 比较 `prepared_eager` 和 `sequence_graph`：后者一次 replay 整段 32 步，包含
+  embedding、全部 36 层、输出头和每步 argmax，以及 packed 的 LUT 构建与归约。
+  reset、prefill、capture、校验和 CPU 输出拷贝均在 decode 计时外。
+- 三个模型及两组 prompt cache 同时驻留，轮换 arm 顺序并交替两种模式。
+  记录总驻留/峰值与真实执行顺序；这是新协议的显存条件，与 v1 的逐个加载不同。
+  每种模式/arm/prompt 预热完整序列 8 次，测量 10 次；wall 和 CUDA event
+  的 `(max-min)/median` 都必须 <=5% 才发布速度比。event 时间仍可能包含 host 发射间隙。
+- 审计独立执行：同一静态 KV 下，原 checked wrapper 与 prepared wrapper 必须精确一致；Graph 与 prepared eager、
+  每轮重复输出要求精确一致。检查 KV 长度、有限值、相同 fed tokens，以及全部 252 个
+  packed Linear 各执行 32 次、decode dense fallback 为零。Graph coverage 记录 capture
+  时的 Python 路由，replay 正确性另由完整输出检查，不将 capture 计数误称 replay 计数。
+- packed 与 decoded BF16 的跨权重语义差异、动态/静态注意力路径差异均 report-only；不得将其称为数值等价。
+  原始 BF16 为性能基线，decoded 为辅助基线。未接入 A8 或 vLLM。
+
+服务器按下方“上机前与恢复”章节设置路径变量并生成**新的**环境记录后：
+
+```bash
+python -m unittest discover -s tests -p test_static_decode.py -v
+python scripts/run_qwen3_8b_prepared_m1_trial.py \
+  --snapshot-root "$FLUXBIN_SNAPSHOT_ROOT" \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
+  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output "$FLUXBIN_RUN_ROOT/full-model-prepared-v2.json"
+```
+
+使用项目已有的持久任务方式提交上述命令。GPU 测试必须执行而非 skip；若 Graph capture、
+同路径数值或路由失败，runner 写入 failed 并停止，不静默降级。CPU 测试只验证小型模型的
+缓存/上下文/恢复语义，不能证明 CUDA 可捕获或性能提升。v1 到 v2 同时改变了包装路径、
+KV 与测量协议，因此不能把差值全部归因于某一项优化；历史 v1 负面结果保持不变，
+v2.1 Graph 的稳定加速单独报告。
+
+本地验证（macOS arm64，2026-09-15）：`python -m unittest discover -s tests`
+共 113 项，105 通过、8 项 CUDA 测试跳过；新入口 `--help` 与 `git diff --check` 通过。
+新增 CUDA 测试覆盖 prepared buffer 复用、输入改变后的 Graph replay，以及小型 packed
+Qwen3 全序列的 KV/输出生命周期；这些测试随后已在本轮 SXM4 通过。
+
+2026-09-15 SXM4 首次 v2 尝试：113/113 CUDA 环境测试通过；完整模型在 decoded
+BF16 的动态/静态比较处停止（NRMSE 0.0121237，max logprob 0.491539，fed tokens
+一致但预测不同），未开始计时。原始 failed JSON 保留。协议 v2.1 将动态/静态注意力
+差异独立报告，并新增同一 StaticCache/mask 下 checked wrapper 的实测参照：prepared
+包装必须与该参照逐位一致，Graph/repeat 同样逐位一致。此变更不放宽 wrapper 或
+Graph 的正确性门槛，也不将动态/静态输出宣称等价；后续完整模型实测已完成，结论见下段。
+
+本轮 v2.1 已完成：SXM4 Graph 对原始 BF16 为 1.381x/1.383x，两组稳定；eager
+不稳定，整体 `completed_unstable`。113/113 GPU 测试通过，专项 7/7 复验通过。
+完整证据与数值边界见 `QWEN3_8B_M1_LINEAR_RESULTS.md` 最新节。
+新运行必须使用新输出目录，避免覆盖本轮证据。
+
+## 历史候选与公共环境恢复
+
+以下候选结果已归档；恢复环境命令仍适用，但每次必须指定新的结果目录。
 
 ## 固定候选
 
@@ -179,7 +247,7 @@ python scripts/summarize_m1_candidates.py \
 同轮 dense/v1/v3 数据；不把本地测试通过写成 GPU 加速。后续 full-model 的主要速度
 基线是原始 BF16，数值差异可按既定 report-only 策略记录。
 
-## v3 瓶颈诊断准备（2026-09-15，尚未执行）
+## 历史诊断准备（用户已取消，不自动执行）
 
 后续用户已取消诊断：本节入口保留但暂停，不继续准备全模型 profiler、不启动采样。
 新的候选方向与静态归因边界见 [优化说明](M1_V2_LOCAL_OPTIMIZATION.md)。
@@ -341,64 +409,3 @@ python scripts/summarize_m1_candidates.py \
 选定通过数值与稳定性审阅的 Linear JSON 后，block/full-model 自动继承对应
 kernel 与 split，沿用上文完整模型 report-only 命令。不以 block 速度决定是否
 提交完整模型。新增候选仍未在服务器编译或测量。
-
-## 2026-09-15：prepared full-model v2（本地实现，GPU 待验证）
-
-新入口 `scripts/run_qwen3_8b_prepared_m1_trial.py` 使用独立的
-`configs/acceleration/qwen3_8b_full_m1_v2.json`；旧 v1 runner、配置和历史结果保留。
-本轮直接测完整模型，不以单 block 的速度作为启动条件。
-
-- 固定 `v5_p1024/gps1`，保持原来的 Qwen3-8B、step400 权重、两个真实 prompt、
-  seed、batch=1、32 个相同 continuation token；主基线仍为原始 BF16。
-- packed Linear 在预填充后绑定固定参数、输出和 workspace，计时内不重新构造布局字典、
-  分配 packed 输出或更新 Python 审计计数。保留输入与 native 参数检查。
-  输出复用仅支持串行单请求；绑定期间权重不可变，退出上下文或移动模块会解除绑定。
-- 使用真实 prompt 预填充 StaticCache。每次测量前恢复 prefix KV 和长度；
-  32 步中位置和有效注意力范围逐步增长。不是固定位置反复测一个 token，
-  也不是随机初始化 KV。固定 token 的 Graph 不代表自由生成或服务吞吐。
-- 比较 `prepared_eager` 和 `sequence_graph`：后者一次 replay 整段 32 步，包含
-  embedding、全部 36 层、输出头和每步 argmax，以及 packed 的 LUT 构建与归约。
-  reset、prefill、capture、校验和 CPU 输出拷贝均在 decode 计时外。
-- 三个模型及两组 prompt cache 同时驻留，轮换 arm 顺序并交替两种模式。
-  记录总驻留/峰值与真实执行顺序；这是新协议的显存条件，与 v1 的逐个加载不同。
-  每种模式/arm/prompt 预热完整序列 8 次，测量 10 次；wall 和 CUDA event
-  的 `(max-min)/median` 都必须 <=5% 才发布速度比。event 时间仍可能包含 host 发射间隙。
-- 审计独立执行：同一静态 KV 下，原 checked wrapper 与 prepared wrapper 必须精确一致；Graph 与 prepared eager、
-  每轮重复输出要求精确一致。检查 KV 长度、有限值、相同 fed tokens，以及全部 252 个
-  packed Linear 各执行 32 次、decode dense fallback 为零。Graph coverage 记录 capture
-  时的 Python 路由，replay 正确性另由完整输出检查，不将 capture 计数误称 replay 计数。
-- packed 与 decoded BF16 的跨权重语义差异、动态/静态注意力路径差异均 report-only；不得将其称为数值等价。
-  原始 BF16 为性能基线，decoded 为辅助基线。未接入 A8 或 vLLM。
-
-服务器完成恢复并按本页前文生成**新的**环境记录后：
-
-```bash
-python -m unittest discover -s tests -p test_static_decode.py -v
-python scripts/run_qwen3_8b_prepared_m1_trial.py \
-  --snapshot-root "$FLUXBIN_SNAPSHOT_ROOT" \
-  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
-  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
-  --output "$FLUXBIN_RUN_ROOT/full-model-prepared-v2.json"
-```
-
-使用项目已有的持久任务方式提交上述命令。GPU 测试必须执行而非 skip；若 Graph capture、
-同路径数值或路由失败，runner 写入 failed 并停止，不静默降级。CPU 测试只验证小型模型的
-缓存/上下文/恢复语义，不能证明 CUDA 可捕获或性能提升。v1 到 v2 同时改变了包装路径、
-KV 与测量协议，因此不能把差值全部归因于某一项优化；当前 GPU 结论仍是 v1 全模型慢于 BF16。
-
-本地验证（macOS arm64，2026-09-15）：`python -m unittest discover -s tests`
-共 113 项，105 通过、8 项 CUDA 测试跳过；新入口 `--help` 与 `git diff --check` 通过。
-新增 CUDA 测试覆盖 prepared buffer 复用、输入改变后的 Graph replay，以及小型 packed
-Qwen3 全序列的 KV/输出生命周期；这些测试尚未在本轮服务器执行。
-
-2026-09-15 SXM4 首次 v2 尝试：113/113 CUDA 环境测试通过；完整模型在 decoded
-BF16 的动态/静态比较处停止（NRMSE 0.0121237，max logprob 0.491539，fed tokens
-一致但预测不同），未开始计时。原始 failed JSON 保留。协议 v2.1 将动态/静态注意力
-差异独立报告，并新增同一 StaticCache/mask 下 checked wrapper 的实测参照：prepared
-包装必须与该参照逐位一致，Graph/repeat 同样逐位一致。此变更不放宽 wrapper 或
-Graph 的正确性门槛，也不将动态/静态输出宣称等价；完整模型实测仍待完成。
-
-本轮 v2.1 已完成：SXM4 Graph 对原始 BF16 为 1.381x/1.383x，两组稳定；eager
-不稳定，整体 `completed_unstable`。113/113 GPU 测试通过，专项 7/7 复验通过。
-完整证据与数值边界见 `QWEN3_8B_M1_LINEAR_RESULTS.md` 最新节；本节早期“待验证”
-状态保留为开发历史。新运行必须使用新输出目录，避免覆盖本轮证据。

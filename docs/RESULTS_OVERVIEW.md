@@ -1,72 +1,51 @@
 # 当前结果总览
 
-Latest GPU result (2026-09-15, A100 SXM4 80GB, prepared v2.1): full-model
-32-step sequence Graph achieved **1.381x / 1.383x original BF16 speed**, with
-both prompts stable (all Graph timing spans <0.12%). Eager timing was unstable
-at the 5% threshold, so aggregate status is `completed_unstable`. All 113 GPU
-tests passed; checked/prepared wrappers and Graph outputs were exact in all six
-arm/prompt cells. Dynamic/static attention and packed/decoded numerical differences
-remain report-only. Evidence downloaded/hash-verified; GPU processes exited.
-See [full-model results](QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier pending statements below are historical.
+更新：2026-09-15。速度比均为原始 BF16 / packed，大于 1 表示加速；
+以下是不同硬件与协议的历史结果，不是可直接归因的单因素消融。
 
-Local preparation (2026-09-15): prepared full-model v2 adds bound packed Linear buffers, real-prefix static KV, interleaved 8-warmup/10-repeat timing and a complete 32-step CUDA Graph comparison. Original BF16 remains the primary baseline. CUDA validation and performance are pending; historical v1 results are unchanged. See [protocol and launch commands](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+## 近期完整模型结果
 
-Latest GPU result (2026-09-15, A100 80GB PCIe): 106 tests passed, 168/168
-Linear numerical cells passed, 154/168 timing cells stable. Selected
-`v5_p1024/gps1` achieved 2.1285x isolated Graph / 2.0219x isolated eager speed
-(seven Linear time sums), but full-model speed was only 0.87696x / 0.86674x
-original BF16. All full-model timings were stable; numerical differences remain
-report-only. Block dense timing was unstable. Evidence downloaded/hash-verified;
-no experiment processes remain. See [latest results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+| 时间 / GPU | 实现与协议 | prompt 0 / 1 速度比 | 状态 |
+|---|---|---:|---|
+| 09-14 SXM4 | v2/gps8，动态 KV eager v1 | 0.9332x / 0.9562x | 稳定，未加速 |
+| 09-15 PCIe | v3/gps4，动态 KV eager v1 | 0.86887x / 不发布 | prompt 1 辅助基线不稳定 |
+| 09-15 SXM4 | v4/gps4，动态 KV eager v1 | 0.83063x / 0.83143x | 稳定，未加速 |
+| 09-15 PCIe | v5_p1024/gps1，动态 KV eager v1 | 0.87696x / 0.86674x | 稳定，未加速 |
+| 09-15 SXM4 | v5_p1024/gps1，prepared eager v2.1 | 不发布 / 不发布 | 波动 6.51–10.11%，超 5% |
+| **09-15 SXM4** | **v5_p1024/gps1，sequence Graph v2.1** | **1.380972x / 1.383276x** | **两组稳定，跨度 <0.12%** |
 
-Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
-checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.
-Full-model report-only completed in 119s with both prompts stable: 0.83063x /
-0.83143x original BF16 speed, no acceleration. Unstable block timing was explicitly
-allowed without changing numerical/route/provenance gates. Raw evidence is backed
-up and hash-verified; no experiment processes remain. Persistent venv reuse took
-36.9s (30.2s imports), versus local imports 2.8–3.1s; trials used local venv.
-See [v4 results](QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier local/pending statements are historical.
+最新 Graph 的 32-token 延迟：原始 BF16 467.513 / 467.919 ms，packed
+338.539 / 338.269 ms；约 68 → 95 token/s。eager 不稳定导致整体 JSON 为
+`completed_unstable`，不能把两组 Graph 的稳定结论写成全协议均通过。
+上述数值均在 report-only 策略下测量，不代表 BF16 数值等价。
 
-Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
-The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
-Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.
-Full-model report-only run exited 0 in 312s: prompt 0 achieved 0.86887x original BF16
-speed; prompt 1 has an unstable auxiliary decoded baseline, so overall status is
-`completed_unstable`. No full-model speedup. Evidence downloaded/hash-verified;
-no experiment processes remain. See [v3 results](QWEN3_8B_M1_LINEAR_RESULTS.md).
-Earlier preparation and SXM4 statements below are historical.
+## Linear、block 与协议边界
 
-Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
-On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
-fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route
-checks passed. Numerical differences were retained under the user-authorized
-report-only policy. No full-model speedup was achieved. Details: [full-model results](QWEN3_8B_M1_LINEAR_RESULTS.md).
+最新孤立 Linear 批次来自上一轮 PCIe：`v5_p1024/gps1` 七个 Graph Linear
+合计 124.598 µs，相对同轮 decoded BF16 2.1285x；孤立 eager 为 2.0219x。
+这些是 layer-0 七个独立算子的时间和，**不是 block 延迟，也不能外推全部 252 个 Linear**。
+同轮 block 数值/路由通过，但 dense 计时不稳定，不发布 block 加速比。
+用户明确要求无论 block 速度如何都继续完整模型实验。
 
-Full-model follow-up: the submitted task exited 1 at packed_step400 prompt 0,
-repeat 0. Coverage (252 Linears) and KV length passed, but the same-weight decoded
-BF16 correctness comparison failed: NRMSE 0.0115685 > 0.005, maximum logprob error
-0.3394165 > 0.05, and 1/33 greedy predictions differed. No accepted full-model
-speedup is available. This supersedes the earlier observed-running status.
+最新 v2.1 固定 Qwen3-8B step400、batch1、两个真实 prompt、32 个相同输入 token，
+主基线原始 BF16，辅助基线 decoded step400。静态 KV 预填充后恢复，逐步增长位置；
+Graph 包含 embedding、全部 36 层、LM head、argmax、LUT 构建与归约。
+预填充、reset、capture 和审计在 decode 计时外；三模型同时驻留，轮换 arm/mode，
+8 次预热、10 次测量。不是自由生成、TTFT、A8 或 vLLM 结果。
 
-Latest GPU evidence (2026-09-14, A100 SXM4): all 85 tests passed; bounded candidate
-batch passed correctness in 84/84 cells, with 77/84 stable timings. The selected
-v2/gps8 block passed correctness/stability but took 1213.783 us vs decoded BF16
-1049.944 us (0.8650x speedup). User explicitly requested full-model measurement
-regardless of block speed; full-model task `m1-sxm4-full` was submitted and observed
-running, not accepted. See [SXM4 results](QWEN3_8B_M1_LINEAR_RESULTS.md).
-Earlier unlaunched/preparation statements below are historical.
+113/113 GPU 测试通过，修正 runner 后专项 7/7 通过；6/6 arm/prompt 的同静态
+KV checked/prepared wrapper、Graph/eager 输出精确一致，120 次正式测量的重复检查通过。
+packed 两组审计/capture 均覆盖 252 个 Linear，每个执行 32 次、decode dense fallback=0。
 
-2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
-12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
-runners are prepared. No new CUDA/full-model performance result; vLLM remains
-unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+跨语义差异独立报告：最新 packed/decoded NRMSE 0.0125357 / 0.0129711，
+动态/静态注意力 NRMSE 0.01167–0.01359，均未通过旧阈值。第一次 v2 在 decoded
+动态/静态检查处失败、未计时；v2.1 改用相同静态注意力下的 checked wrapper 作
+严格参照，保留前次失败记录，不把缓存路径差异解释成包装或 Graph 错误。
 
-2026-09-13：Qwen3-8B 已完成 Linear、全模型量化、补偿修复、scale-only 蒸馏和
-固定 step400 的 test PPL 验收。精度实验按用户决定暂停，后续转向加速研究。
-9 月 13 日关闭后，9 月 14 日已启动新实例并完成环境验收。2026-09-14 首轮 M=1 packed CUDA 实验已完成：七个真实 Linear 数值通过，Graph
-计时稳定，但首版耗时为 dense BF16 的 2.03–2.26 倍，没有实现加速。
-详见 [M=1 Linear 结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。尚无 block 或全模型速度结果。
+完整版本表、每轮原始状态、运行提交与 SHA256 见
+[加速详细结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。最新运行代码 `3c996ab`；
+本地私有备份 `server_results/runpod_prepared_sxm4_2026-09-15/` 已完成哈希、
+源码、120 次样本统计与路由核验，不提交原始大文件到 GitHub。
 
 ## Qwen3-8B test PPL
 
@@ -147,8 +126,8 @@ Manifest SHA256：`253ab448797ef4d798522875014b7e47a4edb84c5c3c1ca5cf6179edfd339
 大权重按用户决定不下载本机。服务器关闭由用户确认，未在关闭后重新核验远端存储。
 恢复路径和环境锁见 [服务器保存记录](SERVER_SHUTDOWN_READY.md)。
 
-后续以固定 step400 为输入：版本化布局转换 → Linear correctness/计时 → block →
-全模型加速。具体约束见 [加速交接](ACCELERATION_HANDOFF.md)。在格式、形状、索引、
+上述加速链条已执行；后续以固定 step400 和 prepared v2.1 为基线评估新候选，
+单 block 速度不作为完整模型启动条件。具体约束见 [加速交接](ACCELERATION_HANDOFF.md)。在格式、形状、索引、
 dtype、执行路径和环境不变且无数值依赖分支时，后续只更新 scales 不改变运算和访存规模；
 仍为新权重重做正确性检查，并保留每次计时绑定的权重及代码版本。
 

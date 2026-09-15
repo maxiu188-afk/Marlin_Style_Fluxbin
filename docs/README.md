@@ -6,17 +6,17 @@
 
 ## 先看这些
 
-- [当前进度与交接](CURRENT_HANDOFF.md)
-- [结果总览](RESULTS_OVERVIEW.md)
+- [当前进度与交接](CURRENT_HANDOFF.md)：只保留当前有效状态和下一步边界
+- [结果总览](RESULTS_OVERVIEW.md)：近期完整模型对照与质量证据
 - [实验计划](EXPERIMENT_PLAN.md)
 
 ## M=1 加速与全模型运行
 
 - [候选批次及全模型运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)
-- [加速工作交接](ACCELERATION_HANDOFF.md)
+- [加速实验合同与恢复交接](ACCELERATION_HANDOFF.md)
 - [M=1 初始准备](M1_ACCELERATION_PREPARATION.md)
 - [v2 本地优化设计](M1_V2_LOCAL_OPTIMIZATION.md)
-- [M=1 Linear 已测结果](QWEN3_8B_M1_LINEAR_RESULTS.md)
+- [Linear / block / 完整模型加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)
 
 ## 服务器环境与恢复
 
@@ -32,3 +32,7 @@
 | 初始 PPL | [运行指南](QWEN3_8B_PPL_GUIDE.md)、[诊断](QWEN3_8B_PPL_DIAGNOSIS.md) | [PPL](QWEN3_8B_PPL_RESULTS.md) |
 | Hybrid / conditioned | [Hybrid 探针](QWEN3_8B_HYBRID_PROBE_GUIDE.md)、[全模型指南](QWEN3_8B_CONDITIONED_FULL_GUIDE.md) | [全模型重建](QWEN3_8B_CONDITIONED_FULL_RESULTS.md)、[PPL](QWEN3_8B_CONDITIONED_PPL_RESULTS.md) |
 | 蒸馏 | [准备与协议](QWEN3_8B_DISTILLATION_PREPARATION.md) | [训练结果](QWEN3_8B_DISTILLATION_RESULTS.md)、[测试结果](QWEN3_8B_DISTILLED_TEST_RESULTS.md) |
+
+## 历史归档
+
+- [早期 8B/32B 执行交接](archive/HANDOFF_HISTORY_THROUGH_2026-09-15.md)：保留验收与来源；历史状态不作为当前指令。

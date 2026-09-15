@@ -1,134 +1,46 @@
 # Marlin-Style FluxBin
 
-Latest GPU result (2026-09-15, A100 SXM4 80GB, prepared v2.1): full-model
-32-step sequence Graph achieved **1.381x / 1.383x original BF16 speed**, with
-both prompts stable (all Graph timing spans <0.12%). Eager timing was unstable
-at the 5% threshold, so aggregate status is `completed_unstable`. All 113 GPU
-tests passed; checked/prepared wrappers and Graph outputs were exact in all six
-arm/prompt cells. Dynamic/static attention and packed/decoded numerical differences
-remain report-only. Evidence downloaded/hash-verified; GPU processes exited.
-See [full-model results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier pending statements below are historical.
+面向 Qwen3 的两基二值权重表示与 packed CUDA decode 研究。当前主线为
+Qwen3-8B、固定 distilled step400、M=1；精度工作暂停，vLLM 保留接口但尚未接入。
 
-Local preparation (2026-09-15): prepared full-model v2 adds bound packed Linear buffers, real-prefix static KV, interleaved 8-warmup/10-repeat timing and a complete 32-step CUDA Graph comparison. Original BF16 remains the primary baseline. CUDA validation and performance are pending; historical v1 results are unchanged. See [protocol and launch commands](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
+## 当前结果（2026-09-15）
 
-Latest GPU result (2026-09-15, A100 80GB PCIe): 106 tests passed, 168/168
-Linear numerical cells passed, 154/168 timing cells stable. Selected
-`v5_p1024/gps1` achieved 2.1285x isolated Graph / 2.0219x isolated eager speed
-(seven Linear time sums), but full-model speed was only 0.87696x / 0.86674x
-original BF16. All full-model timings were stable; numerical differences remain
-report-only. Block dense timing was unstable. Evidence downloaded/hash-verified;
-no experiment processes remain. See [latest results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
+在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
+32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。
 
-Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
-checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.
-Full-model report-only completed in 119s with both prompts stable: 0.83063x /
-0.83143x original BF16 speed, no acceleration. Unstable block timing was explicitly
-allowed without changing numerical/route/provenance gates. Raw evidence is backed
-up and hash-verified; no experiment processes remain. Persistent venv reuse took
-36.9s (30.2s imports), versus local imports 2.8–3.1s; trials used local venv.
-See [v4 results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier local/pending statements are historical.
+| 固定 prompt | 原始 BF16，32 token | packed，32 token | 速度比 |
+|---|---:|---:|---:|
+| 0 | 467.513 ms | 338.539 ms | **1.380972x** |
+| 1 | 467.919 ms | 338.269 ms | **1.383276x** |
 
-Local v4 implementation: column-scaled activations are prepared once per group,
-then sign dot products are row-scaled, with eight sparse positions handled separately.
-The new structural FP64 Linear reference is independent of legacy BF16 weights;
-all three launches are timed. CUDA compilation/performance remain unvalidated.
-See [v4 contract](docs/M1_V2_LOCAL_OPTIMIZATION.md).
+Graph 两组计时均稳定；同轮 eager 超过 5% 波动门槛，不发布加速比，整体记录为
+`completed_unstable`。113 项 GPU 测试全部通过，同静态 KV 下包装与 Graph 输出
+精确一致。packed/decoded 和动态/静态注意力差异仍 report-only，不宣称数值等价。
+这是固定 continuation、真实前缀 KV 的缓存就绪 decode 测量，不是 prefill、自由生成或服务吞吐。
 
-Latest GPU trial (2026-09-15): v3 compiled on A100 80GB PCIe; all 91 tests passed.
-The fixed candidate batch passed 84/84 numerical cells (67/84 stable timings).
-Selected v3/gps4 improved Linear timing over v1/v2 but remained slower than dense.
-Full-model report-only run exited 0 in 312s: prompt 0 achieved 0.86887x original BF16
-speed; prompt 1 has an unstable auxiliary decoded baseline, so overall status is
-`completed_unstable`. No full-model speedup. Evidence downloaded/hash-verified;
-no experiment processes remain. See [v3 results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
-Earlier preparation and SXM4 statements below are historical.
+当前 step400 WT2 test PPL 为 **13.169788495**（原始 BF16 **9.724944981**），
+较未蒸馏父版本改善 11.9173%，原质量门槛仍未通过。PPL 来自 dense BF16 解码路径，
+不能代替 packed 后端的质量验证。完整数值、历史负面结果与证据边界见[结果总览](docs/RESULTS_OVERVIEW.md)。
 
-Local kernel follow-up: explicit `v3` now implements three-stage cp.async staging,
-register fragment double buffering and FP16/BF16 Tensor Core MMA for hybrid M=1.
-It retains the v1 layout and a deterministic split reduction, with a direct-store
-single-split path. This is implementation preparation only: no NVCC/GPU validation
-or speed result yet. See [kernel design](docs/M1_V2_LOCAL_OPTIMIZATION.md) and the new fixed Marlin candidate config.
+## 阅读与运行入口
 
-Latest completed full-model trial (2026-09-14): report-only run exited 0 in 135s.
-On A100 SXM4, packed decode is 0.9332x / 0.9562x the original BF16 speed on the two
-fixed prompts (latency +7.16% / +4.58%); all decode timings and 252-Linear route
-checks passed. Numerical differences were retained under the user-authorized
-report-only policy. No full-model speedup was achieved. Details: [full-model results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
+- [当前交接](docs/CURRENT_HANDOFF.md)：有效状态、代码入口、服务器与下一步。
+- [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
+- [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
+- [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
+- [文档索引](docs/README.md)：质量、算法、环境和历史归档。
 
-Full-model follow-up: the submitted task exited 1 at packed_step400 prompt 0,
-repeat 0. Coverage (252 Linears) and KV length passed, but the same-weight decoded
-BF16 correctness comparison failed: NRMSE 0.0115685 > 0.005, maximum logprob error
-0.3394165 > 0.05, and 1/33 greedy predictions differed. No accepted full-model
-speedup is available. This supersedes the earlier observed-running status.
+当前入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置文件
+`configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。旧 v1 路径和结果保留。
+上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
+不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。
 
-Latest GPU evidence (2026-09-14, A100 SXM4): all 85 tests passed; bounded candidate
-batch passed correctness in 84/84 cells, with 77/84 stable timings. The selected
-v2/gps8 block passed correctness/stability but took 1213.783 us vs decoded BF16
-1049.944 us (0.8650x speedup). User explicitly requested full-model measurement
-regardless of block speed; full-model task `m1-sxm4-full` was submitted and observed
-running, not accepted. See [SXM4 results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
-Earlier unlaunched/preparation statements below are historical.
+最后一次服务器验收已完成，证据备份且 GPU 进程退出，可以停止计算实例并保留
+网络卷；当前电源状态需下次连接时核验。容器本地环境按 lock 恢复，持久保存模型、
+包缓存和兼容的编译缓存，最近恢复约 40 秒。基础镜像 digest 未确认，自建镜像暂缓。
+镜像配置及早期构建失败记录见 [RunPod 说明](infra/runpod/README.md)。
 
-Project documentation is collected in [docs/README.md](docs/README.md). Start with
-[the current handoff](docs/CURRENT_HANDOFF.md) for progress and next steps.
-
-2026-09-14 local preparation: 6 fixed M=1 configurations (baseline + 5 candidates),
-12 eager/Graph trials, explicit candidate-aware block and full Qwen3-8B cached-decode
-runners are prepared. No new CUDA/full-model performance result; vLLM remains
-unconnected. Commands, gates and limits: [M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
-
-This repository studies a calibrated two-base rank-one binary weight representation.
-The active target is Qwen3-8B; Qwen3-32B remains historical algorithm-quality
-evidence and a source of operator-only stress shapes.
-
-2026-09-14 first M=1 trial: seven real layer-0 Linears pass numerical checks.
-CUDA Graph timings are stable but packed v1 takes 2.03–2.26x the same-run dense
-BF16 time. This is a negative performance baseline; block/full-model/vLLM remain
-unlaunched. See [M=1 Linear results](docs/QWEN3_8B_M1_LINEAR_RESULTS.md).
-
-Historical local acceleration preparation: M=1 CUDA prototype and lossless layout,
-Linear and single-block trial entries, full-model replacement adapter, and a
-future vLLM interface are prepared. GPU compilation/correctness/timing remain
-unverified; no server was contacted. Follow [the M=1 preparation guide](docs/M1_ACCELERATION_PREPARATION.md),
-including first-server environment capture and subsequent image preparation.
-
-2026-09-13 closeout: full-model reconstruction, compensation repair, scale-only
-distillation and fixed step400 test PPL have been reviewed. Start with the
-[results overview](docs/RESULTS_OVERVIEW.md) for the evidence and source revisions.
-
-| Qwen3-8B weights | WikiText-2 test PPL |
-| --- | ---: |
-| BF16 | 9.724945 |
-| Original pure | 1149.470625 |
-| Original hybrid | 16.142104 |
-| Conditioned hybrid, undistilled | 14.951611 |
-| Conditioned hybrid, distilled step400 | **13.169788** |
-
-Distillation improves test PPL by **11.92%** versus its direct parent. Separately,
-WT2 validation PPL improved from 15.272183 to 13.670310. The test table combines
-matched-protocol runs, not five arms measured in one run; BF16 reproduced exactly.
-The final model remains 35.42% above BF16 and does not pass the original quality gate.
-
-Accuracy experiments are paused by user direction. Research on packed conversion,
-CUDA correctness and acceleration is authorized next, independently of the unmet
-quality gate; no packed CUDA or end-to-end speed result exists yet. Follow
-[the acceleration handoff](docs/ACCELERATION_HANDOFF.md) and
-[the staged plan](docs/EXPERIMENT_PLAN.md).
-
-The user confirmed the compute server is closed. Before shutdown, the 36-layer
-step400 payload and records were copied and hash-verified on the persistent
-network volume; large weights were not downloaded locally. See
-[storage and restart details](docs/SERVER_SHUTDOWN_READY.md). Use an existing RunPod
-PyTorch/CUDA template and restore only missing dependencies on container disk.
-
-The reusable RunPod image, Network Volume, Template, and cache layout are
-specified in [`infra/runpod/README.md`](infra/runpod/README.md).
-
-Custom-image provisioning remains deferred. GitHub Actions run `34681093330`
-failed during image build/push because the hosted runner exhausted its disk;
-no custom image digest was accepted, and that workflow created no RunPod
-resources. The now-closed A100 Pod was provisioned separately by the user from an
-existing template. The image workflow remains manual-dispatch only.
+以下为历史 32B 算法证据，当前不新增该模型的实验。
 
 ## Historical accepted Qwen3-32B result
 

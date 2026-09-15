@@ -1,4 +1,4 @@
-# Qwen3-8B 首轮 M=1 Linear 结果
+# Qwen3-8B M=1 加速结果：Linear、block 与完整模型
 
 ## 2026-09-15 A100 SXM4：prepared v2.1 全模型 Graph 达到约 1.38x
 
@@ -67,7 +67,7 @@ eager 本身不稳定，不发布它与 Graph 的正式倍率。结果支持执�
 | v4 | 列 scale 外提、SIMT sign-add；每行每组四次 warp_sum | SXM4 七项 462.531 us，dense 256.030；同轮 v3 412.883 us；全模型 0.83063x/0.83143x |
 | v4_late | 每 lane 先乘 row scale 累加，每行每 split 最后归约一次 | 新 PCIe 同轮 gps4：262.270 us，dense 263.917；未单独跑全模型 |
 | v5 | 每线程持有输出行，8-sign LUT；运行时拆交织符号位 | 新 PCIe 同轮 gps1：143.744 us，dense 266.121；未单独跑全模型 |
-| v5_p256/p512/p1024 | 离线 byte planes，直接取 LUT 索引；比较三个行 tile | 新 PCIe：p1024/gps1 最快稳定，124.598 us；全模型 0.87696x/0.86674x |
+| v5_p256/p512/p1024 | 离线 byte planes，直接取 LUT 索引；比较三个行 tile | PCIe 七项 124.598 us、动态 KV 全模型 0.87696x/0.86674x；后续 SXM4 prepared Graph 全模型 1.381x/1.383x |
 
 Linear 数字为七个独立 Graph Linear 耗时之和，不是 block 延迟；不能跨 GPU
 作因果比较。全模型速度比为 original BF16 / packed，均是 report-only 数值
@@ -75,7 +75,9 @@ Linear 数字为七个独立 Graph Linear 耗时之和，不是 block 延迟；�
 新候选已完成本轮 GPU 检查；实现及运行配置见 `M1_V2_LOCAL_OPTIMIZATION.md` 与
 `M1_CANDIDATES_FULL_MODEL_RUNBOOK.md`。
 
-2026-09-14：**真实权重的数值门槛通过，但首版 kernel 未实现加速**。
+## 历史首轮 v1（2026-09-14）
+
+**真实权重的数值门槛通过，但首版 kernel 未实现加速**。
 CUDA Graph 轮七项计时均稳定，kernel 耗时为同轮 dense BF16 的 2.03–2.26 倍。
 这是保留的优化基线，不是 block/full-model/vLLM 或产品部署结果。
 
