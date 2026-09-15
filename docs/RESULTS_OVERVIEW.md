@@ -1,10 +1,12 @@
 # 当前结果总览
 
-Local inner-compute candidates (2026-09-15): `v4_late` reduces once per row/K
-split; `v5_p256/p512/p1024` consume lossless offline byte planes and remove online
-sign de-interleaving. Legacy v4/v5 remain available. No A8 or serving integration.
-Local suite: 100 passed, 5 CUDA skips. All new CUDA builds/performance remain
-pending; v4 is the latest GPU result. [Run commands](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md#inner-compute-增量候选2026-09-15).
+Latest GPU result (2026-09-15, A100 80GB PCIe): 106 tests passed, 168/168
+Linear numerical cells passed, 154/168 timing cells stable. Selected
+`v5_p1024/gps1` achieved 2.1285x isolated Graph / 2.0219x isolated eager speed
+(seven Linear time sums), but full-model speed was only 0.87696x / 0.86674x
+original BF16. All full-model timings were stable; numerical differences remain
+report-only. Block dense timing was unstable. Evidence downloaded/hash-verified;
+no experiment processes remain. See [latest results](QWEN3_8B_M1_LINEAR_RESULTS.md).
 
 Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
 checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.

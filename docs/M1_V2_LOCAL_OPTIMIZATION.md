@@ -319,3 +319,13 @@ CUDA tests 已包含 v4_late、三种 planar tile、tail/stream/Graph/FP16/BF16�
 CUDA 源操作数不能直接等同 SASS 指令数；发射、shuffle、依赖延迟存在重叠，
 不能简单相加来证明 45 us 的耗时归因。以上修改针对已确认的重复工作，
 不把静态估算当作经过 profiler 验证的瓶颈比例或硬性能上限。
+
+
+### 本轮 GPU 结果更新
+
+2026-09-15 PCIe / `73d450a`：106 项测试通过；168/168 Linear 数值通过，154/168
+计时稳定。v4_late/gps4 Graph 七项合计 262.270 us（v4 459.002）；v5/gps1
+143.744 us；v5_p1024/gps1 124.598 us，同轮 dense 265.208 us。所选配置
+isolated eager 也有 2.0219x，但完整模型仅 0.87696x/0.86674x original BF16
+速度；全部完整模型计时稳定，数值差异 report-only。此前本地 pending 描述为
+历史状态，详见 `QWEN3_8B_M1_LINEAR_RESULTS.md` 的完整记录。

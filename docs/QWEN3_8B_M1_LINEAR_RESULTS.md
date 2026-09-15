@@ -11,14 +11,14 @@
 | v2 | 保留重建，改善 shared 访问及多行复用 | PCIe 同轮 501.606 us；另轮 SXM4 全模型 0.9332x/0.9562x |
 | v3 | 重建后的 BF16 送 MMA，三阶段流水 | PCIe 同轮 401.408 us，dense 258.212；全模型 prompt0 0.86887x，prompt1 未通过整组稳定性 |
 | v4 | 列 scale 外提、SIMT sign-add；每行每组四次 warp_sum | SXM4 七项 462.531 us，dense 256.030；同轮 v3 412.883 us；全模型 0.83063x/0.83143x |
-| v4_late | 每 lane 先乘 row scale 累加，每行每 split 最后归约一次 | 本地实现，GPU 待验证 |
-| v5 | 每线程持有输出行，8-sign LUT；运行时拆交织符号位 | 本地实现，GPU 待验证 |
-| v5_p256/p512/p1024 | 离线 byte planes，直接取 LUT 索引；比较三个行 tile | 本地实现，GPU 待验证 |
+| v4_late | 每 lane 先乘 row scale 累加，每行每 split 最后归约一次 | 新 PCIe 同轮 gps4：262.270 us，dense 263.917；未单独跑全模型 |
+| v5 | 每线程持有输出行，8-sign LUT；运行时拆交织符号位 | 新 PCIe 同轮 gps1：143.744 us，dense 266.121；未单独跑全模型 |
+| v5_p256/p512/p1024 | 离线 byte planes，直接取 LUT 索引；比较三个行 tile | 新 PCIe：p1024/gps1 最快稳定，124.598 us；全模型 0.87696x/0.86674x |
 
 Linear 数字为七个独立 Graph Linear 耗时之和，不是 block 延迟；不能跨 GPU
 作因果比较。全模型速度比为 original BF16 / packed，均是 report-only 数值
 策略下的计时结果，不意味着旧 dense BF16 数值等价。详细来源与门槛见下文。
-新候选的实现、检查和运行配置见 `M1_V2_LOCAL_OPTIMIZATION.md` 与
+新候选已完成本轮 GPU 检查；实现及运行配置见 `M1_V2_LOCAL_OPTIMIZATION.md` 与
 `M1_CANDIDATES_FULL_MODEL_RUNBOOK.md`。
 
 2026-09-14：**真实权重的数值门槛通过，但首版 kernel 未实现加速**。
@@ -332,3 +332,98 @@ original BF16 / packed v4 常驻 allocated 为 15.266 / 4.922 GiB，packed 运�
 并与服务器 SHA256 对齐：
 `bfb17131ea4987cef0ef6f6e4c9e9582aae27ade78bd13c64eacd50919bbbcb4`。
 末次检查无 GPU compute 进程或 tmux session；实例未由代理关闭，网络卷保留。
+
+
+## 2026-09-15 inner compute / A100 PCIe 实测
+
+GPU 为 NVIDIA A100 80GB PCIe，driver 595.91.07，Python 3.12.3、torch
+2.8.0+cu128、CUDA 12.8。源码/runner revision `73d450a`。它不是上一轮 SXM4，
+本轮重新测 v3/v4/v5 对照，不把跨服务器的耗时差归因于 kernel。
+启动前修复了旧 batch runner 最大六配置的限制：新固定配置为 12 个候选、24 个
+trials；计时、数值、输入与稳定性门槛未变，新增入口回归测试通过。
+
+### 环境与候选验收
+
+依赖恢复约 36 秒（08:00:59Z 至 08:01:35Z），复用包缓存，在容器盘建立独立
+venv。兼容的持久 torch extension cache 中旧 v1–v4 显示 `ninja: no work to do`；
+只为新/变更路径编译。完整 106 项测试无跳过通过，306.489 秒（含编译与数值测试）。
+此后才记录 ready 环境并运行候选。v4_late 主 kernel 48 registers，无 spill；
+LUT variants 使用 34,816 B shared，具体寄存器与编译日志保存在 tests.log。
+
+24 trials 数值检查 168/168 通过，154/168 timing cells 稳定。本地下载后重算
+汇总与服务器逐项一致，trial_errors 为空；所有失败稳定性记录保留。
+下表为七个独立 Graph Linear 耗时之和，单位 us，不是 block 延迟。
+
+| 配置 | Packed | 同轮 dense BF16 | 七项计时 |
+|---|---:|---:|---|
+| v3 gps4 | 401.253 | 265.890 | 全部稳定 |
+| v4 gps4 | 459.002 | 263.987 | 全部稳定 |
+| v5 gps1 | 143.744 | 266.121 | 全部稳定 |
+| v4_late gps4 | 262.270 | 263.917 | 全部稳定 |
+| v4_late gps16 | 304.039 | 263.697 | 全部稳定 |
+| v4_late gps32 | 393.760 | 263.219 | 全部稳定 |
+| v5_p256 gps1 | 169.533 | 264.281 | 全部稳定 |
+| v5_p256 gps4 | 221.982 | 265.170 | 含不稳定格，不参与完整稳定候选选择 |
+| v5_p512 gps1 | 136.329 | 263.788 | 全部稳定 |
+| v5_p512 gps4 | 213.258 | 263.383 | 含不稳定格，不参与完整稳定候选选择 |
+| v5_p1024 gps1 | 124.598 | 265.208 | 全部稳定 |
+| v5_p1024 gps4 | 232.715 | 264.727 | 含不稳定格，不参与完整稳定候选选择 |
+
+选定 `v5_p1024/gps1`：Graph 比值 265.208/124.598 = 2.1285x；该配置的 eager
+也全部稳定，273.486/135.265 = 2.0219x。不能把完整模型的负面结果简单归因于
+未使用 CUDA Graph。v4_late/gps4 相比同轮 v4 明显改善，但增加 gps 并未继续
+改善性能；离线布局/行 tile 的价值由本轮配置比较体现，不等于 profiler 归因。
+
+| Linear | Packed us | Dense BF16 us | Dense/packed |
+|---|---:|---:|---:|
+| self_attn.q_proj | 15.389 | 22.739 | 1.478x |
+| self_attn.k_proj | 11.928 | 8.924 | 0.748x |
+| self_attn.v_proj | 11.994 | 8.668 | 0.723x |
+| self_attn.o_proj | 15.414 | 21.435 | 1.391x |
+| mlp.gate_proj | 22.666 | 67.309 | 2.970x |
+| mlp.up_proj | 22.969 | 67.464 | 2.937x |
+| mlp.down_proj | 24.237 | 68.669 | 2.833x |
+
+结构 FP64 NRMSE 最大约 0.001729；仍按原 BF16 容差验收。k/v_proj 仍慢于
+同轮 dense，MLP 各项约 2.8–3.0x；不能将该形状/层的结果外推为全部 252 Linears。
+
+### block 与完整模型
+
+block 数值、repeat 与七条 packed 路由通过，状态 `completed_unstable`。
+原始 BF16 / decoded BF16 / packed 中位数为 999.011 / 999.273 / 1080.480 us；
+相对极差分别 11.34% / 13.40% / 9.12%。前两者超过 10%，不发布 block 加速比。
+按用户要求继续完整模型，保留显式 `--allow-unstable-block-timing`；其他 gate 不变。
+
+完整模型任务 `m1-inner-full` 退出 0；全模型阶段 08:12:16Z–08:13:56Z，约 100 秒，
+含预检/加载/warmup/测量。状态 `completed_with_numerical_differences`。全部三条
+arm、两个 prompt 的 wall/device decode timing 稳定；最大相对极差约 7.70%。
+
+| Prompt | Original BF16 ms / tok/s | Packed ms / tok/s | Original/packed |
+|---|---:|---:|---:|
+| 0 | 932.200 / 34.327 | 1062.993 / 30.104 | 0.876958x |
+| 1 | 961.586 / 33.278 | 1109.434 / 28.844 | 0.866736x |
+
+**没有完整模型加速**：延迟分别增加 14.03% / 15.38%。相对 decoded BF16 辅助
+基线也只有 0.9101x / 0.8922x。孤立算子 eager 和 Graph 均改善，但当前完整模型
+执行未保留该收益，具体原因未定位；不能宣称是框架、缓存或某种 stall 主导。
+完整模型 CUDA events 包围整个 decode 序列，并非纯 kernel 时间求和，wall 与
+device 接近也不能排除 host 发射间隙。未恢复用户取消的 profiler 实验。
+
+所有六条 packed trace 均有 252 条路由，每条 prefill dense fallback 1 次、
+decode packed 32 次；相同 fed tokens、KV 长度 43/42、每 prompt 三次 logits
+hash 一致。相对 decoded BF16，NRMSE 0.01215266 / 0.01192369，max logprob
+error 0.390518 / 0.481415；prediction 差异 1/33 / 0/33。按 report-only 保留，
+不宣称数值等价。原始/packed 常驻 allocated 15.266 / 4.924 GiB，packed 运行
+峰值约 5.818 GiB；离线 byte planes 未增加一份常驻原符号布局。
+
+### 备份与收尾
+
+结果：`/workspace/results/m1-pcie-20260915-inner/`；任务日志：
+`/workspace/jobs/m1-pcie-20260915-inner/`。本地私有备份：
+`server_results/runpod_m1_inner_pcie_2026-09-15/`，未提交原始日志/JSON/权重。
+本地重核了 candidate result/log hashes、summary、source/environment/block
+绑定、完整模型原始计时中位数/极差/速度比、路由、输入、KV 与重复一致性。
+
+- Full-model JSON SHA256：`b2c8eacef62b04b2d170a8c9a9f2ce33c10ee03190a3081fe691eb95c594a206`。
+- 小型证据归档 SHA256：`28d4476d8bb9183032725788b75e4b1eb450293923f51e6c34f197100de82647`，本地与远端一致。
+- 最后检查无 GPU compute 进程、无 tmux 会话；未执行服务器关机或删除持久卷。
