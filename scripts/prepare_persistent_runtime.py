@@ -24,8 +24,8 @@ def fingerprint(identity):
     return hashlib.sha256(json.dumps(identity, sort_keys=True).encode()).hexdigest()[:24]
 
 
-def command(args, **kwargs):
-    return subprocess.check_output(args, text=True, timeout=30, **kwargs).strip()
+def command(args, *, timeout=30, **kwargs):
+    return subprocess.check_output(args, text=True, timeout=timeout, **kwargs).strip()
 
 
 def main():
@@ -33,6 +33,8 @@ def main():
     p.add_argument('--persist-root', type=Path, required=True)
     p.add_argument('--output-dir', type=Path, required=True)
     p.add_argument('--image-reference', default='runpod-default-unresolved')
+    p.add_argument('--resume-incomplete', action='store_true',
+                   help='Validate an interrupted installation without reinstalling; all checks must pass')
     args = p.parse_args()
     if platform.system() != 'Linux' or sys.prefix != sys.base_prefix:
         raise RuntimeError('Run on Linux with the template base Python, outside any venv')
@@ -67,9 +69,10 @@ def main():
     args.output_dir.mkdir(parents=True, exist_ok=False)
     start = time.monotonic()
     # Exclusive creation prevents two launchers mutating the same environment.
-    reused = bundle.exists()
-    if reused:
-        if not marker.exists() or json.loads(marker.read_text())['fingerprint'] != key:
+    exists = bundle.exists()
+    reused = marker.exists()
+    if exists:
+        if (not reused and not args.resume_incomplete) or (reused and json.loads(marker.read_text())['fingerprint'] != key):
             raise RuntimeError(f'Incomplete or mismatched environment: {bundle}; inspect before retrying')
     else:
         bundle.mkdir(parents=True, exist_ok=False)
@@ -87,7 +90,7 @@ def main():
              'assert all(m.version(n)==v for n,v in pairs), "installed lock versions drifted"', str(lock)])
     import_start = time.monotonic()
     command([py,'-c','import torch,transformers,safetensors,fluxbin_style; '
-             'assert torch.cuda.is_available(); print(torch.__version__)'])
+             'assert torch.cuda.is_available(); print(torch.__version__)'], timeout=120)
     import_seconds = time.monotonic()-import_start
     if not reused:
         marker.write_text(json.dumps({'fingerprint':key,'identity':identity}, indent=2)+'\n')
@@ -103,6 +106,7 @@ def main():
     (args.output_dir/'runtime.sh').write_text('\n'.join(lines)+'\n')
     report = {'status':'runtime_imports_passed_gpu_kernel_validation_still_required',
               'fingerprint':key, 'reused':reused, 'identity':identity,
+              'resumed_incomplete':exists and not reused,
               'venv':str(envdir), 'elapsed_seconds':time.monotonic()-start,
               'import_seconds':import_seconds,
               'limits':'Fixed path/base-runtime reuse only; no binary/content integrity guarantee or GPU performance claim'}
