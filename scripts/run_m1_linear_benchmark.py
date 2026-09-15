@@ -38,7 +38,7 @@ def main():
         raise ValueError('environment torch/CUDA drift')
     if env['torch']['devices'][0]['name']!=torch.cuda.get_device_name(0):raise ValueError('GPU drift')
     source={str(f.relative_to(ROOT)):sha256_file(f) for f in
-            sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu')}
+            sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu','.cuh')}
     if env['source_sha256']!=source:raise ValueError('source changed since environment capture')
     tensors,entry=load_accepted_layer(args.artifact_root,args.layer)
     torch.manual_seed(20260914);torch.cuda.manual_seed_all(20260914)
@@ -51,9 +51,9 @@ def main():
             'runner_sha256':sha256_file(Path(__file__)), 'settings':{k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},
             'inputs':'seeded synthetic activations on real step400 weights',
             'baseline':'same-input dense BF16/FP16 matmul using decoded step400 weights',
-            'timing_scope':'preallocated outputs; packed compute plus split reduction; v4 includes activation transform, v3 single split directly stores output; excludes conversion/JIT/load',
-            'v1_comparison_policy':'diagnostic_only' if args.kernel in ('v3','v4') else 'exact',
-            'numerical_reference':REFERENCE if args.kernel=='v4' else 'combined_weight_activation_dtype_v1',
+            'timing_scope':'preallocated outputs; packed compute plus split reduction; v4 includes activation transform; v5 includes LUT construction and split reduction; v3/v5 single split directly stores output; excludes conversion/JIT/load',
+            'v1_comparison_policy':'diagnostic_only' if args.kernel in ('v3','v4','v5') else 'exact',
+            'numerical_reference':REFERENCE if args.kernel in ('v4','v5') else 'combined_weight_activation_dtype_v1',
             'next_stage':'not_launched','cells':[]}
     try:
         load_extension(args.kernel)
@@ -79,7 +79,7 @@ def main():
             cell={'module':name,'shape':[o,k],'conversion':record,'checks':[]}
             def check_output():
                 legacy=numerical_gate(y,reference)
-                if args.kernel!='v4':return legacy
+                if args.kernel not in ('v4','v5'):return legacy
                 gate=structural_gate(y,structural_reference(x,layout))
                 gate['legacy_dense_bf16']=legacy
                 return gate
@@ -96,7 +96,7 @@ def main():
             if args.kernel!='v1':
                 baseline_v1();gate['v1_exact']=bool(torch.equal(y,y_v1))
             cell['checks'].append(gate)
-            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel in ('v3','v4') or c.get('v1_exact',True)) for c in cell['checks'])
+            cell['correctness_passed']=all(c['passed'] and c.get('repeat_exact',True) and (args.kernel in ('v3','v4','v5') or c.get('v1_exact',True)) for c in cell['checks'])
             report['cells'].append(cell)
             if not cell['correctness_passed']:raise RuntimeError(f'numerical gate failed: {name}')
             # Fixed random timing input, not the alternating diagnostic input.
@@ -116,7 +116,7 @@ def main():
                 functions={key:graph.replay for key,graph in zip(functions,graphs)}
                 for fn in functions.values():fn()
                 if not check_output()['passed']:raise RuntimeError('graph replay numerical gate failed')
-                if args.kernel not in ('v1','v3','v4') and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
+                if args.kernel not in ('v1','v3','v4','v5') and not torch.equal(y,y_v1):raise RuntimeError('graph v1/v2 equality failed')
             cell['timings']=paired_cuda_timing(functions,warmup=args.warmup,repeats=args.repeats,rounds=args.rounds)
             stable=all(t['stable'] for t in cell['timings'].values())
             cell['speedup']=cell['timings']['dense']['median_us']/cell['timings']['packed']['median_us'] if stable else None

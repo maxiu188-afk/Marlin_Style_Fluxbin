@@ -1,5 +1,11 @@
 # Marlin-Style FluxBin current handoff
 
+Local v5 LUT-A16 preparation (2026-09-15): eight-sign FP32 lookup tables,
+row-owned accumulation, fused table construction, no A8 quantization. Linear,
+block and full-model entry points are connected; vLLM remains unconnected.
+Local suite: 97 passed, 5 CUDA skips. NVCC, GPU correctness and performance are
+pending; v4 remains the latest GPU evidence. See [v5 run commands](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md#v5-lut-a16-本地准备2026-09-15).
+
 Latest v4 GPU result (2026-09-15): A100 SXM4, 98 tests passed; candidate numerical
 checks 84/84, stable timing cells 80/84. Selected v4/gps4 did not beat v3 or dense.
 Full-model report-only completed in 119s with both prompts stable: 0.83063x /

@@ -25,4 +25,4 @@ license-files = ["licenses/Marlin-LICENSE"]
 where = ["src"]
 
 [tool.setuptools.package-data]
-fluxbin_style = ["csrc/*.cu"]
+fluxbin_style = ["csrc/*.cu", "csrc/*.cuh"]

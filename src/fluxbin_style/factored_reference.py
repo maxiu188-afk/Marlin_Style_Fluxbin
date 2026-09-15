@@ -1,4 +1,4 @@
-"""Independent high-precision structural reference for v4, never the timed baseline."""
+"""Independent high-precision structural reference for v4/v5, never the timed baseline."""
 import torch
 from .acceleration_checks import numerical_gate
 

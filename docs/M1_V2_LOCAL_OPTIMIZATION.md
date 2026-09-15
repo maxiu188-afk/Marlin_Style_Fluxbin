@@ -256,3 +256,34 @@ v4 gps1/2/4/8/16，eager/Graph 共 12 trial。按原 runbook 的 --config 入口
 2026-09-15 GPU 更新：v4 已编译，98 项测试通过。外提版实测仍慢于 v3/dense，
 完整模型速度为 original BF16 的 0.83063× / 0.83143×；详见
 [完整结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。此前待验证描述属于本地实现阶段。
+
+
+## v5 LUT-A16：2026-09-15 本地实现
+
+`src/fluxbin_style/csrc/m1_v5.cu` 参考 QBB 的 eight-sign LUT 和线程持有输出行的
+计算方式；未引入 A8。v4 的 FP32 分解内积合同及结构 FP64 参照继续使用，
+但 LUT 递推改变 FP32 求和顺序，不要求与 v4 bit-match，也不宣称精确实数运算。
+原始 BF16 仍是全模型性能主基线；旧 decoded BF16 数值误差单独保留。
+
+- 256 threads / CTA，1024 输出行 tile，每线程独立处理 4 行。
+- 两个 base 的 column scales 不同，分别建 16 张 256-entry FP32 表；
+  sparse 两个 base 各一张表。共 34,816 B shared memory。
+- 每张表由一个 warp 建立：每 lane 先计算一个五位 seed 对应的完整八项和，
+  再通过上三位的增量递推生成其余条目。读取依赖均在同一 lane 内。
+- 每 8 个权重提取两个符号 pattern，分别查表；每行每组 32 次 global-base
+  查表、2 次 sparse 查表，然后 4 个 row-scale FMA。不再逐权重重建或 warp 归约。
+- 建表与计算融合；每组建表后、读取结束后各一次 CTA barrier。多 split 两次
+  launch（主计算 + 固定顺序 FP32 reduction），单 split 一次，最终才舍入输出。
+- 保持原 packed payload/layout，正常转换生成的 code buffers 满足向量读取对齐；
+  ABI 拒绝不满足 codes 16-byte / sparse 2-byte 对齐的外部视图。
+  workspace 为 `[ceil(G/gps), O]` FP32，所有位置每次覆写，无内部动态分配。
+
+这版仍有建表、shared 查表冲突以及小形状下 CTA 数不足的潜在成本，尚未测量。
+1024 行 tile 和固定 split 候选只是待验证实现，不能据此承诺超过 BF16。
+
+本地在 macOS arm64 用实际 `lut8.cuh` 编译 C++ 检查：穷举 65,536 个双 base
+交织符号编码；100 组输入的全部 256 个 LUT 项与独立 FP64 sign-dot 对照通过。
+完整测试 102 项：97 通过、5 CUDA 跳过。新 CUDA 测试覆盖 FP16/BF16、one-hot/
+随机输入、1024 行边界、K split 尾部、NaN workspace 覆写、非默认 stream 与 Graph。
+CUDA 测试已准备但未执行；没有连接服务器或生成新的性能证据。
+新增 `.cuh` 纳入 wheel 和环境/Linear/block/full-model 源码 hash 链。

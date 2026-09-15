@@ -273,3 +273,44 @@ v4 全模型启动策略补充：若 block 数值、重复、路径、来源检�
 不稳定，用户已要求仍跑完整模型，可显式追加 `--allow-unstable-block-timing`。
 原 block JSON/status/hash 不改，完整模型本身的 timing gate 不放宽。
 默认不传参数仍要求稳定 block；该选项不允许数值失败或缺失/非有限样本。
+
+
+## v5 LUT-A16 本地准备（2026-09-15）
+
+使用 `configs/acceleration/m1_lut_candidates_v1.json`：v4/gps4 对照，v5 的
+`groups_per_split=1/2/4/8/32` 五个候选。固定 BF16、layer 0 七项、eager/Graph、
+原始 warmup/repeats/rounds 不变。建表和 reduction 均计入 packed 时间。
+此次只做本地实现，没有启动 GPU 实验；以下在服务器已激活项目环境后执行。
+
+先重新记录环境并通过 `--build-smoke`（现在包含 v5 CUDA 测试）。新增 LUT header
+也在 source hash 中，旧环境记录不可直接复用。上文环境变量定义仍适用。
+
+```bash
+python scripts/run_m1_candidate_batch.py \
+  --config configs/acceleration/m1_lut_candidates_v1.json \
+  --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
+  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --output-dir "$FLUXBIN_RUN_ROOT/lut-candidates"
+python scripts/summarize_m1_candidates.py \
+  --config configs/acceleration/m1_lut_candidates_v1.json \
+  --batch-dir "$FLUXBIN_RUN_ROOT/lut-candidates" \
+  --output-dir "$FLUXBIN_RUN_ROOT/lut-summary"
+```
+
+审阅数值和稳定性后，将合格 v5 Linear JSON 设置为 `FLUXBIN_SELECTED_LINEAR_JSON`，
+使用上文 block 命令。block 和 full-model 自动继承 v5/split，无需修改代码。
+按用户已有要求，无论 block 是否加速都运行完整模型；若只是 block timing
+不稳定，使用已有显式 override。数值/路由/来源失败不得用该开关跳过。
+完整模型仍用原始 BF16 比速度，旧 decoded BF16 数值差异 report-only：
+
+```bash
+python scripts/run_qwen3_8b_full_m1_trial.py \
+  --snapshot-root "$FLUXBIN_SNAPSHOT_ROOT" --artifact-root "$FLUXBIN_ARTIFACT_ROOT" \
+  --environment "$FLUXBIN_NEW_ENVIRONMENT_JSON" \
+  --block-result "$FLUXBIN_RUN_ROOT/block.json" \
+  --numerical-policy report-only --allow-unstable-block-timing \
+  --output "$FLUXBIN_RUN_ROOT/full-model-lut-reportonly.json"
+```
+
+服务器执行使用持久会话，保留日志、退出码和原始 JSON；本地测试通过不等于
+CUDA 正确性或性能验收。vLLM 接口可选择 v5，但不连接 serving 框架。

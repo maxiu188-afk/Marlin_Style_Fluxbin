@@ -43,7 +43,7 @@ class M1Backend:
         if kernel not in KERNELS:
             raise ValueError(f"kernel must be one of {KERNELS}")
         self.kernel=kernel
-        if kernel=='v4':self.contract=LinearContract(arithmetic='factored_fp32_v1')
+        if kernel in ('v4','v5'):self.contract=LinearContract(arithmetic='factored_fp32_v1')
         if not isinstance(groups_per_split,int) or not 1<=groups_per_split<=1024:
             raise ValueError('groups_per_split must be 1..1024')
         self.groups_per_split=groups_per_split

@@ -84,7 +84,7 @@ def main():
     if args.output.exists():raise FileExistsError(args.output)
     if not torch.cuda.is_available():raise RuntimeError('NVIDIA CUDA required; no CPU/MPS substitution')
     cfg=json.loads(PROTOCOL.read_text());env=json.loads(args.environment.read_text())
-    sources={str(f.relative_to(ROOT)):sha256_file(f) for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu')}
+    sources={str(f.relative_to(ROOT)):sha256_file(f) for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu','.cuh')}
     if env['status']!='ready_for_gpu_trial' or env['source_sha256']!=sources:
         raise ValueError('capture a fresh matching environment/source record')
     if (env['torch']['version']!=torch.__version__ or env['torch']['cuda_runtime']!=torch.version.cuda
@@ -117,8 +117,8 @@ def main():
             'block_timing_policy':'allow_unstable' if args.allow_unstable_block_timing else 'strict',
             'block_status':block['status'],
             'manifest_sha256':MANIFEST_SHA,'payloads':payload_records,'kernel':kernel,'groups_per_split':gps,
-            'arithmetic':'factored_fp32_v1' if kernel=='v4' else 'combined_weight_activation_dtype_v1',
-            'numerical_reference':'legacy decoded BF16 full model; v4 structural FP64 reference is Linear-only',
+            'arithmetic':'factored_fp32_v1' if kernel in ('v4','v5') else 'combined_weight_activation_dtype_v1',
+            'numerical_reference':'legacy decoded BF16 full model; factored structural FP64 reference is Linear-only',
             'prompt_token_sha256':[tensor_sha256(x) for x in prompts],
             'scope':'HF eager, dynamic KV cache, batch1; identical forced continuation from decoded step400',
             'prefill_policy':'packed arm uses explicit on-demand dense reconstruction; included in prefill time',

@@ -39,7 +39,7 @@ def main():
         raise ValueError('all seven stable, correct Linear cells required')
     groups_per_split=prior['settings']['groups_per_split']
     env=json.loads(args.environment.read_text())
-    sources={str(f.relative_to(ROOT)):sha256_file(f) for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu')}
+    sources={str(f.relative_to(ROOT)):sha256_file(f) for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu','.cuh')}
     if env['status']!='ready_for_gpu_trial' or env['source_sha256']!=sources or prior['source_sha256']!=sources:
         raise ValueError('environment/Linear source drift')
     if prior['environment_sha256']!=sha256_file(args.environment):raise ValueError('Linear environment drift')
@@ -87,7 +87,7 @@ def main():
             'runner_sha256':sha256_file(Path(__file__)), 'next_stage':'not_launched',
             'scope':'synthetic hidden inputs, real weights; sequence=1, no KV prefix; eager only',
             'groups_per_split':groups_per_split,'kernel':kernel,
-            'arithmetic':'factored_fp32_v1' if kernel=='v4' else 'combined_weight_activation_dtype_v1',
+            'arithmetic':'factored_fp32_v1' if kernel in ('v4','v5') else 'combined_weight_activation_dtype_v1',
             'numerical_reference':'legacy decoded BF16 block (compatibility check, not structural FP64)',
             'timing_settings':{'warmup':20,'repeats':100,'rounds':7},'checks':[]}
     try:
