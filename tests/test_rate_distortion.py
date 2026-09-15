@@ -105,6 +105,23 @@ class RateDistortionTests(unittest.TestCase):
             else:
                 os.environ["GPTQ_TORCH_TRITON_DEQUANT"] = previous
 
+    def test_gptq_save_uses_supported_whole_model_sharding(self):
+        class FakeModel:
+            def __init__(self):
+                self.calls = []
+
+            def save(self, *args, **kwargs):
+                self.calls.append((args, kwargs))
+
+        model = FakeModel()
+        gptq_runner.save_raw_artifact(model, Path("raw"), {"experiment_id": "test"})
+        self.assertEqual(len(model.calls), 1)
+        args, kwargs = model.calls[0]
+        self.assertEqual(args, ("raw",))
+        self.assertEqual(kwargs["max_shard_size"], "4GB")
+        self.assertEqual(kwargs["safetensors_metadata"], {"experiment_id": "test"})
+        self.assertNotIn("split_by", kwargs)
+
     def test_summary_has_requested_deltas_and_no_automatic_decision(self):
         arms = {
             name: {

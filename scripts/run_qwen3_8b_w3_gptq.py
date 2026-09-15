@@ -270,6 +270,20 @@ def force_eager_torch_dequantizer() -> None:
     os.environ["GPTQ_TORCH_TRITON_DEQUANT"] = "0"
 
 
+def save_raw_artifact(model: Any, raw_dir: Path, metadata: dict[str, str]) -> None:
+    """Save with GPTQModel's supported whole-model sharding mode.
+
+    GPTQModel 7.4.0 temporarily disables its experimental layer split even
+    though the exception text still advertises ``split_by='layer'``.  Omitting
+    that argument selects the supported whole-model streaming writer.
+    """
+    model.save(
+        str(raw_dir),
+        max_shard_size="4GB",
+        safetensors_metadata=metadata,
+    )
+
+
 @torch.no_grad()
 def decode_artifact(config: dict[str, Any], raw_dir: Path, decoded_dir: Path) -> list[dict[str, Any]]:
     # TorchLinear otherwise enables its optional Triton dequantizer when Triton
@@ -412,11 +426,10 @@ def main() -> None:
         batch_size=1,
         backend=BACKEND.GPTQ_TORCH,
     )
-    model.save(
-        str(raw_dir),
-        max_shard_size="4GB",
-        split_by="layer",
-        safetensors_metadata={
+    save_raw_artifact(
+        model,
+        raw_dir,
+        {
             "experiment_id": config["experiment_id"],
             "model_revision": config["model"]["revision"],
             "calibration_token_sha256": config["calibration"]["token_tensor_sha256"],
