@@ -1,0 +1,7 @@
+# Resolve this in a separate quantization-only venv on the target A100.
+# The formal PPL run continues to use /opt/fluxbin-venv and requirements.lock.
+gptqmodel==7.4.0
+transformers==5.14.1
+datasets==5.0.0
+safetensors==0.8.0
+numpy==2.2.6

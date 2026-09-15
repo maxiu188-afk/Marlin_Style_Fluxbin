@@ -1,0 +1,154 @@
+{
+  "schema_version": 1,
+  "experiment_id": "qwen3-8b-w3-rate-distortion-v1",
+  "scope": "Uniform symmetric GPTQ W3 g128 versus current distilled QBB and QBB FP16-scale storage; dense-BF16 PPL only",
+  "seed": 20260902,
+  "model": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "model_type": "qwen3",
+    "hidden_size": 4096,
+    "intermediate_size": 12288,
+    "num_attention_heads": 32,
+    "num_key_value_heads": 8,
+    "head_dim": 128,
+    "checkpoint_dtype": "torch.bfloat16",
+    "evaluation_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 36,
+    "expected_tensor_count": 252,
+    "expected_parameter_count": 6945767424,
+    "model_preflight_files": {
+      "config.json": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+      "model-00001-of-00005.safetensors": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+      "model-00002-of-00005.safetensors": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+      "model-00003-of-00005.safetensors": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+      "model-00004-of-00005.safetensors": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+      "model-00005-of-00005.safetensors": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+      "model.safetensors.index.json": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc",
+      "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    }
+  },
+  "calibration": {
+    "artifact_id": "qwen3-8b-c4-calibration-256x2048-v1",
+    "repo_id": "allenai/c4",
+    "revision": "1588ec454efa1a09f29cd18ddd04fe05fc8653a2",
+    "sample_count": 256,
+    "sequence_length": 2048,
+    "batch_size": 1,
+    "manifest_sha256": "fe554afbd625b7746b0295d3a269825fca869bb7a7c159aaf469f1b122f387f9",
+    "token_file_sha256": "a31bfd489dccd7f4ea2cdc04e245f4d47229ca0fe788c4690d061a17fe47e2e2",
+    "token_tensor_sha256": "f504da4f8b7fa56aa0d7c8971556c52eaee1395619a7fc4b10c2b4c04bb28599",
+    "reuse_exact_token_ids": true,
+    "sorting": null,
+    "concatenation": null
+  },
+  "gptq": {
+    "library": "gptqmodel",
+    "version": "7.4.0",
+    "source_sdist_sha256": "3827e7b52572caa09f0645bb0bd88b412f361f3a292278be6890f1ea4c34eeb3",
+    "bits": 3,
+    "group_size": 128,
+    "sym": true,
+    "desc_act": true,
+    "act_group_aware": false,
+    "static_groups": false,
+    "true_sequential": true,
+    "lm_head": false,
+    "mse": 0.0,
+    "damp_percent": 0.01,
+    "damp_auto_increment": 0.01,
+    "fallback": null,
+    "format": "gptq",
+    "pack_dtype": "torch.int32",
+    "pack_impl": "cpu",
+    "quantization_backend": "gptq_torch",
+    "decode_backend": "gptq_torch",
+    "quantize_embedding": false,
+    "expected_quantized_modules": 252,
+    "post_save_reload_required": true,
+    "decoded_dtype": "torch.bfloat16"
+  },
+  "qbb": {
+    "artifact_id": "qwen3-8b-hybrid-distilled-step400-v1",
+    "payload_format": "fluxbin-two-base-interleaved-2bit-v1",
+    "group_size": 128,
+    "columns_per_group": 8,
+    "accepted_result_sha256": "e7610e122bef9df35b3a70749fd2e7f388bd752d594c69e60da796c73eb937b5",
+    "accepted_acceptance_sha256": "0eb8970026f343403aa409c1bb06e16dc52fffe1381598ab8760e578fabffdc5",
+    "current_scale_dtype": "torch.float32",
+    "deployment_scale_dtype": "torch.float16",
+    "cast_scale_suffixes": [
+      "global_row_scales",
+      "global_column_scales",
+      "refinement_row_scales",
+      "refinement_column_scales"
+    ],
+    "fixed_suffixes": [
+      "global_sign_codes",
+      "refinement_indices",
+      "refinement_sign_codes"
+    ],
+    "include_legacy_lookup_in_deployment_rate": false
+  },
+  "evaluation": {
+    "arms": [
+      "bf16",
+      "qbb_current",
+      "gptq_w3_g128_sym",
+      "qbb_fp16_scales"
+    ],
+    "accepted_protocol": {
+      "id": "qbb-new-wt2-2048-qwen3-8b-v1",
+      "protocol_manifest_sha256": "8b61cbeaba8809b94bc6b7568cb45ede0d941d046c812f57f3156163e42069ae",
+      "token_artifact_sha256": "252938697260d7f7241f26a05b9822c1a2fd5e9ae0168a87e0d5345d4a111ee0",
+      "token_artifact_tensor_sha256": "d5f7bbfcee9855ebfeddf25bb0c7e483220d6bdb6631923c7bebf2002d61ca59",
+      "token_artifact_dtype": "torch.int32",
+      "sequence_length": 2048,
+      "token_count": 299078,
+      "tokens_sha256": "c7a8c41e587561b93c8dd0b17224e6f20aa4270c9dab62151357cca88651ad9e",
+      "tokenizer_files_sha256": {
+        "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+        "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+        "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+        "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+      },
+      "full_block_count": 146,
+      "blocks_sha256": "8c5206620a0cf76d8cdf5fb6332b2356f91cebe957ec026a2524d7069dd3ccec",
+      "scored_transition_count": 298862
+    },
+    "accepted_reproduction_reference": {
+      "result_sha256": "1b1b4353b200a0a0daa357c3e12d3a35544e6fc2f9d16c427e958644baf750ef",
+      "bf16_perplexity": 9.724944980689296,
+      "qbb_current_perplexity": 13.169788494766266,
+      "absolute_tolerance": 0.000001
+    },
+    "attention_implementation": "sdpa",
+    "use_cache": false,
+    "batch_size": 1,
+    "logit_chunk_tokens": 128,
+    "tf32_allowed": false,
+    "dense_decoded_dtype": "torch.bfloat16"
+  },
+  "execution": {
+    "quality_device_names": [
+      "NVIDIA A100 80GB PCIe",
+      "NVIDIA A100-SXM4-80GB"
+    ],
+    "compute_capability": [8, 0],
+    "torch": "2.8.0+cu128",
+    "transformers": "5.14.1",
+    "datasets": "5.0.0",
+    "safetensors": "0.8.0"
+  },
+  "policy": {
+    "no_cuda_kernel": true,
+    "no_backend_change": true,
+    "no_speed_benchmark": true,
+    "no_qbb_training": true,
+    "no_qbb_distillation": true,
+    "no_gptq_configuration_search": true,
+    "manual_effect_size_decision": true,
+    "optional_asymmetric_arm_enabled": false
+  }
+}
