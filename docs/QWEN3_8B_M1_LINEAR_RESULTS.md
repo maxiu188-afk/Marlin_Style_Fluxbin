@@ -1,5 +1,59 @@
 # Qwen3-8B 首轮 M=1 Linear 结果
 
+## 2026-09-15 A100 SXM4：prepared v2.1 全模型 Graph 达到约 1.38x
+
+运行提交 `3c996ab`；kernel 仍为 `v5_p1024/gps1`，本轮未修改 CUDA inner compute。
+服务器 `213.173.102.5:11028`，A100 SXM4 80GB；PyTorch 2.8.0+cu128、CUDA 12.8、
+Transformers 5.14.1。持久卷及模型/编译缓存复用，容器本地 venv 恢复约 40 秒；
+113/113 测试通过（74.539 秒，无跳过），修正 runner 后专项 7/7 再次通过。
+
+v2.1 保持真实 prompt、step400、batch1、32 个固定 continuation token 和原始 BF16 主基线。
+StaticCache 真实预填充，每轮恢复前缀，再执行逐步增长的 32 步；三模型同时驻留，
+交替 arm/mode 顺序，8 次完整预热、10 次测量。Graph 包含 embedding、全部 36 层、
+LM head、argmax，以及 packed LUT 构建/归约。prefill/reset/capture/CPU 审计不计入 decode。
+这不是固定位置单 token 重放，不是自由生成或 vLLM 服务吞吐。
+
+| 模式 | prompt | 原始 BF16 / 32 token (ms) | decoded BF16 (ms) | packed (ms) | 相对原始 BF16 | 稳定性 |
+|---|---:|---:|---:|---:|---:|---|
+| prepared eager | 0 | 1195.982 | 1159.893 | 1108.078 | 不发布 | 三路径均超过 5% |
+| prepared eager | 1 | 1196.891 | 1160.161 | 1116.089 | 不发布 | 三路径均超过 5% |
+| sequence Graph | 0 | 467.513 | 466.068 | 338.539 | **1.380972x** | 全部稳定 |
+| sequence Graph | 1 | 467.919 | 467.736 | 338.269 | **1.383276x** | 全部稳定 |
+
+Graph 原始/packed 分别为 68.447/94.524 与 68.388/94.599 token/s；延迟降低约 27.6–27.7%。
+Graph 对 decoded 的速度为 1.376703x / 1.382735x。Graph 各 arm/prompt wall/device
+计时跨度均 <0.12%；eager 跨度 6.51–10.11%，所以整体 JSON 为 `completed_unstable`，
+不能把整体标记为全面通过，但两组 Graph 比较都独立通过稳定性门槛。
+
+6/6 arm/prompt 的 checked wrapper 与 prepared wrapper 在相同静态 KV 下 logits hash
+精确一致；Graph 与 eager、全部正式重复也要求精确一致。packed 两组审计和 capture
+均覆盖 252 个 Linear，各调用 32 次，dense fallback=0；所有喂入 token、KV 长度检查通过。
+Graph capture 路由计数不冒充 replay 计数；重放由完整输出检查验证。
+
+跨语义数值仍 report-only：packed/decoded 静态路径 NRMSE 为 0.0125357 / 0.0129711，
+max logprob 差 0.437393 / 0.400623，greedy 预测分别不同/相同。三条路径的动态/静态
+注意力比较均未通过旧数值阈值（NRMSE 0.01167–0.01359），不能宣称动态/静态等价。
+首个 v2 尝试在 decoded 动态/静态门槛处退出 1，未计时；failed JSON 完整保留。
+v2.1 将该差异单列，使用同一静态注意力下的原 checked wrapper 作为精确参照，
+并未放宽包装与 Graph 的逐位一致要求。
+
+三模型/缓存/Graph 的总 allocated 为 35.8595 GiB，setup peak 为 45.8899 GiB；
+不是单 packed 模型的驻留/峰值。正式 retry 任务整体约 350 秒（含专项测试、环境记录、
+加载、审计、capture、预热和测量），退出 0。GPU 无剩余实验进程。
+
+本轮在同一静态协议下，Graph 将 packed 全序列中位延迟从约 1.11 秒降至 0.338 秒；
+eager 本身不稳定，不发布它与 Graph 的正式倍率。结果支持执行路径会显著稀释 kernel
+优势；不能将上一轮 PCIe/v1 到 SXM4/v2.1 的差异全部归因为 host 开销，因为 GPU、KV、
+驻留策略和计时协议都改变了。未接入 A8 或 vLLM。
+
+证据：
+
+- 服务器结果：`/workspace/results/m1-sxm4-20260915-prepared/`，作业同名目录在 `/workspace/jobs/`。
+- 私有本地备份：`server_results/runpod_prepared_sxm4_2026-09-15/`；120 次正式测量、各 10 样本的中位数/跨度、源文件 hash、包装/Graph/路由均已本地核验。
+- `full-model-prepared-v21.json` SHA256：`a1328c4c3a2b6ebe6ab9cd101c0a4fc5c9a02a8ebdaa15431d7e2e6f399fca9b`。
+- 证据压缩包 SHA256：`653b1fd9e11a3d9478e0083103174daaf56d4867ec95d21f7cabf04ad13bfdb8`。
+
+
 ## 内积实现与现有证据（2026-09-15）
 
 不能直接照搬 Marlin 的便宜 INT4 解包，但可参考流水、布局和调度；v3 实际

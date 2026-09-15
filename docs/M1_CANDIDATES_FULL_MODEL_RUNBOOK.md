@@ -397,3 +397,8 @@ BF16 的动态/静态比较处停止（NRMSE 0.0121237，max logprob 0.491539，
 差异独立报告，并新增同一 StaticCache/mask 下 checked wrapper 的实测参照：prepared
 包装必须与该参照逐位一致，Graph/repeat 同样逐位一致。此变更不放宽 wrapper 或
 Graph 的正确性门槛，也不将动态/静态输出宣称等价；完整模型实测仍待完成。
+
+本轮 v2.1 已完成：SXM4 Graph 对原始 BF16 为 1.381x/1.383x，两组稳定；eager
+不稳定，整体 `completed_unstable`。113/113 GPU 测试通过，专项 7/7 复验通过。
+完整证据与数值边界见 `QWEN3_8B_M1_LINEAR_RESULTS.md` 最新节；本节早期“待验证”
+状态保留为开发历史。新运行必须使用新输出目录，避免覆盖本轮证据。

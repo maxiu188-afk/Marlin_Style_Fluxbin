@@ -1,5 +1,14 @@
 # Marlin-Style FluxBin current handoff
 
+Latest GPU result (2026-09-15, A100 SXM4 80GB, prepared v2.1): full-model
+32-step sequence Graph achieved **1.381x / 1.383x original BF16 speed**, with
+both prompts stable (all Graph timing spans <0.12%). Eager timing was unstable
+at the 5% threshold, so aggregate status is `completed_unstable`. All 113 GPU
+tests passed; checked/prepared wrappers and Graph outputs were exact in all six
+arm/prompt cells. Dynamic/static attention and packed/decoded numerical differences
+remain report-only. Evidence downloaded/hash-verified; GPU processes exited.
+See [full-model results](QWEN3_8B_M1_LINEAR_RESULTS.md). Earlier pending statements below are historical.
+
 Local preparation (2026-09-15): prepared full-model v2 adds bound packed Linear buffers, real-prefix static KV, interleaved 8-warmup/10-repeat timing and a complete 32-step CUDA Graph comparison. Original BF16 remains the primary baseline. CUDA validation and performance are pending; historical v1 results are unchanged. See [protocol and launch commands](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md).
 
 Latest GPU result (2026-09-15, A100 80GB PCIe): 106 tests passed, 168/168

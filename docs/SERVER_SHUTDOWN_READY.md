@@ -1,5 +1,11 @@
 # 服务器关机准备与恢复记录
 
+2026-09-15 prepared SXM4 trial on `213.173.102.5:11028`: completed; retry exit 0,
+Graph full-model speed 1.381x/1.383x original BF16 (stable), eager unstable.
+Both attempts, environment/tests/job logs and final JSON were downloaded and hash-verified.
+No GPU experiment processes remain. Compute instance may be stopped; retain network volume
+`34au39ljvf` and its models/cache/results. See `QWEN3_8B_M1_LINEAR_RESULTS.md`.
+
 ## 2026-09-15：inner compute PCIe 实验已收尾
 
 106 项测试和 24 个候选 trial 完成；v5_p1024/gps1 完整模型已结束，未加速。
