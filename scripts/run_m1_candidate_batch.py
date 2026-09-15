@@ -24,6 +24,12 @@ def interrupted(signum, frame):
     raise KeyboardInterrupt(f'interrupted by signal {signum}')
 
 
+def validate_batch_config(cfg):
+    # Up to 12 fixed configurations (24 eager/Graph trials); timing unchanged.
+    if not 1<=len(cfg['candidates'])<=12 or sorted(cfg['modes'])!=['eager','graph']:
+        raise ValueError('bounded batch contract changed')
+
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     for name in ('artifact-root','environment','output-dir'):
@@ -31,8 +37,7 @@ def main():
     p.add_argument('--config',type=Path,default=CONFIG)
     args=p.parse_args();cfg=json.loads(args.config.read_text())
     signal.signal(signal.SIGTERM,interrupted)
-    if not 1<=len(cfg['candidates'])<=6 or len(cfg['modes'])!=2:
-        raise ValueError('bounded batch contract changed')
+    validate_batch_config(cfg)
     args.output_dir.mkdir(parents=True,exist_ok=False)
     report={'status':'running','config_sha256':sha256_file(args.config),
             'runner_sha256':sha256_file(Path(__file__)),'trials':[],'next_stage':'not_launched'}

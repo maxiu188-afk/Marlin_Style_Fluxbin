@@ -148,4 +148,18 @@ class CandidateSummaryTests(unittest.TestCase):
                 rows=[r for r in summarize_batch(root,config)['rows'] if r['trial']=='rows2-graph']
                 self.assertTrue(all(not r['eligible'] for r in rows))
 
+    def test_all_fixed_batches_fit_runner_bound(self):
+        import importlib.util
+        root=Path(__file__).resolve().parents[1]
+        spec=importlib.util.spec_from_file_location('candidate_batch',root/'scripts/run_m1_candidate_batch.py')
+        runner=importlib.util.module_from_spec(spec);spec.loader.exec_module(runner)
+        for path in (root/'configs/acceleration').glob('m1_*candidates_v1.json'):
+            runner.validate_batch_config(json.loads(path.read_text()))
+        cfg=json.loads((root/'configs/acceleration/m1_inner_compute_candidates_v1.json').read_text())
+        cfg['candidates'].append(cfg['candidates'][0])
+        with self.assertRaises(ValueError):runner.validate_batch_config(cfg)
+        cfg['candidates'].pop();cfg['modes']=['eager','eager']
+        with self.assertRaises(ValueError):runner.validate_batch_config(cfg)
+
+
 if __name__=='__main__':unittest.main()
