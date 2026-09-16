@@ -2,7 +2,9 @@
 
 Status: W3 and QBB FP16-scale artifacts completed on A100 PCIe on 2026-09-15;
 the full four-arm input/hash preflight passed, but PPL has not been launched.
-See `QWEN3_8B_W3_RATE_DISTORTION_STATUS.md` before resuming at Stage 3.
+The next available GPU is an RTX PRO 4500 Blackwell, so Stage 3 has an explicit
+same-device quality-comparison mode in addition to the unchanged formal A100
+mode. See `QWEN3_8B_W3_RATE_DISTORTION_STATUS.md` before resuming at Stage 3.
 
 ## Question and frozen boundary
 
@@ -177,10 +179,45 @@ model, all 1008 FP16 scale tensors, and finite dense-BF16 reconstruction.
 
 Use the original frozen PPL environment, not the GPTQ quantization venv:
 
-On a new Pod, `/opt/fluxbin-venv` must be recreated on container disk. First
-confirm that the retained volume is mounted at `/workspace`, the base runtime is
-Python 3.12 / PyTorch 2.8.0+cu128, and the GPU is an A100 80GB with capability
-8.0. Then restore only the pinned add-on environment:
+Two execution policies are available:
+
+- `formal-a100` is the default. It accepts only the frozen A100 80GB names and
+  capability 8.0, and requires BF16 and current-QBB PPL to reproduce the saved
+  A100 values within `1e-6`.
+- `same-device-quality` accepts only RTX PRO 4500 Blackwell with capability
+  12.0. It reruns all four arms on that one card and uses only the within-run
+  PPL differences. The saved A100 BF16/QBB values are reported but not enforced;
+  this mode is neither exact A100 reproduction nor latency evidence.
+
+Both policies keep the frozen evaluator, artifacts and exact package versions.
+The provider's `CUDA 13.0` label is not itself an accepted software environment:
+the runner still requires Python 3.12, PyTorch `2.8.0+cu128`, Transformers
+`5.14.1`, Datasets `5.0.0` and Safetensors `0.8.0`.
+
+On a new Pod, first mount the retained volume at `/workspace` and inspect the
+actual GPU, capability, driver and base PyTorch before installing anything:
+
+```bash
+nvidia-smi
+python3 - <<'PY'
+import platform
+import torch
+
+print("python", platform.python_version())
+print("torch", torch.__version__)
+print("torch CUDA runtime", torch.version.cuda)
+print("CUDA available", torch.cuda.is_available())
+if torch.cuda.is_available():
+    print("GPU", torch.cuda.get_device_name(0))
+    print("capability", torch.cuda.get_device_capability(0))
+PY
+```
+
+For the planned RTX PRO 4500 run, stop before creating the evaluator venv if
+the reported name is not RTX PRO 4500 Blackwell, capability is not `(12, 0)`,
+or base PyTorch is not exactly `2.8.0+cu128`. Do not silently accept a different
+torch build supplied by a CUDA 13.0 template. Once these checks pass,
+`/opt/fluxbin-venv` is recreated on container disk with only the pinned add-ons:
 
 ```bash
 project_root=/workspace/repos/marlin-style-fluxbin
@@ -202,6 +239,7 @@ it inside tmux so the run does not depend on the SSH connection:
 
 ```bash
 export FLUXBIN_PYTHON=/opt/fluxbin-venv/bin/python
+export FLUXBIN_EXECUTION_POLICY=same-device-quality
 tmux new-session -d -s qwen3-8b-w3-rate-distortion-v1 \
   "bash $project_root/scripts/run_qwen3_8b_w3_rate_distortion_job.sh \
   /workspace \
@@ -214,6 +252,7 @@ The direct runner command below is the frozen command embedded by that wrapper:
 ```bash
 /opt/fluxbin-venv/bin/python -u \
   "$project_root/scripts/run_qwen3_8b_w3_rate_distortion_ppl.py" \
+  --execution-policy "$FLUXBIN_EXECUTION_POLICY" \
   --snapshot-root "$snapshot_root" \
   --protocol-manifest "$protocol_manifest" \
   --token-artifact "$test_tokens" \
@@ -230,6 +269,10 @@ The direct runner command below is the frozen command embedded by that wrapper:
 The scoring order is BF16, current QBB, GPTQ W3 g128, then QBB FP16 scales.
 Every arm must report 146 blocks and 298,862 positions. A failed or partial
 directory must not be relabelled as a completed comparison.
+
+An RTX PRO 4500 completion is labelled
+`completed_cross_device_pending_effect_size_review`. Acceptance uses the four
+PPL values from that same run; old A100 anchors are diagnostic context only.
 
 Bounded status checks:
 

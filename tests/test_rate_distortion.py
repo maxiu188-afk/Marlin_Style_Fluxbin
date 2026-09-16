@@ -161,6 +161,13 @@ class RateDistortionTests(unittest.TestCase):
         bad = {"perplexity": bf16["perplexity"] + 0.01}
         with self.assertRaises(RuntimeError):
             ppl_runner.validate_reference_reproduction(self.config, "bf16", bad)
+        report_only = ppl_runner.validate_reference_reproduction(
+            self.config, "bf16", bad, enforce=False
+        )
+        self.assertFalse(report_only["required"])
+        self.assertTrue(report_only["reference_available"])
+        self.assertFalse(report_only["passed"])
+        self.assertEqual(report_only["enforcement"], "report_only_cross_device")
         self.assertFalse(
             ppl_runner.validate_reference_reproduction(self.config, "gptq_w3_g128_sym", {})["required"]
         )
@@ -168,6 +175,38 @@ class RateDistortionTests(unittest.TestCase):
         changed["evaluation"]["logit_chunk_tokens"] = 256
         with self.assertRaises(ValueError):
             ppl_runner.validate_evaluation_config(changed)
+
+    def test_runtime_policy_keeps_a100_formal_and_bounds_cross_device(self):
+        self.assertTrue(
+            ppl_runner.validate_device_policy(
+                self.config,
+                device_name="NVIDIA A100 80GB PCIe",
+                compute_capability=[8, 0],
+                execution_policy=ppl_runner.FORMAL_EXECUTION_POLICY,
+            )
+        )
+        with self.assertRaises(RuntimeError):
+            ppl_runner.validate_device_policy(
+                self.config,
+                device_name="NVIDIA RTX PRO 4500 Blackwell",
+                compute_capability=[12, 0],
+                execution_policy=ppl_runner.FORMAL_EXECUTION_POLICY,
+            )
+        self.assertFalse(
+            ppl_runner.validate_device_policy(
+                self.config,
+                device_name="NVIDIA RTX PRO 4500 Blackwell Server Edition",
+                compute_capability=[12, 0],
+                execution_policy=ppl_runner.CROSS_DEVICE_EXECUTION_POLICY,
+            )
+        )
+        with self.assertRaises(RuntimeError):
+            ppl_runner.validate_device_policy(
+                self.config,
+                device_name="NVIDIA RTX 5090",
+                compute_capability=[12, 0],
+                execution_policy=ppl_runner.CROSS_DEVICE_EXECUTION_POLICY,
+            )
 
 
 if __name__ == "__main__":

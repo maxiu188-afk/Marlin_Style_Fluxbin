@@ -1,6 +1,6 @@
 # 当前进度与交接
 
-更新：2026-09-15。M=1 decode 的现有加速结果已经冻结。Qwen3-8B uniform
+更新：2026-09-16。M=1 decode 的现有加速结果已经冻结。Qwen3-8B uniform
 symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率对照已完成量化 artifact
 准备和四臂输入预检，PPL 尚未启动。A8 不在本轮范围，vLLM 仅保留接口、尚未接入。
 
@@ -66,11 +66,19 @@ recovery 退出 0，GPU/实验进程和 tmux 均为空，可关闭计算实例�
 精确路径、哈希和恢复边界见
 [W3/QBB artifact 状态](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
+下一次可用卡计划为 RTX PRO 4500 Blackwell 32GB（目标 capability 12.0），
+不是 A100。代码已为 Stage 3 增加显式 `same-device-quality` 路径：四臂都在
+同一张 RTX 卡上重跑，只比较本轮 PPL 差值；旧 A100 BF16/QBB 数值仅记录、
+不作为 `1e-6` 硬门禁，也不得据此声称 A100 精确复现或性能结论。默认
+`formal-a100` 路径及其门禁保持不变。开机后必须先核对实际 GPU 名、CC、
+driver 和冻结的 PyTorch 2.8.0+cu128 环境，环境不匹配则先停下，不启动 PPL。
+
 ## 下一步边界
 
 下次上机直接执行 [W3/QBB 同码率质量对照](QWEN3_8B_W3_RATE_DISTORTION_RUNBOOK.md)
-的 Stage 3，不重新量化或重建 QBB FP16-scale artifact；用四臂 PPL 决定继续
-binary-base 还是转向 uniform 3-bit。在该结果出来前不继续扩展 kernel 候选。
+的 Stage 3，并显式使用 `FLUXBIN_EXECUTION_POLICY=same-device-quality`；不重新
+量化或重建 QBB FP16-scale artifact。用同卡四臂 PPL 决定继续 binary-base
+还是转向 uniform 3-bit。在该结果出来前不继续扩展 kernel 候选。
 已有 prepared v2.1 仍是冻结性能基线。单 block 速度不作为完整模型启动前提，
 跨 GPU、KV、驻留与计时协议的结果不得直接作单因素因果比较。
 

@@ -1,6 +1,6 @@
 # Qwen3-8B W3/QBB rate--distortion artifact status
 
-Updated: 2026-09-15. This records artifacts that are safe to retain on network
+Updated: 2026-09-16. This records artifacts that are safe to retain on network
 volume `34au39ljvf` before the A100 PCIe compute instance is closed. It is not a
 PPL result and does not yet decide between uniform W3 and binary-base QBB.
 
@@ -15,9 +15,16 @@ PPL result and does not yet decide between uniform W3 and binary-base QBB.
 | Frozen four-arm input/hash preflight | passed | `FLUXBIN_W3_RATE_DISTORTION_PREFLIGHT=passed` |
 | Four-arm WikiText-2 PPL | **not run** | `/workspace/artifacts/qwen3_8b_w3_rate_distortion/` not created |
 
-The formal PPL run must still reproduce BF16 `9.724944980689296` and current
-QBB `13.169788494766266` within `1e-6`, then score GPTQ W3 and QBB FP16 scales
-over 146 blocks and 298,862 positions.
+The default formal A100 PPL run must still reproduce BF16
+`9.724944980689296` and current QBB `13.169788494766266` within `1e-6`, then
+score GPTQ W3 and QBB FP16 scales over 146 blocks and 298,862 positions.
+
+Because the next available GPU is planned to be an RTX PRO 4500 Blackwell, the
+runner also has an explicit `same-device-quality` policy. That policy requires
+the RTX PRO 4500 name and capability 12.0, reruns all four arms, and treats the
+old A100 values as report-only anchors. Its result can support only within-run
+quality/rate comparisons; it is not an A100 reproduction or speed result. The
+frozen package versions remain mandatory, and no PPL result exists yet.
 
 ## GPTQ storage
 

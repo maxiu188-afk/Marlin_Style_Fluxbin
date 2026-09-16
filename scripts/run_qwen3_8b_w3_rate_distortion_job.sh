@@ -12,6 +12,15 @@ ppl_job=$2
 ppl_output=$3
 ppl_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 ppl_python=${FLUXBIN_PYTHON:-python}
+ppl_execution_policy=${FLUXBIN_EXECUTION_POLICY:-formal-a100}
+
+case "$ppl_execution_policy" in
+  formal-a100|same-device-quality) ;;
+  *)
+    echo "unsupported FLUXBIN_EXECUTION_POLICY: $ppl_execution_policy" >&2
+    exit 2
+    ;;
+esac
 
 if [ ! -d "$ppl_persist" ] || [ ! -d "$ppl_persist/models" ]; then
   echo "persistent volume is not mounted or has no models directory: $ppl_persist" >&2
@@ -22,7 +31,7 @@ if [ -e "$ppl_output" ]; then
   exit 1
 fi
 if [ -n "$(git -C "$ppl_root" status --porcelain)" ]; then
-  echo "repository worktree is not clean; refusing a formal run" >&2
+  echo "repository worktree is not clean; refusing a quality run" >&2
   git -C "$ppl_root" status --short >&2
   exit 1
 fi
@@ -34,6 +43,7 @@ fi
 # A new directory prevents retries from truncating earlier logs or provenance.
 mkdir "$ppl_job" || exit 1
 printf '%s\n' running > "$ppl_job/status"
+printf '%s\n' "$ppl_execution_policy" > "$ppl_job/execution-policy"
 git -C "$ppl_root" rev-parse HEAD > "$ppl_job/git-revision"
 git -C "$ppl_root" status --short --branch > "$ppl_job/git-status"
 "$ppl_python" -m pip freeze > "$ppl_job/environment-freeze.txt"
@@ -78,8 +88,8 @@ if [ "$ppl_code" -ne 0 ]; then
 fi
 
 "$ppl_python" -c \
-  'import json,sys; from pathlib import Path; from run_qwen3_8b_w3_rate_distortion_ppl import validate_runtime; validate_runtime(json.loads(Path(sys.argv[1]).read_text()))' \
-  "$ppl_config" > "$ppl_job/runtime-preflight.log" 2>&1
+  'import json,sys; from pathlib import Path; from run_qwen3_8b_w3_rate_distortion_ppl import validate_runtime; validate_runtime(json.loads(Path(sys.argv[1]).read_text()), execution_policy=sys.argv[2])' \
+  "$ppl_config" "$ppl_execution_policy" > "$ppl_job/runtime-preflight.log" 2>&1
 ppl_code=$?
 if [ "$ppl_code" -ne 0 ]; then
   printf '%s\n' "$ppl_code" > "$ppl_job/exit-code"
@@ -90,6 +100,7 @@ fi
 ppl_command=(
   "$ppl_python" -u "$ppl_root/scripts/run_qwen3_8b_w3_rate_distortion_ppl.py"
   --config "$ppl_config"
+  --execution-policy "$ppl_execution_policy"
   --snapshot-root "$ppl_snapshot"
   --protocol-manifest "$ppl_protocol"
   --token-artifact "$ppl_tokens"
@@ -114,7 +125,11 @@ printf '%s\n' "$ppl_code" > "$ppl_job/exit-code"
 
 if [ "$ppl_code" -eq 0 ] && [ -f "$ppl_output/summary.json" ]; then
   sha256sum "$ppl_output/summary.json" "$ppl_output/summary.md" > "$ppl_job/summary.sha256"
-  printf '%s\n' completed_pending_review > "$ppl_job/status"
+  if [ "$ppl_execution_policy" = formal-a100 ]; then
+    printf '%s\n' completed_pending_review > "$ppl_job/status"
+  else
+    printf '%s\n' completed_cross_device_pending_review > "$ppl_job/status"
+  fi
 else
   printf '%s\n' failed > "$ppl_job/status"
 fi

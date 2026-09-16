@@ -40,6 +40,10 @@ sys.path.pop(0)
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/evaluation/qwen3_8b_w3_rate_distortion_v1.json"
 ARMS = ("bf16", "qbb_current", "gptq_w3_g128_sym", "qbb_fp16_scales")
+FORMAL_EXECUTION_POLICY = "formal-a100"
+CROSS_DEVICE_EXECUTION_POLICY = "same-device-quality"
+EXECUTION_POLICIES = (FORMAL_EXECUTION_POLICY, CROSS_DEVICE_EXECUTION_POLICY)
+EXPECTED_PYTHON = (3, 12)
 
 
 def parse_args() -> argparse.Namespace:
@@ -56,6 +60,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gptq-manifest", type=Path, required=True)
     parser.add_argument("--gptq-dir", type=Path, required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--execution-policy",
+        choices=EXECUTION_POLICIES,
+        default=FORMAL_EXECUTION_POLICY,
+        help="Keep A100 acceptance strict, or run all four arms on the approved RTX PRO 4500 platform.",
+    )
     parser.add_argument("--validate-only", action="store_true")
     return parser.parse_args()
 
@@ -93,15 +103,53 @@ def validate_evaluation_config(config: dict[str, Any]) -> None:
         raise ValueError(f"frozen evaluator settings drifted: {observed_execution}")
 
 
-def validate_runtime(config: dict[str, Any]) -> torch.device:
+def validate_device_policy(
+    config: dict[str, Any],
+    *,
+    device_name: str,
+    compute_capability: list[int],
+    execution_policy: str,
+) -> bool:
+    if execution_policy not in EXECUTION_POLICIES:
+        raise ValueError(f"unsupported execution policy: {execution_policy}")
+    expected = config["execution"]
+    formal_match = (
+        device_name in expected["quality_device_names"]
+        and compute_capability == expected["compute_capability"]
+    )
+    if execution_policy == FORMAL_EXECUTION_POLICY:
+        if not formal_match:
+            raise RuntimeError(
+                f"formal A100 device gate failed: name={device_name}, capability={compute_capability}"
+            )
+        return True
+    if "RTX PRO 4500" not in device_name or compute_capability != [12, 0]:
+        raise RuntimeError(
+            "same-device-quality currently permits only RTX PRO 4500 Blackwell with capability 12.0: "
+            f"name={device_name}, capability={compute_capability}"
+        )
+    return formal_match
+
+
+def validate_runtime(
+    config: dict[str, Any], *, execution_policy: str = FORMAL_EXECUTION_POLICY
+) -> tuple[torch.device, dict[str, Any]]:
+    if sys.version_info[:2] != EXPECTED_PYTHON:
+        raise RuntimeError(
+            f"Python runtime drifted: {platform.python_version()} (expected 3.12.x)"
+        )
     if not torch.cuda.is_available():
-        raise RuntimeError("the formal PPL evaluation requires NVIDIA CUDA")
+        raise RuntimeError("the PPL evaluation requires NVIDIA CUDA")
     torch.cuda.set_device(0)
     expected = config["execution"]
-    if torch.cuda.get_device_name(0) not in expected["quality_device_names"]:
-        raise RuntimeError("unexpected quality-experiment GPU")
-    if list(torch.cuda.get_device_capability(0)) != expected["compute_capability"]:
-        raise RuntimeError("unexpected compute capability")
+    device_name = torch.cuda.get_device_name(0)
+    compute_capability = list(torch.cuda.get_device_capability(0))
+    formal_match = validate_device_policy(
+        config,
+        device_name=device_name,
+        compute_capability=compute_capability,
+        execution_policy=execution_policy,
+    )
     observed = {
         "torch": torch.__version__,
         "transformers": __import__("transformers").__version__,
@@ -111,7 +159,18 @@ def validate_runtime(config: dict[str, Any]) -> torch.device:
     for name, version in observed.items():
         if version != expected[name]:
             raise RuntimeError(f"{name} runtime drifted: {version}")
-    return torch.device("cuda:0")
+    return torch.device("cuda:0"), {
+        "execution_policy": execution_policy,
+        "device": device_name,
+        "compute_capability": compute_capability,
+        "formal_a100_device_match": formal_match,
+        "python": platform.python_version(),
+        "torch": torch.__version__,
+        "torch_cuda_runtime": torch.version.cuda,
+        "transformers": observed["transformers"],
+        "datasets": observed["datasets"],
+        "safetensors": observed["safetensors"],
+    }
 
 
 def validate_snapshot(config: dict[str, Any], snapshot_root: Path) -> dict[str, Any]:
@@ -357,7 +416,11 @@ def bf16_coverage(model: torch.nn.Module, architecture: dict[str, Any]) -> dict[
 
 
 def validate_reference_reproduction(
-    config: dict[str, Any], arm: str, metrics: dict[str, Any]
+    config: dict[str, Any],
+    arm: str,
+    metrics: dict[str, Any],
+    *,
+    enforce: bool = True,
 ) -> dict[str, Any]:
     reference = config["evaluation"]["accepted_reproduction_reference"]
     expected_key = {
@@ -370,19 +433,21 @@ def validate_reference_reproduction(
     expected = reference[expected_key]
     difference = abs(observed - expected) if isinstance(observed, (int, float)) else None
     passed = difference is not None and difference <= reference["absolute_tolerance"]
-    if not passed:
+    if enforce and not passed:
         raise RuntimeError(
             f"{arm} did not reproduce the accepted same-protocol reference: "
             f"observed={observed}, expected={expected}, difference={difference}"
         )
     return {
-        "required": True,
-        "passed": True,
+        "required": enforce,
+        "reference_available": True,
+        "passed": passed,
         "accepted_result_sha256": reference["result_sha256"],
         "expected_perplexity": expected,
         "observed_perplexity": observed,
         "absolute_difference": difference,
         "absolute_tolerance": reference["absolute_tolerance"],
+        "enforcement": "required" if enforce else "report_only_cross_device",
     }
 
 
@@ -395,10 +460,14 @@ def write_arm_bundle(
     metrics: dict[str, Any],
     storage: dict[str, Any],
     hashes: dict[str, Any],
+    execution_policy: str,
 ) -> None:
     arm_dir = output_dir / arm
     arm_dir.mkdir(parents=True, exist_ok=False)
-    atomic_json(arm_dir / "config.json", {"experiment": config, "arm": arm})
+    atomic_json(
+        arm_dir / "config.json",
+        {"experiment": config, "arm": arm, "execution_policy": execution_policy},
+    )
     atomic_json(arm_dir / "coverage.json", coverage)
     atomic_json(arm_dir / "eval.json", metrics)
     atomic_json(arm_dir / "storage.json", storage)
@@ -420,7 +489,7 @@ def main() -> None:
     if args.validate_only:
         print("FLUXBIN_W3_RATE_DISTORTION_PREFLIGHT=passed; no PPL launched")
         return
-    device = validate_runtime(config)
+    device, runtime = validate_runtime(config, execution_policy=args.execution_policy)
     current_qbb_storage = inspect_qbb_storage(qbb_records, expected_scale_dtype=torch.float32)
     fp16_qbb_storage = inspect_qbb_storage(qbb_fp16_records, expected_scale_dtype=torch.float16)
     qbb32_analytical = analytical_qbb_storage(config["model"], scale_bytes=4, include_lookup=False)
@@ -521,7 +590,12 @@ def main() -> None:
             device=device,
             logit_chunk_tokens=config["evaluation"]["logit_chunk_tokens"],
         )
-        reproduction[arm] = validate_reference_reproduction(config, arm, metrics[arm])
+        reproduction[arm] = validate_reference_reproduction(
+            config,
+            arm,
+            metrics[arm],
+            enforce=args.execution_policy == FORMAL_EXECUTION_POLICY,
+        )
         write_arm_bundle(
             args.output_dir,
             arm=arm,
@@ -530,12 +604,18 @@ def main() -> None:
             metrics=metrics[arm],
             storage=storage[arm],
             hashes=artifact_hashes[arm],
+            execution_policy=args.execution_policy,
         )
         print(f"FLUXBIN_{arm.upper()}_PPL={metrics[arm]['perplexity']}", flush=True)
     rows = build_summary_rows(metrics, storage)
+    summary_status = (
+        "completed_pending_effect_size_review"
+        if args.execution_policy == FORMAL_EXECUTION_POLICY
+        else "completed_cross_device_pending_effect_size_review"
+    )
     summary = {
         "schema_version": 1,
-        "status": "completed_pending_effect_size_review",
+        "status": summary_status,
         "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "experiment_id": config["experiment_id"],
         "config_sha256": sha256_file(args.config),
@@ -547,22 +627,25 @@ def main() -> None:
         "storage": storage,
         "coverage": coverages,
         "accepted_reference_reproduction": reproduction,
-        "runtime": {
-            "python": platform.python_version(),
-            "torch": torch.__version__,
-            "transformers": __import__("transformers").__version__,
-            "device": torch.cuda.get_device_name(0),
-        },
+        "runtime": runtime,
         "decision": {
             "status": "manual_review_required",
-            "reason": "Use effect size and the user-defined Case A/B/C rules; no small automatic threshold is encoded.",
+            "reason": (
+                "Use within-run effect size and the user-defined Case A/B/C rules; no small automatic threshold is encoded."
+                if args.execution_policy == FORMAL_EXECUTION_POLICY
+                else "Use only same-device four-arm effect sizes. This RTX PRO 4500 run is not an A100 exact reproduction or latency result."
+            ),
         },
     }
     atomic_json(args.output_dir / "summary.json", summary)
-    (args.output_dir / "summary.md").write_text(
-        render_summary_markdown(rows, status=summary["status"]),
-        encoding="utf-8",
-    )
+    summary_markdown = render_summary_markdown(rows, status=summary["status"])
+    if args.execution_policy == CROSS_DEVICE_EXECUTION_POLICY:
+        summary_markdown = (
+            "> Cross-device quality run on RTX PRO 4500 Blackwell. Compare all four arms within this run; "
+            "do not present it as exact A100 reproduction or performance evidence.\n\n"
+            + summary_markdown
+        )
+    (args.output_dir / "summary.md").write_text(summary_markdown, encoding="utf-8")
     print(f"FLUXBIN_W3_RATE_DISTORTION_SUMMARY={args.output_dir / 'summary.json'}")
 
 
