@@ -73,7 +73,7 @@ def main():
                 {f'v5_p{rows}':['--ptxas-options=-v','-DPLANAR_CODES=1',f'-DLUT_ROWS={rows}']
                  for rows in (256,512,1024)} |
                 {f'w3_lut_r{rows}':['--ptxas-options=-v',f'-DW3_LUT_ROWS={rows}']
-                 for rows in (256,512,1024)}}
+                 for rows in (256,512,1024,2048)}}
     ready=False
     try:
         import torch

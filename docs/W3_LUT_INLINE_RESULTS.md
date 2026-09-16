@@ -79,6 +79,7 @@ R1024。后续 profiler 只允许覆盖这四点及同 shape 的 `v5_p1024/gps1`
 
 随后使用四个最佳 row tile 完成了 36 层、252 Linear 的 full-sequence Graph trial：
 性能约为原始 BF16 的 1.49x，但 decoded-W3 correctness gate 未通过。逐层与四 shape
-算术分解已将原因定位为 kernel structural 算术与 dense BF16 权重物化语义不同，
-而不是 packing/permutation 错误。当前优先级是决定数值语义和 oracle；在此之前
-不自动实现 prepare，也不把 profiler 当作下一项正式 candidate。
+算术分解确认 kernel structural 算术与 dense BF16 权重物化语义存在差异，并排除了
+已检查的 packing/permutation 错误；但现有 NRMSE 对照不是逐舍入点的因果消融，
+尚不能断言具体主导项。当前优先级是用 decoded-BF16 correction candidate 闭环数值
+语义，同时继续评估 split-G/row-tile 优化；在 GPU gate 通过前不把候选写成正式结果。

@@ -34,11 +34,12 @@ Graph、路由、prefill 和 prefix KV 检查通过。prompt 0 的第一个 deco
 shape。
 
 四种真实 shape 的 kernel 输出与 structural FP32 reference 转 BF16 均逐位一致；
-FP32 归约顺序差异仅 1e-7 量级。主要差异来自 decoded 路径先物化
-`BF16(scale * code)` 权重，而 kernel 先做 FP32 integer dot、再乘 BF16 scale，
-最终 BF16 舍入后产生约 0.00065--0.00218 的单层差异，并经完整模型传播放大。
-所以本次失败不是 `g_idx/desc_act`、packing、Graph 或 fallback 错误，而是 oracle
-与 kernel 的有限精度语义不一致。完整数据、哈希和后续边界见
+FP32 输出层面对照中的归约顺序差异仅 1e-7 量级。现有证据将问题缩小到 decoded
+路径的 `BF16(scale * code)` 权重物化、kernel 的 FP32 integer-dot 路径及最终 BF16
+舍入之间；但这些 NRMSE 不是可相加的因果分解，尚未证明具体主导项。已实现的 `±3`
+舍入修正 trial 将直接检验 per-weight rounding 假设。因此本次失败不是已观察到的
+`g_idx/desc_act`、packing、Graph 或 fallback 错误，但有限精度根因仍待闭环。完整
+数据、哈希和后续边界见
 [W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)。
 
 ## Linear、block 与协议边界

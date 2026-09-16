@@ -277,6 +277,44 @@ def structural_w3_matvec(x: torch.Tensor, layout: Mapping[str, torch.Tensor]) ->
     return result.unsqueeze(0)
 
 
+def bf16_weight_semantics_w3_matvec(
+    x: torch.Tensor,
+    layout: Mapping[str, torch.Tensor],
+) -> torch.Tensor:
+    """FP32 grouped matvec with GPTQModel's per-weight BF16 rounding.
+
+    A BF16 scale multiplied by signed W3 codes ``{-4,...,3}`` differs from
+    ``scale * code`` only at codes ``+/-3``.  The explicit correction keeps
+    the structural factorization and is a diagnostic oracle for the matching
+    CUDA candidate; it does not claim native BF16 GEMM accumulation order.
+    """
+    out_features, in_features = validate_planar_w3(layout)
+    if x.ndim != 2 or tuple(x.shape) != (1, in_features):
+        raise ValueError("x must have shape [1,K]")
+    if x.device != layout["planes"].device:
+        raise ValueError("x and layout must share a device")
+    sorted_codes = decode_planar_w3_codes(layout, original_order=False)
+    sorted_x = x[0, layout["perm"].long()].float().reshape(-1, GROUP_SIZE)
+    codes = (sorted_codes.to(torch.int16) - ZERO).reshape(-1, GROUP_SIZE, out_features)
+    scales = layout["scales"]
+    rounded_three = (scales * 3).to(torch.bfloat16).float()
+    delta = rounded_three - 3.0 * scales.float()
+    result = torch.zeros(out_features, dtype=torch.float32, device=x.device)
+    for group in range(codes.shape[0]):
+        signed = codes[group]
+        activation = sorted_x[group].unsqueeze(-1)
+        integer_dot = torch.sum(signed.float() * activation, dim=0)
+        correction_dot = torch.sum(
+            ((signed == 3).float() - (signed == -3).float()) * activation,
+            dim=0,
+        )
+        result.add_(
+            integer_dot * scales[group].float()
+            + correction_dot * delta[group]
+        )
+    return result.unsqueeze(0)
+
+
 def layout_storage(layout: Mapping[str, torch.Tensor]) -> dict[str, object]:
     out_features, in_features = validate_planar_w3(layout)
     sizes = {name: value.numel() * value.element_size() for name, value in layout.items()}

@@ -4,6 +4,7 @@ import torch
 
 from fluxbin_style.gptq_deployment import (
     FORMAT,
+    bf16_weight_semantics_w3_matvec,
     convert_gptq_w3_to_planar,
     decode_planar_w3_codes,
     inspect_gptq_checkpoint,
@@ -100,6 +101,25 @@ class GPTQW3PlanarTest(unittest.TestCase):
         ).unsqueeze(0)
         actual = structural_w3_matvec(x, layout)
         torch.testing.assert_close(actual, direct, rtol=2e-6, atol=2e-5)
+
+    def test_bf16_weight_semantics_correction_matches_materialized_weight(self):
+        raw, codes, _ = synthetic_raw(k=512, o=256, seed=17)
+        layout = convert_gptq_w3_to_planar(raw, qzero_format=1)
+        x = torch.randn(
+            1,
+            codes.shape[0],
+            generator=torch.Generator().manual_seed(23),
+            dtype=torch.bfloat16,
+        )
+        corrected = bf16_weight_semantics_w3_matvec(x, layout)
+        dense = torch.nn.functional.linear(
+            x.float(), restore_planar_w3(layout).float()
+        )
+        self.assertTrue(torch.equal(corrected.bfloat16(), dense.bfloat16()))
+        self.assertGreater(
+            float((structural_w3_matvec(x, layout) - dense).abs().max()),
+            0.0,
+        )
 
     def test_layout_storage_includes_permutation(self):
         raw, _, _ = synthetic_raw()

@@ -13,6 +13,7 @@
 ## M=1 加速与全模型运行
 
 - [GPTQ W3 inline LUT 第一轮运行手册](W3_LUT_INLINE_RUNBOOK.md)
+- [GPTQ W3 BF16 舍入修正与 split-G 诊断手册](W3_LUT_BF16_SPLIT_RUNBOOK.md)
 - [GPTQ W3 inline LUT A100 PCIe 结果](W3_LUT_INLINE_RESULTS.md)
 - [GPTQ W3 inline LUT 完整模型结果与误差归因](W3_LUT_FULL_MODEL_RESULTS.md)
 - [候选批次及全模型运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)

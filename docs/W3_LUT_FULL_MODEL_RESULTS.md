@@ -60,7 +60,7 @@ prompt 0 的 decode-step-0 定位结果如下：
 - prepared wrapper、CUDA Graph、路由和固定 continuation 的精确检查均通过；
   所以误差不是 StaticCache 起点、Graph capture 或 dense fallback 引起。
 
-## 根因：两种 BF16 算术语义不同
+## 当前算术定位：语义差异已确认，具体主导项尚未闭环
 
 decoded 路径先逐元素物化 `BF16(scale * signed_code)` 权重，再执行 BF16 dense
 GEMM。inline kernel 则先以 FP32 计算组内 integer dot，再乘 BF16 scale，并在最终
@@ -76,11 +76,16 @@ GEMM。inline kernel 则先以 FP32 计算组内 integer dot，再乘 BF16 scale
 | down `[4096,12288]` | **0** | 3.31e-7 | 3.41e-4 | 4.29e-5 | 0.000650 |
 
 packed 与 structural reference 在四种 shape 上仍逐位一致；第一轮 12 个 Linear
-cell 也全部 structural exact。这排除了 `g_idx/desc_act`、planar packing 和 LUT
-bit-plane 解码错误。FP32 归约顺序本身只有 1e-7 量级；主要源头是 dense oracle
-提前把 `scale * code` 舍入为 BF16 权重，随后最终 BF16 舍入把小偏移变成离散 ULP
-差异。约 0.001--0.002 的单层偏差再经 attention、MLP、残差和后续 decode 传播，
-形成完整模型的 0.015 左右 NRMSE。
+cell 也全部 structural exact。这排除了已测试输入上的 `g_idx/desc_act`、planar
+packing 和 LUT bit-plane 解码错误。表中各 NRMSE 使用不同中间精度和最终 cast，
+不是可以直接相加的因果分解；尤其 1e-7 量级的 FP32 差异仍可能在 BF16 边界触发
+离散 ULP 变化。因此当前只能确认问题位于 dense 权重物化、归约顺序和最终 BF16
+舍入之间，不能把 per-weight BF16 舍入单独写成已证实根因。
+
+后续已实现独立的 `±3` BF16 舍入修正：对 BF16 scale 和 signed W3 code，只有
+`q=+3/-3` 需要额外舍入 correction，可直接由已有 bit-plane 构造两个 mask 而无需
+增加 payload。该候选仍等待 NVIDIA GPU 上的真实 Linear 因果门和性能测量，详见
+[BF16/split-G 诊断手册](W3_LUT_BF16_SPLIT_RUNBOOK.md)。
 
 ## 决策边界
 

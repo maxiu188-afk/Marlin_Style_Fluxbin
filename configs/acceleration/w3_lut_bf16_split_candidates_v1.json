@@ -1,0 +1,43 @@
+{
+  "experiment_id": "qwen3-8b-w3-lut-bf16-split-m1-v1",
+  "scope": "diagnostic-only BF16 weight-rounding correction and split-G sweep on four real Qwen3-8B M=1 shapes",
+  "seed": 20260916,
+  "layer": 0,
+  "dtype": "bfloat16",
+  "group_size": 128,
+  "mode": "cuda_graph_total",
+  "warmup": 20,
+  "repeats": 100,
+  "rounds": 7,
+  "maximum_relative_range": 0.1,
+  "arithmetic_modes": ["structural", "decoded_bf16"],
+  "shape_classes": {
+    "q_o": {
+      "module": "self_attn.q_proj",
+      "shape": [4096, 4096],
+      "row_tiles": [256],
+      "groups_per_split": [1, 2, 4, 8]
+    },
+    "k_v": {
+      "module": "self_attn.k_proj",
+      "shape": [1024, 4096],
+      "row_tiles": [512],
+      "groups_per_split": [1, 2, 4]
+    },
+    "gate_up": {
+      "module": "mlp.gate_proj",
+      "shape": [12288, 4096],
+      "row_tiles": [1024, 2048],
+      "groups_per_split": [1, 2, 4, 8]
+    },
+    "down": {
+      "module": "mlp.down_proj",
+      "shape": [4096, 12288],
+      "row_tiles": [1024, 2048],
+      "groups_per_split": [1, 2, 4, 8]
+    }
+  },
+  "candidate_count": 46,
+  "timing_contract": "same-run CUDA Graph total; preallocated output/workspace; split=1 writes output directly, otherwise graph contains main plus finish",
+  "acceptance_boundary": "diagnostic only; no production dispatch or full-model promotion without separate correctness and full-model gates"
+}

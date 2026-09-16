@@ -3,8 +3,13 @@ from unittest.mock import patch
 
 import torch
 
-from fluxbin_style.gptq_deployment import convert_gptq_w3_to_planar, structural_w3_matvec
+from fluxbin_style.gptq_deployment import (
+    bf16_weight_semantics_w3_matvec,
+    convert_gptq_w3_to_planar,
+    structural_w3_matvec,
+)
 from fluxbin_style.w3_lut_deployment import (
+    EXPERIMENTAL_ROW_TILES,
     ROW_TILES,
     load_w3_lut_extension,
     w3_lut_m1_out,
@@ -16,21 +21,25 @@ from test_gptq_w3_planar import synthetic_raw
 class W3LUTInterfaceTest(unittest.TestCase):
     def test_workspace_and_extension_variants(self):
         self.assertEqual(workspace_shape(1024, 4096), (32, 1024))
+        self.assertEqual(workspace_shape(1024, 4096, 4), (8, 1024))
+        self.assertEqual(workspace_shape(1024, 4096, 32), (1, 1024))
         with self.assertRaises(ValueError):
             workspace_shape(1024, 4097)
+        with self.assertRaises(ValueError):
+            workspace_shape(1024, 4096, 0)
         load_w3_lut_extension.cache_clear()
         try:
             with patch("torch.cuda.is_available", return_value=True), patch(
                 "torch.utils.cpp_extension.load"
             ) as build:
-                for row_tile in ROW_TILES:
+                for row_tile in EXPERIMENTAL_ROW_TILES:
                     load_w3_lut_extension(row_tile)
                     flags = build.call_args.kwargs["extra_cuda_cflags"]
                     self.assertIn(f"-DW3_LUT_ROWS={row_tile}", flags)
                     self.assertTrue(build.call_args.kwargs["sources"][0].endswith("w3_lut.cu"))
-                for row_tile in ROW_TILES:
+                for row_tile in EXPERIMENTAL_ROW_TILES:
                     load_w3_lut_extension(row_tile)
-                self.assertEqual(build.call_count, 3)
+                self.assertEqual(build.call_count, 4)
                 with self.assertRaises(ValueError):
                     load_w3_lut_extension(128)
         finally:
@@ -75,6 +84,50 @@ class CUDAW3LUTCorrectnessTest(unittest.TestCase):
                         run()
                     graph.replay()
                     self.assertTrue(torch.equal(out, saved))
+
+                if dtype == torch.bfloat16:
+                    corrected_reference = bf16_weight_semantics_w3_matvec(
+                        x, layout
+                    ).bfloat16()
+                    for groups_per_split in (1, in_features // 128):
+                        corrected = torch.empty_like(corrected_reference)
+                        corrected_workspace = torch.full(
+                            workspace_shape(
+                                out_features,
+                                in_features,
+                                groups_per_split,
+                            ),
+                            float("nan"),
+                            device="cuda",
+                        )
+                        w3_lut_m1_out(
+                            x,
+                            layout,
+                            corrected,
+                            corrected_workspace,
+                            row_tile=256,
+                            groups_per_split=groups_per_split,
+                            arithmetic="decoded_bf16",
+                        )
+                        torch.testing.assert_close(
+                            corrected.float(),
+                            corrected_reference.float(),
+                            rtol=0.005,
+                            atol=0.02,
+                        )
+                        if groups_per_split == 1:
+                            self.assertTrue(torch.isfinite(corrected_workspace).all())
+                        saved = corrected.clone()
+                        w3_lut_m1_out(
+                            x,
+                            layout,
+                            corrected,
+                            corrected_workspace,
+                            row_tile=256,
+                            groups_per_split=groups_per_split,
+                            arithmetic="decoded_bf16",
+                        )
+                        self.assertTrue(torch.equal(corrected, saved))
 
 
 if __name__ == "__main__":

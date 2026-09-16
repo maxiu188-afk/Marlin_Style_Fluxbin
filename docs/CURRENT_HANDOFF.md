@@ -18,8 +18,9 @@ vLLM 仅保留接口、尚未接入。
   `completed_with_backend_numerical_differences`，不是 accepted full-model backend。
 - 逐层诊断证明 prefill、36 层 prefix KV、prepared wrapper 和 Graph 路由无误；
   第 0 层已有约 0.0015 NRMSE，第 8 层首次越过 0.005。四种真实 shape 均与
-  structural reference 逐位一致，根因是 kernel 的“FP32 integer dot 后乘 scale”
-  与 decoded 路径“先物化 BF16 权重再 GEMM”的算术语义不同。详见
+  structural reference 逐位一致；问题已缩小到 kernel 的“FP32 integer dot 后乘
+  scale”与 decoded 路径“先物化 BF16 权重再 GEMM”之间的有限精度差异，但现有
+  四-shape 对照尚未通过逐舍入点因果消融确定主导项。详见
   [W3 完整模型结果与误差归因](W3_LUT_FULL_MODEL_RESULTS.md)。
 - 当前服务器的 Nsight Compute 计数器权限被宿主拒绝（`ERR_NVGPUCTRPERM`）；
   尚不能归因 LUT build、occupancy、HBM 或 shared bank conflict。prepare 诊断分支
@@ -115,19 +116,26 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 
 ## 下一步边界
 
-下一步不是继续调 row tile 或自动实现 prepare，而是先明确 W3 的数值语义：若要求
-严格复现 retained decoded-BF16 GPTQModel，kernel 必须模拟 per-weight BF16 物化/
-舍入并重做正确性和性能门；若保留当前 structural W3 算术，则将它视为另一个部署
-模型，单独完成 PPL/质量验证。不得放宽 0.005/0.05 门限后把本轮改写为 accepted。
+用户已批准独立的 dense-BF16 fidelity 诊断。当前本地实现增加 `±3` BF16 权重舍入
+修正、shape-specific split-G、single-split 直接写回、R2048 和 main/finish 分阶段
+计时；配置为 46-cell diagnostic-only trial。Mac 上完整 149 项 unittest 通过，其中
+10 项 CUDA-only 跳过；所有记录过的 RunPod 地址当前均拒绝连接，因此 CUDA 编译、
+真实 Linear correctness 和计时仍为 pending。运行入口见
+[BF16/split-G 诊断手册](W3_LUT_BF16_SPLIT_RUNBOOK.md)。
+
+若 `±3` 修正不能显著压低 corrected-vs-decoded 误差，再继续检查 BF16 输出 ULP、
+sorted/original-K 归约顺序和 FMA；不得把当前公式直接写成已确认根因。若修正通过
+Linear 门，仍须以独立候选重做完整模型 0.005/0.05 correctness 和性能门。不得放宽
+门限后把本轮改写为 accepted。
 
 只有数值路线明确后，才决定是否在允许 performance counters 的实例上 profile 四个
 最佳 inline candidate。prepare 仍只能在 profiler 证明 LUT build 为主要瓶颈后作为
 诊断分支；不自动扩展 batch、Tensor Core/Marlin W3、QKV fusion、split-K 或 serving。
 现有 prepared v2.1 继续作为冻结的 QBB 性能基线。
 
-下一次上机先确认选择的是 dense-BF16 fidelity 路线还是 structural-W3 质量验证路线，
-再同步 Git、核对持久卷/manifest/snapshot、恢复环境并验证 CUDA；仅 profiler 路线
-需要事先确认实例允许读取 performance counters。
+下一次上机先同步 Git、核对持久卷/manifest/snapshot、恢复环境并验证 CUDA，然后只
+运行已冻结的 BF16/split-G 诊断；该 trial 使用 CUDA events，不要求 performance
+counters。只有后续 profiler 路线需要事先确认实例允许读取 performance counters。
 每次新运行使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。
 

@@ -18,9 +18,11 @@ CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k
 相对 decoded W3 BF16 为 **1.4923x / 1.4886x**，两组主计时稳定。但
 packed-vs-decoded logits NRMSE 为 **0.01683 / 0.01457**，超过 0.005 门限；
 正式状态是 `completed_with_backend_numerical_differences`，不能写成 correctness
-accepted。归因结果表明 kernel 与 structural W3 逐位一致，误差来自 dense 路径
-提前物化 BF16 权重、kernel 则先做 FP32 integer dot 后乘 scale 的语义差异，随后
-经 36 层传播放大。详见[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)。
+accepted。现有诊断证明 kernel 与 structural W3 逐位一致，并把问题缩小到 dense
+BF16 权重物化、归约顺序和最终 BF16 舍入之间的有限精度差异；但尚未用因果消融证明
+具体主导项。独立的 `±3` BF16 舍入修正与 split-G trial 已实现、等待 NVIDIA GPU
+验证。详见[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)和
+[修正诊断手册](docs/W3_LUT_BF16_SPLIT_RUNBOOK.md)。
 
 在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
 32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。

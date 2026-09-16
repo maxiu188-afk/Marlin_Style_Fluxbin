@@ -12,6 +12,8 @@ from .gptq_deployment import FIELDS, restore_planar_w3, validate_planar_w3
 
 
 ROW_TILES = (256, 512, 1024)
+EXPERIMENTAL_ROW_TILES = ROW_TILES + (2048,)
+ARITHMETIC_MODES = ("structural", "decoded_bf16")
 QWEN3_ROW_TILE_BY_SHAPE = {
     (4096, 4096): 256,
     (1024, 4096): 512,
@@ -20,10 +22,10 @@ QWEN3_ROW_TILE_BY_SHAPE = {
 }
 
 
-@lru_cache(maxsize=len(ROW_TILES))
+@lru_cache(maxsize=len(EXPERIMENTAL_ROW_TILES))
 def load_w3_lut_extension(row_tile: int):
-    if row_tile not in ROW_TILES:
-        raise ValueError(f"row_tile must be one of {ROW_TILES}")
+    if row_tile not in EXPERIMENTAL_ROW_TILES:
+        raise ValueError(f"row_tile must be one of {EXPERIMENTAL_ROW_TILES}")
     if not torch.cuda.is_available():
         raise RuntimeError("W3 LUT requires NVIDIA CUDA; no CPU/MPS substitution")
     from torch.utils.cpp_extension import load
@@ -43,10 +45,17 @@ def load_w3_lut_extension(row_tile: int):
     )
 
 
-def workspace_shape(out_features: int, in_features: int) -> tuple[int, int]:
+def workspace_shape(
+    out_features: int,
+    in_features: int,
+    groups_per_split: int = 1,
+) -> tuple[int, int]:
     if not 1 <= out_features <= 65536 or not 128 <= in_features <= 32767 or in_features % 128:
         raise ValueError("invalid W3 LUT dimensions")
-    return in_features // 128, out_features
+    groups = in_features // 128
+    if not isinstance(groups_per_split, int) or not 1 <= groups_per_split <= groups:
+        raise ValueError("groups_per_split must be an integer in [1,K/128]")
+    return (groups + groups_per_split - 1) // groups_per_split, out_features
 
 
 def inline_main(
@@ -55,6 +64,7 @@ def inline_main(
     workspace: torch.Tensor,
     *,
     row_tile: int,
+    arithmetic: str = "structural",
 ) -> None:
     # Value-level checks are performed once by the hash-bound artifact loader.
     # Keep this hot path free of CUDA reductions and temporary allocations so
@@ -62,13 +72,19 @@ def inline_main(
     out_features, in_features = validate_planar_w3(layout, check_values=False)
     if x.shape != (1, in_features):
         raise ValueError("x must have shape [1,K]")
+    if arithmetic not in ARITHMETIC_MODES:
+        raise ValueError(f"arithmetic must be one of {ARITHMETIC_MODES}")
     if workspace.shape != workspace_shape(out_features, in_features) or workspace.dtype != torch.float32:
         raise ValueError("workspace must be FP32 [K/128,O]")
     if workspace.device != x.device or any(value.device != x.device for value in layout.values()):
         raise ValueError("x, layout and workspace must share a device")
-    load_w3_lut_extension(row_tile).inline_main(
-        x, layout["planes"], layout["scales"], layout["perm"], workspace
+    extension = load_w3_lut_extension(row_tile)
+    function = (
+        extension.inline_main
+        if arithmetic == "structural"
+        else extension.inline_main_bf16_weight
     )
+    function(x, layout["planes"], layout["scales"], layout["perm"], workspace)
 
 
 def finish(workspace: torch.Tensor, out: torch.Tensor, *, row_tile: int) -> torch.Tensor:
@@ -87,12 +103,33 @@ def w3_lut_m1_out(
     workspace: torch.Tensor,
     *,
     row_tile: int,
+    groups_per_split: int = 1,
+    arithmetic: str = "structural",
 ) -> torch.Tensor:
-    """Allocation-free CUDA-current-stream M=1 interface; inline only."""
+    """Allocation-free CUDA-current-stream M=1 experimental interface."""
     if out.dtype != x.dtype:
         raise ValueError("out dtype must match x dtype")
-    inline_main(x, layout, workspace, row_tile=row_tile)
-    return finish(workspace, out, row_tile=row_tile)
+    if arithmetic not in ARITHMETIC_MODES:
+        raise ValueError(f"arithmetic must be one of {ARITHMETIC_MODES}")
+    out_features, in_features = validate_planar_w3(layout, check_values=False)
+    if x.shape != (1, in_features) or out.shape != (1, out_features):
+        raise ValueError("x/out shape mismatch")
+    expected_workspace = workspace_shape(out_features, in_features, groups_per_split)
+    if workspace.shape != expected_workspace or workspace.dtype != torch.float32:
+        raise ValueError("workspace must be FP32 [ceil(G/groups_per_split),O]")
+    if workspace.device != x.device or out.device != x.device:
+        raise ValueError("x, out and workspace must share a device")
+    load_w3_lut_extension(row_tile).m1_out(
+        x,
+        layout["planes"],
+        layout["scales"],
+        layout["perm"],
+        workspace,
+        out,
+        groups_per_split,
+        arithmetic == "decoded_bf16",
+    )
+    return out
 
 
 def qwen3_row_tile(out_features: int, in_features: int) -> int:
