@@ -1,10 +1,10 @@
 # Qwen3-8B uniform W3 vs QBB rate--distortion runbook
 
-Status: W3 and QBB FP16-scale artifacts completed on A100 PCIe on 2026-09-15;
-the full four-arm input/hash preflight passed, but PPL has not been launched.
-The next available GPU is an RTX PRO 4500 Blackwell, so Stage 3 has an explicit
-same-device quality-comparison mode in addition to the unchanged formal A100
-mode. See `QWEN3_8B_W3_RATE_DISTORTION_STATUS.md` before resuming at Stage 3.
+Status: completed on 2026-09-16. The full four-arm comparison ran on an RTX PRO
+4500 Blackwell under `same-device-quality` and selected Case A: GPTQ W3 g128
+reached PPL 11.266115 versus current QBB 13.167910 at essentially the same
+stored rate. Do not rerun unless replication is explicitly requested. See
+`QWEN3_8B_W3_RATE_DISTORTION_STATUS.md` for accepted hashes and closeout paths.
 
 ## Question and frozen boundary
 

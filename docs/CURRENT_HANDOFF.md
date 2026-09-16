@@ -1,8 +1,9 @@
 # 当前进度与交接
 
-更新：2026-09-16。M=1 decode 的现有加速结果已经冻结。Qwen3-8B uniform
-symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率对照已完成量化 artifact
-准备和四臂输入预检，PPL 尚未启动。A8 不在本轮范围，vLLM 仅保留接口、尚未接入。
+更新：2026-09-16。M=1 decode 的现有 QBB 加速结果已经冻结。Qwen3-8B uniform
+symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率四臂对照已完成并验收，
+结论为 **Case A：后续优先 uniform 3-bit backend / solver**。A8 不在本轮范围，
+vLLM 仅保留接口、尚未接入。
 
 ## 当前结论
 
@@ -17,11 +18,12 @@ symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率对照已完成量
   这些性能结果不代表 BF16 数值等价、自由生成质量或 vLLM 服务吞吐。
 - step400 test PPL 为 13.169788495，BF16 为 9.724944981；原质量门槛未通过，
   用户已授权加速研究先行。当前 PPL 证据来自解码后的 dense BF16 路径。
-- W3 GPTQ 已覆盖 36 layers / 252 Linears / 6,945,767,424 weights，实际
-  `qweight + scales + qzeros + g_idx` 为 2,738,847,744 bytes，即
-  3.154551630 bit/weight。QBB FP16-scale artifact 也已完成，实际 tensor bytes
-  为 2,284,886,016。两者和冻结 BF16/QBB 输入已通过四臂 `--validate-only`，
-  但没有 PPL，暂不能决定 uniform W3 与 binary-base 路线。
+- RTX PRO 4500 同卡四臂 PPL：BF16 9.726488、当前 QBB 13.167910、GPTQ W3
+  11.266115、QBB FP16-scales 13.168951；全部覆盖 36 layers / 252 Linears /
+  6,945,767,424 weights、146 blocks 和 298,862 positions。
+- GPTQ 实际 3.154552 bit/weight，只比当前 QBB 3.138184 高 0.5216%，PPL 却低
+  1.9018（14.4426%）。QBB FP16 scales 为 2.631687 bit/weight，PPL 几乎不变。
+  按冻结规则属于 Case A：停止继续为当前 QBB format 做深度 kernel 优化。
 
 近期各版本对照与证据：[结果总览](RESULTS_OVERVIEW.md)、
 [Linear / block / 全模型详细结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
@@ -66,21 +68,23 @@ recovery 退出 0，GPU/实验进程和 tmux 均为空，可关闭计算实例�
 精确路径、哈希和恢复边界见
 [W3/QBB artifact 状态](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
-下一次可用卡计划为 RTX PRO 4500 Blackwell 32GB（目标 capability 12.0），
-不是 A100。代码已为 Stage 3 增加显式 `same-device-quality` 路径：四臂都在
-同一张 RTX 卡上重跑，只比较本轮 PPL 差值；旧 A100 BF16/QBB 数值仅记录、
-不作为 `1e-6` 硬门禁，也不得据此声称 A100 精确复现或性能结论。默认
-`formal-a100` 路径及其门禁保持不变。开机后必须先核对实际 GPU 名、CC、
-driver 和冻结的 PyTorch 2.8.0+cu128 环境，环境不匹配则先停下，不启动 PPL。
+质量实验服务器最后一次观测：`213.173.109.240:44534`，RTX PRO 4500
+Blackwell 32GB、CC 12.0、torch 2.8.0+cu128。作业 revision `f979f6b`，退出 0，
+summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为空。
+结果、作业记录及关机归档均保存在网络卷 `34au39ljvf`；私有本地备份位于
+`server_results/runpod_w3_rate_distortion_rtx4500_2026-09-16/`，归档 SHA256
+为 `812ba530...49bfe7`。可关闭计算实例并保留网络卷。精确哈希和路径见
+[W3/QBB artifact 状态](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+
+本次是 RTX 同卡质量对照，不是 A100 精确复现或性能结果；旧 A100 两个 anchor
+仅 report-only。默认 `formal-a100` 路径仍保留，除非明确要求复现，否则不再重跑。
 
 ## 下一步边界
 
-下次上机直接执行 [W3/QBB 同码率质量对照](QWEN3_8B_W3_RATE_DISTORTION_RUNBOOK.md)
-的 Stage 3，并显式使用 `FLUXBIN_EXECUTION_POLICY=same-device-quality`；不重新
-量化或重建 QBB FP16-scale artifact。用同卡四臂 PPL 决定继续 binary-base
-还是转向 uniform 3-bit。在该结果出来前不继续扩展 kernel 候选。
-已有 prepared v2.1 仍是冻结性能基线。单 block 速度不作为完整模型启动前提，
-跨 GPU、KV、驻留与计时协议的结果不得直接作单因素因果比较。
+下一阶段转向 uniform 3-bit backend / solver 的方案评估；不要自动重跑量化、
+四臂 PPL 或继续扩展当前 QBB kernel 候选。现有 prepared v2.1 仅作为冻结的
+QBB 性能基线保留，不能把 RTX 质量实验解释成速度证据。QBB FP16-scales 的
+2.6317-bit 点保留为低码率质量参照，但不改变 Case A 主路线。
 
 下一次上机先同步 Git、核对持久卷/manifest/snapshot，再恢复环境、验证 CUDA。
 每次新运行使用独立输出目录和匹配的源码/环境记录，保留失败证据。

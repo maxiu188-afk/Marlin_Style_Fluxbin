@@ -1,8 +1,9 @@
 # Qwen3-8B W3/QBB rate--distortion artifact status
 
-Updated: 2026-09-16. This records artifacts that are safe to retain on network
-volume `34au39ljvf` before the A100 PCIe compute instance is closed. It is not a
-PPL result and does not yet decide between uniform W3 and binary-base QBB.
+Updated: 2026-09-16. The same-device four-arm quality comparison completed on
+an RTX PRO 4500 Blackwell and selects **Case A**: at essentially the same stored
+rate, uniform symmetric GPTQ W3 g128 is materially better than current QBB.
+The evidence and model artifacts remain on network volume `34au39ljvf`.
 
 ## Current gate status
 
@@ -13,18 +14,32 @@ PPL result and does not yet decide between uniform W3 and binary-base QBB.
 | GPTQ standard checkpoint reload | passed | GPTQModel 7.4.0 selected `TorchLinear=252` |
 | GPTQ dense BF16 decode | passed | 36 layer files, 252 finite BF16 tensors, post-write tensor hashes checked |
 | Frozen four-arm input/hash preflight | passed | `FLUXBIN_W3_RATE_DISTORTION_PREFLIGHT=passed` |
-| Four-arm WikiText-2 PPL | **not run** | `/workspace/artifacts/qwen3_8b_w3_rate_distortion/` not created |
+| Four-arm WikiText-2 PPL | passed | 146 blocks and 298,862 positions for every arm; exit code 0 |
+| Result/provenance hashes | passed | recorded and recomputed summary hashes agree |
+| Shutdown readiness | passed | no tmux session, GPU process or experiment process remains |
 
-The default formal A100 PPL run must still reproduce BF16
-`9.724944980689296` and current QBB `13.169788494766266` within `1e-6`, then
-score GPTQ W3 and QBB FP16 scales over 146 blocks and 298,862 positions.
+## Four-arm result and decision
 
-Because the next available GPU is planned to be an RTX PRO 4500 Blackwell, the
-runner also has an explicit `same-device-quality` policy. That policy requires
-the RTX PRO 4500 name and capability 12.0, reruns all four arms, and treats the
-old A100 values as report-only anchors. Its result can support only within-run
-quality/rate comparisons; it is not an A100 reproduction or speed result. The
-frozen package versions remain mandatory, and no PPL result exists yet.
+| Arm | Effective bits/weight | Serialized weight bytes | PPL | Delta PPL vs current QBB |
+|---|---:|---:|---:|---:|
+| BF16 | 16.000000 | 13,891,534,848 | 9.726488173 | -3.441421766 |
+| current QBB | 3.138184 | 2,724,636,672 | 13.167909939 | 0 |
+| GPTQ W3A16 g128 symmetric | 3.154552 | 2,738,847,744 | **11.266114820** | **-1.901795120** |
+| QBB FP16 scales | 2.631687 | 2,284,886,016 | 13.168951166 | +0.001041227 |
+
+GPTQ uses only 0.5216% more serialized weight storage than current QBB while
+reducing PPL by 1.9018, or 14.4426%. This is the frozen protocol's Case A: the
+current approximately 3.14-bit QBB point is practically dominated, so further
+deep kernel optimization for this QBB format stops and subsequent backend work
+should prioritize uniform 3-bit. QBB FP16 scales reduce storage by 16.1398%
+with negligible PPL change, preserving a lower-rate trade-off point but not the
+quality advantage needed to overturn Case A.
+
+This is a same-device quality comparison, not an A100 reproduction or latency
+result. The RTX run used `same-device-quality` on CC 12.0; the saved A100 BF16
+and QBB anchors differed by 0.001543 and 0.001879 PPL and were report-only.
+Those shifts are tiny relative to the 1.9018-PPL within-run effect. The formal
+`formal-a100` path remains available for an optional exact-device replay.
 
 ## GPTQ storage
 
@@ -46,7 +61,7 @@ headers. The 36 decoded BF16 layer files occupy 13,891,559,904 bytes and are
 evaluation material, not low-bit storage.
 
 The completed QBB FP16-scale tensor storage is 2,284,886,016 bytes, or
-2.631687330 bit/weight. No quality comparison is valid until Stage 3 PPL runs.
+2.631687330 bit/weight. Its measured PPL is 13.168951166.
 
 ## Save failure and recovery boundary
 
@@ -84,8 +99,23 @@ artifact has status `completed_pending_review`, not an accepted quality result.
   `/workspace/models/fluxbin/qwen3-8b-hybrid-distilled-step400-fp16-scales-v1/`
 - QBB FP16 result SHA-256:
   `03a3e52e902b6467c61559e0051b6da477e53c298e4aefb47f1715fe80502dff`
+- four-arm result root:
+  `/workspace/artifacts/qwen3_8b_w3_rate_distortion/`
+- PPL job:
+  `/workspace/jobs/qwen3-8b-w3-rate-distortion-v1/ppl/`, exit code `0`
+- PPL source revision:
+  `f979f6b3f64aa7ccabd2d96cc5e953a83e2d7080`
+- summary JSON SHA-256:
+  `de5e12fcd7c1db5da1952717dd15a01c9c230b34a3d2b254e64d0fc05e88e8cd`
+- summary Markdown SHA-256:
+  `a3180d4c30a866cc2a0cb4a0dd40b07963801a910fa33bc455312bd7059f912f`
+- persistent closeout archive:
+  `/workspace/jobs/qwen3-8b-w3-rate-distortion-v1/closeout-rtx4500-20260916/`
+- evidence archive SHA-256:
+  `812ba530f9fb4a41f97776c952c5eb5ce4f5dfef8e34fb776729a03abe49bfe7`
+- private local backup:
+  `server_results/runpod_w3_rate_distortion_rtx4500_2026-09-16/`
 
-At the final observation, no tmux session or experiment process remained. The
-compute instance can be closed while retaining the network volume. On the next
-instance, sync the repository, attach the same volume, run the Stage 3 command
-from `QWEN3_8B_W3_RATE_DISTORTION_RUNBOOK.md`, and do not rerun Stages 1 or 2.
+At the final observation, no tmux session, GPU process or experiment process
+remained. The RTX compute instance can be closed while retaining the network
+volume. Do not rerun Stages 1--3 unless an explicit replication is requested.

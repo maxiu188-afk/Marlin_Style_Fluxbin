@@ -1,9 +1,10 @@
 # Marlin-Style FluxBin
 
-面向 Qwen3 的两基二值权重表示与 packed CUDA decode 研究。当前主线为
-Qwen3-8B、固定 distilled step400、M=1；精度工作暂停，vLLM 保留接口但尚未接入。
+面向 Qwen3 的低比特权重表示与 packed CUDA decode 研究。当前 QBB M=1
+性能链已冻结；同码率质量实验选择 Case A，后续优先评估 uniform 3-bit
+backend / solver。vLLM 保留接口但尚未接入。
 
-## 当前结果（2026-09-15）
+## 当前结果（2026-09-16）
 
 在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
 32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。
@@ -21,6 +22,13 @@ Graph 两组计时均稳定；同轮 eager 超过 5% 波动门槛，不发布加
 当前 step400 WT2 test PPL 为 **13.169788495**（原始 BF16 **9.724944981**），
 较未蒸馏父版本改善 11.9173%，原质量门槛仍未通过。PPL 来自 dense BF16 解码路径，
 不能代替 packed 后端的质量验证。完整数值、历史负面结果与证据边界见[结果总览](docs/RESULTS_OVERVIEW.md)。
+
+同协议四臂质量/码率实验进一步得到：GPTQ W3 g128 为 **3.154552 bit/weight、
+PPL 11.266115**，当前 QBB 为 **3.138184 bit/weight、PPL 13.167910**。GPTQ
+仅多 0.5216% 存储，PPL 低 1.9018（14.4426%），因此当前 QBB point 基本被
+uniform W3 支配。QBB FP16-scales 为 2.631687 bit/weight、PPL 13.168951，
+保留为低码率 trade-off。该实验在 RTX PRO 4500 上进行，是同卡质量对照而非
+A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 ## 阅读与运行入口
 

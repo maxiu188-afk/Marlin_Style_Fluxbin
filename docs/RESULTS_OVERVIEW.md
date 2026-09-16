@@ -1,6 +1,6 @@
 # 当前结果总览
 
-更新：2026-09-15。速度比均为原始 BF16 / packed，大于 1 表示加速；
+更新：2026-09-16。速度比均为原始 BF16 / packed，大于 1 表示加速；
 以下是不同硬件与协议的历史结果，不是可直接归因的单因素消融。
 
 ## 近期完整模型结果
@@ -46,6 +46,30 @@ packed 两组审计/capture 均覆盖 252 个 Linear，每个执行 32 次、dec
 [加速详细结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。最新运行代码 `3c996ab`；
 本地私有备份 `server_results/runpod_prepared_sxm4_2026-09-15/` 已完成哈希、
 源码、120 次样本统计与路由核验，不提交原始大文件到 GitHub。
+
+## Uniform W3 与当前 QBB 的质量/码率决策
+
+2026-09-16 在 RTX PRO 4500 Blackwell 上以 `same-device-quality` 重跑四臂。
+所有 arm 使用相同 146 x 2048 WikiText-2 blocks、298,862 positions、dense BF16
+评测路径，并覆盖相同 36 layers / 252 Linears / 6,945,767,424 weights。
+
+| Arm | Effective bits/weight | Serialized weight bytes | PPL | Delta vs current QBB |
+|---|---:|---:|---:|---:|
+| BF16 | 16.000000 | 13,891,534,848 | 9.726488173 | -3.441421766 |
+| current QBB | 3.138184 | 2,724,636,672 | 13.167909939 | 0 |
+| GPTQ W3A16 g128 sym | 3.154552 | 2,738,847,744 | **11.266114820** | **-1.901795120** |
+| QBB FP16 scales | 2.631687 | 2,284,886,016 | 13.168951166 | +0.001041227 |
+
+GPTQ 仅多 0.5216% 存储，PPL 比当前 QBB 低 14.4426%，符合预先定义的
+**Case A**。当前约 3.14-bit QBB point 基本被 uniform W3 支配，后续优先
+uniform 3-bit backend / solver，不再深挖当前 QBB format 的 kernel。FP16 scales
+证明 QBB 可压到 2.6317 bit/weight 而几乎不损失质量，但它是较低码率、较差质量的
+另一个 trade-off 点，不改变主决策。详见[专门状态页](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+
+该证据不等于 A100 `1e-6` 复现，也不是 latency 结果。旧 A100 BF16/QBB anchor
+只作 report-only；其跨设备偏移约 0.0015--0.0019 PPL，远小于 1.9018 的同卡
+effect size。结果源码 `f979f6b`，summary JSON SHA256 为
+`de5e12fcd7c1db5da1952717dd15a01c9c230b34a3d2b254e64d0fc05e88e8cd`。
 
 ## Qwen3-8B test PPL
 
