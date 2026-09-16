@@ -99,8 +99,9 @@ zero 只有 4；`nonidentity_permutations` 只做事实记录，不要求为零�
 
 ## Stage 2：离线规范化
 
-转换会再次 fail-closed 检查每个模块，并逐项要求 integer code、decoded zero、FP16
-scale exact，及 retained decoded-BF16 bitwise exact。它先写
+转换会再次 fail-closed 检查每个模块，并逐项要求 integer code、decoded zero、raw
+FP16 scale 来源，以及 GPTQModel loaded-BF16 scale cast 和 retained decoded-BF16
+bitwise exact。它先写
 `w3_layout_root.incomplete`，全部通过后才原子改名为正式目录。用 tmux 持久执行：
 
 ```bash

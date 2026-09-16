@@ -196,8 +196,8 @@ def main():
                     if facts["decoded_zero_unique"] != [4]:
                         raise ValueError(f"non-constant decoded zero: {full_name}")
                     layout = convert_gptq_w3_to_planar(raw, qzero_format=1)
-                    if not torch.equal(layout["scales"], raw["scales"]):
-                        raise RuntimeError(f"FP16 scale round-trip failed: {full_name}")
+                    if not torch.equal(layout["scales"], raw["scales"].to(torch.bfloat16)):
+                        raise RuntimeError(f"loaded-BF16 scale cast failed: {full_name}")
                     codes = unpack_gptq_w3_qweight(raw["qweight"])
                     if not torch.equal(decode_planar_w3_codes(layout), codes):
                         raise RuntimeError(f"integer code round-trip failed: {full_name}")
@@ -215,9 +215,11 @@ def main():
                             "facts": facts,
                             "storage": storage,
                             "decoded_bf16_sha256": tensor_sha256(decoded),
+                            "source_fp16_scales_sha256": tensor_sha256(raw["scales"]),
+                            "deployment_bf16_scales_sha256": tensor_sha256(layout["scales"]),
                             "integer_codes_exact": True,
                             "decoded_zero_exact": True,
-                            "fp16_scales_exact": True,
+                            "deployment_scales_match_loaded_bf16_cast": True,
                             "decoded_bf16_bitwise_exact": True,
                         }
                     )
@@ -266,7 +268,7 @@ def main():
                 "nonidentity_permutations": nonidentity,
                 "integer_code_round_trip_exact": True,
                 "decoded_zero_exact": True,
-                "fp16_scale_round_trip_exact": True,
+                "deployment_scales_match_loaded_bf16_cast": True,
                 "decoded_bf16_bitwise_exact": True,
             },
             "deployment_tensor_bytes": total_payload_bytes,

@@ -81,6 +81,7 @@ def validate_config(config: dict) -> None:
     }
     if (
         config.get("dtype") != "bfloat16"
+        or config.get("scale_dtype") != "bfloat16"
         or config.get("group_size") != 128
         or config.get("groups_per_split") != 1
         or config.get("mode") != "cuda_graph_total"

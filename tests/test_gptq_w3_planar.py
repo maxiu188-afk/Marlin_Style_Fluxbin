@@ -75,15 +75,17 @@ class GPTQW3PlanarTest(unittest.TestCase):
         layout = convert_gptq_w3_to_planar(raw, qzero_format=1)
         self.assertEqual(set(layout), {"planes", "scales", "perm"})
         self.assertEqual(layout["perm"].dtype, torch.int16)
+        self.assertEqual(layout["scales"].dtype, torch.bfloat16)
+        self.assertTrue(torch.equal(layout["scales"], raw["scales"].to(torch.bfloat16)))
         self.assertTrue(torch.equal(decode_planar_w3_codes(layout), codes))
 
     def test_bf16_restore_matches_gptq_semantics_bitwise(self):
         raw, codes, zeros = synthetic_raw()
         layout = convert_gptq_w3_to_planar(raw, qzero_format=1)
         expected = (
-            raw["scales"][raw["g_idx"].long()]
+            raw["scales"].to(torch.bfloat16)[raw["g_idx"].long()]
             * (codes.to(torch.int16) - zeros[raw["g_idx"].long()])
-        ).T.to(torch.bfloat16).contiguous()
+        ).T.contiguous()
         self.assertTrue(torch.equal(restore_planar_w3(layout), expected))
 
     def test_structural_matvec_matches_direct_formula(self):
@@ -92,7 +94,7 @@ class GPTQW3PlanarTest(unittest.TestCase):
         x = torch.randn(1, codes.shape[0], generator=torch.Generator().manual_seed(9), dtype=torch.bfloat16)
         direct = torch.sum(
             x.float().T
-            * raw["scales"][raw["g_idx"].long()].float()
+            * raw["scales"].to(torch.bfloat16)[raw["g_idx"].long()].float()
             * (codes.to(torch.int16) - zeros[raw["g_idx"].long()]).float(),
             dim=0,
         ).unsqueeze(0)

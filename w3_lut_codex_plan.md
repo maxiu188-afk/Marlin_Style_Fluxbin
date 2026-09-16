@@ -83,7 +83,7 @@ y += scale * T
 
 ```text
 planes[G][3][O][16]   uint8
-scales[G][O]          fp16
+scales[G][O]          bf16
 perm[K]               int16
 ```
 
@@ -199,7 +199,8 @@ packed GPTQ
 ```text
 integer q codes exact
 decoded zero exact
-FP16 scales exact
+raw FP16 scales exact as source provenance
+deployment BF16 scales exact after GPTQModel loaded-dtype cast
 BF16 bitwise identical
 ```
 

@@ -24,7 +24,7 @@ static_assert(kRows == 256 || kRows == 512 || kRows == 1024,
 template <class T>
 __global__ void w3_lut_inline_main(const T* __restrict__ x,
                                    const uint8_t* __restrict__ planes,
-                                   const at::Half* __restrict__ scales,
+                                   const at::BFloat16* __restrict__ scales,
                                    const int16_t* __restrict__ perm,
                                    float* __restrict__ partial,
                                    int O, int G) {
@@ -97,7 +97,7 @@ __global__ void finish_m1(const float* __restrict__ partial,
 }
 
 template <class T>
-void launch_main(const T* x, const uint8_t* planes, const at::Half* scales,
+void launch_main(const T* x, const uint8_t* planes, const at::BFloat16* scales,
                  const int16_t* perm, float* partial, int O, int G,
                  cudaStream_t stream) {
   const dim3 grid((O + kRows - 1) / kRows, G);
@@ -136,9 +136,9 @@ void validate_common(const torch::Tensor& x, const torch::Tensor& planes,
               "dimensions outside v1 bounds");
   TORCH_CHECK(O % 32 == 0, "v1 requires O divisible by 32 for aligned plane rows");
   TORCH_CHECK(x.size(1) == K, "K mismatch");
-  TORCH_CHECK(scales.scalar_type() == at::kHalf &&
+  TORCH_CHECK(scales.scalar_type() == at::kBFloat16 &&
               scales.sizes() == at::IntArrayRef({G, O}),
-              "scales must be FP16 [G,O]");
+              "deployment scales must be BF16 [G,O]");
   TORCH_CHECK(perm.scalar_type() == at::kShort && perm.dim() == 1 && perm.numel() == K,
               "perm must be int16 [K]");
   TORCH_CHECK(partial.scalar_type() == at::kFloat &&
@@ -157,12 +157,12 @@ void inline_main(torch::Tensor x, torch::Tensor planes, torch::Tensor scales,
   AT_DISPATCH_SWITCH(x.scalar_type(), "fluxbin_w3_lut_inline_main",
     AT_DISPATCH_CASE(at::ScalarType::Half, [&] {
       launch_main(x.data_ptr<scalar_t>(), planes.data_ptr<uint8_t>(),
-                  scales.data_ptr<at::Half>(), perm.data_ptr<int16_t>(),
+                  scales.data_ptr<at::BFloat16>(), perm.data_ptr<int16_t>(),
                   partial.data_ptr<float>(), O, G, stream);
     })
     AT_DISPATCH_CASE(at::ScalarType::BFloat16, [&] {
       launch_main(x.data_ptr<scalar_t>(), planes.data_ptr<uint8_t>(),
-                  scales.data_ptr<at::Half>(), perm.data_ptr<int16_t>(),
+                  scales.data_ptr<at::BFloat16>(), perm.data_ptr<int16_t>(),
                   partial.data_ptr<float>(), O, G, stream);
     })
   );

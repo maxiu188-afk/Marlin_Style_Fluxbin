@@ -174,8 +174,8 @@ def validate_planar_w3(
     if planes.dtype != torch.uint8 or planes.ndim != 4 or planes.shape[1] != 3 or planes.shape[3] != 16:
         raise ValueError("planes must be uint8 [G,3,O,16]")
     groups, _, out_features, _ = planes.shape
-    if scales.dtype != torch.float16 or tuple(scales.shape) != (groups, out_features):
-        raise ValueError("scales must be float16 [G,O]")
+    if scales.dtype != torch.bfloat16 or tuple(scales.shape) != (groups, out_features):
+        raise ValueError("deployment scales must be bfloat16 [G,O]")
     in_features = groups * GROUP_SIZE
     if in_features > 32767:
         raise ValueError("v1 perm indices must be representable by int16")
@@ -216,7 +216,11 @@ def convert_gptq_w3_to_planar(
     layout = {
         "planes": torch.stack((_pack_bytes(b0), _pack_bytes(b1), _pack_bytes(b2_inverted)), dim=1)
         .contiguous(),
-        "scales": tensors["scales"].contiguous().clone(),
+        # GPTQModel 7.4 reloads this checkpoint with dtype=bfloat16, so its
+        # canonical retained decoder casts raw FP16 scales before dequantizing.
+        # Store that exact two-byte deployment value; keeping raw FP16 here
+        # would differ from the accepted decoded-BF16 oracle.
+        "scales": tensors["scales"].to(torch.bfloat16).contiguous(),
         "perm": perm64.to(torch.int16).contiguous(),
     }
     validate_planar_w3(layout)
@@ -243,12 +247,13 @@ def decode_planar_w3_codes(
 def restore_planar_w3(
     layout: Mapping[str, torch.Tensor], *, dtype: torch.dtype = torch.bfloat16
 ) -> torch.Tensor:
-    """Restore ``[O,K]`` weights with GPTQModel's FP16-scale arithmetic."""
+    """Restore ``[O,K]`` weights with GPTQModel's loaded-BF16 semantics."""
     out_features, in_features = validate_planar_w3(layout)
     codes = decode_planar_w3_codes(layout, original_order=False)
     groups = in_features // GROUP_SIZE
     signed = (codes.to(torch.int16) - ZERO).reshape(groups, GROUP_SIZE, out_features).permute(0, 2, 1)
-    # FP16 multiplication mirrors GPTQModel 7.4's eager Torch dequantizer.
+    # The retained artifact was loaded with dtype=bfloat16, which casts scales
+    # before GPTQModel's eager Torch dequantizer performs this multiplication.
     sorted_weight = (layout["scales"].unsqueeze(-1) * signed).permute(1, 0, 2).reshape(out_features, in_features)
     weight = torch.empty_like(sorted_weight)
     weight[:, layout["perm"].to(torch.int64)] = sorted_weight

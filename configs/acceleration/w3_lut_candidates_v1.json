@@ -4,6 +4,7 @@
   "seed": 20260916,
   "layer": 0,
   "dtype": "bfloat16",
+  "scale_dtype": "bfloat16",
   "group_size": 128,
   "groups_per_split": 1,
   "mode": "cuda_graph_total",
