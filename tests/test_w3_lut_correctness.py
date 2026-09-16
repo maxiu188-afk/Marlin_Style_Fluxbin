@@ -69,7 +69,10 @@ class CUDAW3LUTCorrectnessTest(unittest.TestCase):
                         return w3_lut_m1_out(x, layout, out, workspace, row_tile=row_tile)
 
                     run()
-                    self.assertTrue(torch.isfinite(workspace).all())
+                    if workspace.shape[0] == 1:
+                        self.assertTrue(torch.isnan(workspace).all())
+                    else:
+                        self.assertTrue(torch.isfinite(workspace).all())
                     torch.testing.assert_close(out.float(), reference, rtol=0.02, atol=0.02)
                     saved = out.clone()
                     workspace.fill_(float("nan"))
@@ -115,7 +118,9 @@ class CUDAW3LUTCorrectnessTest(unittest.TestCase):
                             rtol=0.005,
                             atol=0.02,
                         )
-                        if groups_per_split == 1:
+                        if corrected_workspace.shape[0] == 1:
+                            self.assertTrue(torch.isnan(corrected_workspace).all())
+                        else:
                             self.assertTrue(torch.isfinite(corrected_workspace).all())
                         saved = corrected.clone()
                         w3_lut_m1_out(
