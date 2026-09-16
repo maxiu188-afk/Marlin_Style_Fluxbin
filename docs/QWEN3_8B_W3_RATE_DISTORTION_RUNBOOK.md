@@ -177,6 +177,40 @@ model, all 1008 FP16 scale tensors, and finite dense-BF16 reconstruction.
 
 Use the original frozen PPL environment, not the GPTQ quantization venv:
 
+On a new Pod, `/opt/fluxbin-venv` must be recreated on container disk. First
+confirm that the retained volume is mounted at `/workspace`, the base runtime is
+Python 3.12 / PyTorch 2.8.0+cu128, and the GPU is an A100 80GB with capability
+8.0. Then restore only the pinned add-on environment:
+
+```bash
+project_root=/workspace/repos/marlin-style-fluxbin
+python3 -m venv --system-site-packages /opt/fluxbin-venv
+/opt/fluxbin-venv/bin/python -m pip install \
+  -r "$project_root/infra/runpod/requirements-linear-a100-v1.lock"
+/opt/fluxbin-venv/bin/python -m pip install --no-deps -e "$project_root"
+/opt/fluxbin-venv/bin/python -m pip check
+```
+
+Do not install GPTQModel into this evaluator environment. The raw W3 artifact
+has already been decoded and validated. Before launch, require a clean checkout
+at the intended revision and confirm that both the new job directory and formal
+output directory are absent.
+
+The prepared wrapper records the Git revision, environment, GPU, exact command,
+PID, log, status and exit code, and refuses to overwrite existing output. Start
+it inside tmux so the run does not depend on the SSH connection:
+
+```bash
+export FLUXBIN_PYTHON=/opt/fluxbin-venv/bin/python
+tmux new-session -d -s qwen3-8b-w3-rate-distortion-v1 \
+  "bash $project_root/scripts/run_qwen3_8b_w3_rate_distortion_job.sh \
+  /workspace \
+  /workspace/jobs/qwen3-8b-w3-rate-distortion-v1/ppl \
+  /workspace/artifacts/qwen3_8b_w3_rate_distortion"
+```
+
+The direct runner command below is the frozen command embedded by that wrapper:
+
 ```bash
 /opt/fluxbin-venv/bin/python -u \
   "$project_root/scripts/run_qwen3_8b_w3_rate_distortion_ppl.py" \
@@ -196,6 +230,19 @@ Use the original frozen PPL environment, not the GPTQ quantization venv:
 The scoring order is BF16, current QBB, GPTQ W3 g128, then QBB FP16 scales.
 Every arm must report 146 blocks and 298,862 positions. A failed or partial
 directory must not be relabelled as a completed comparison.
+
+Bounded status checks:
+
+```bash
+cat /workspace/jobs/qwen3-8b-w3-rate-distortion-v1/ppl/status
+tail -n 30 /workspace/jobs/qwen3-8b-w3-rate-distortion-v1/ppl/run.log
+cat /workspace/jobs/qwen3-8b-w3-rate-distortion-v1/ppl/exit-code
+```
+
+Historical same-protocol measurements scored each arm in roughly 28 seconds,
+but startup, full input hashing and four weight materializations add overhead.
+Budget several minutes rather than treating 4 x 28 seconds as a guaranteed
+wall-clock time.
 
 ## Output contract
 
