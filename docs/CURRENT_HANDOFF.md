@@ -11,6 +11,16 @@ vLLM 仅保留接口、尚未接入。
   同轮 CUDA Graph total，12/12 cell 正确且稳定。最佳 q/o R256、k/v R512、
   gate/up R1024、down R1024 相对原始 BF16 分别为 1.731x、0.982x、2.678x、
   2.616x；详见 [W3 inline 结果](W3_LUT_INLINE_RESULTS.md)。
+- **W3 完整模型性能约 1.49x，但 correctness gate 未通过**：A100 PCIe、batch1、
+  真实前缀 StaticCache、32-token full-sequence Graph 相对原始 BF16 为
+  1.4880x / 1.4892x，相对 decoded W3 为 1.4923x / 1.4886x；主计时稳定。
+  packed-vs-decoded logits NRMSE 为 0.01683 / 0.01457，超过 0.005，因此状态是
+  `completed_with_backend_numerical_differences`，不是 accepted full-model backend。
+- 逐层诊断证明 prefill、36 层 prefix KV、prepared wrapper 和 Graph 路由无误；
+  第 0 层已有约 0.0015 NRMSE，第 8 层首次越过 0.005。四种真实 shape 均与
+  structural reference 逐位一致，根因是 kernel 的“FP32 integer dot 后乘 scale”
+  与 decoded 路径“先物化 BF16 权重再 GEMM”的算术语义不同。详见
+  [W3 完整模型结果与误差归因](W3_LUT_FULL_MODEL_RESULTS.md)。
 - 当前服务器的 Nsight Compute 计数器权限被宿主拒绝（`ERR_NVGPUCTRPERM`）；
   尚不能归因 LUT build、occupancy、HBM 或 shared bank conflict。prepare 诊断分支
   仍未授权、未实现。
@@ -46,12 +56,28 @@ vLLM 仅保留接口、尚未接入。
 | 当前全模型 runner | `scripts/run_qwen3_8b_prepared_m1_trial.py` |
 | 当前配置 | `configs/acceleration/qwen3_8b_full_m1_v2.json`，内部 ID 为 v2.1 |
 | 旧协议对照 | `scripts/run_qwen3_8b_full_m1_trial.py` + `qwen3_8b_full_m1_v1.json` |
+| W3 packed kernel | `src/fluxbin_style/csrc/w3_lut.cu` |
+| W3 prepared Linear | `src/fluxbin_style/w3_lut_deployment.py` |
+| W3 全模型 runner | `scripts/run_qwen3_8b_w3_full_m1_trial.py` |
+| W3 全模型配置 | `configs/acceleration/qwen3_8b_w3_full_m1_v1.json` |
 
-最新正式运行源码为 `3c996ab`。v2 首次在动态/静态数值门槛处失败，未计时；
+QBB prepared v2.1 最新正式运行源码为 `3c996ab`。v2 首次在动态/静态数值门槛处失败，未计时；
 v2.1 将注意力路径差异独立报告，以同一 StaticCache 下的旧 wrapper 为精确参照。
 失败记录与修正后的结果均保留，不追溯改写 v1 或首次 v2 结果。
 
+W3 完整模型正式运行源码为 `fc76b75`。四个最佳 row tile、layout manifest、
+protocol、runner、environment 和正式结果均由 SHA256 绑定；诊断只读正式 artifact，
+没有改写正式 JSON 或阈值。
+
 ## 服务器与证据
+
+W3 完整模型服务器最后一次观测：`213.173.105.10:43680`，A100 80GB PCIe。
+正式任务与两项误差诊断均退出 0；最后检查无 GPU compute 进程或 tmux，服务器 Git
+工作区干净且为 `fc76b75`。正式结果 SHA256 为
+`c68811aa...56f423`，逐层/算术归因 SHA256 分别为 `86208468...7cbe6` 和
+`f1767d0e...4a85`。远端结果位于 `/workspace/results/qwen3-8b-w3-full-m1-v1/`，
+私有本地备份位于 `server_results/runpod_w3_full_m1_a100_pcie_2026-09-16/`。
+可以关闭计算实例并保留 `/workspace` 网络卷；实际电源状态仍由用户确认。
 
 M=1 性能服务器最后一次观测：`213.173.102.5:11028`，A100 SXM4 80GB，任务退出 0，
 GPU 无剩余实验进程；已完成关机准备，**尚无用户确认本实例已关闭**。
@@ -89,14 +115,19 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 
 ## 下一步边界
 
-下一步是在允许读取 NVIDIA performance counters 的实例上，只 profile 四个最佳
-inline W3 candidate 和同 shape 的 `v5_p1024/gps1`。只有 profiler 证明 LUT build
-是主要瓶颈，才另开 prepare 诊断分支。不要自动重跑量化、四臂 PPL，不扩展 batch、
-Tensor Core/Marlin W3、QKV fusion、split-K 或完整模型；现有 prepared v2.1 只作为
-冻结的 QBB 性能基线。
+下一步不是继续调 row tile 或自动实现 prepare，而是先明确 W3 的数值语义：若要求
+严格复现 retained decoded-BF16 GPTQModel，kernel 必须模拟 per-weight BF16 物化/
+舍入并重做正确性和性能门；若保留当前 structural W3 算术，则将它视为另一个部署
+模型，单独完成 PPL/质量验证。不得放宽 0.005/0.05 门限后把本轮改写为 accepted。
 
-下一次上机先确认实例允许 performance counters，再同步 Git、核对持久卷/manifest/
-snapshot、恢复环境并验证 CUDA。
+只有数值路线明确后，才决定是否在允许 performance counters 的实例上 profile 四个
+最佳 inline candidate。prepare 仍只能在 profiler 证明 LUT build 为主要瓶颈后作为
+诊断分支；不自动扩展 batch、Tensor Core/Marlin W3、QKV fusion、split-K 或 serving。
+现有 prepared v2.1 继续作为冻结的 QBB 性能基线。
+
+下一次上机先确认选择的是 dense-BF16 fidelity 路线还是 structural-W3 质量验证路线，
+再同步 Git、核对持久卷/manifest/snapshot、恢复环境并验证 CUDA；仅 profiler 路线
+需要事先确认实例允许读取 performance counters。
 每次新运行使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。
 

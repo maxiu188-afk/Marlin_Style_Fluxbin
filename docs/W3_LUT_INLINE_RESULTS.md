@@ -1,7 +1,8 @@
 # GPTQ W3 inline LUT：A100 PCIe 第一轮结果
 
 更新：2026-09-16。本文只记录 Qwen3-8B、M=1、inline W3 LUT 的 Linear 级证据。
-它不是完整模型、prefill、多 batch 或服务吞吐证据。
+后续完整模型 trial 已完成，但因 packed-vs-decoded 数值门失败而未获 correctness
+acceptance；详见[完整模型结果与误差归因](W3_LUT_FULL_MODEL_RESULTS.md)。
 
 ## 结论
 
@@ -74,6 +75,10 @@ R1024。后续 profiler 只允许覆盖这四点及同 shape 的 `v5_p1024/gps1`
 
 因此尚无 achieved occupancy、eligible warps、DRAM throughput、shared bank conflict
 或 source-counter 证据，不能判断 LUT construction 是否为主要瓶颈。`prepare`
-诊断分支仍未授权、未实现。下一步是在允许读取 NVIDIA performance counters 的
-实例上运行 [inline profiler 手册](W3_LUT_INLINE_RUNBOOK.md#stage-4受限-profiler)，
-再按测得的 source/counter 结果决定是否另开 prepare 分支。
+诊断分支仍未授权、未实现。
+
+随后使用四个最佳 row tile 完成了 36 层、252 Linear 的 full-sequence Graph trial：
+性能约为原始 BF16 的 1.49x，但 decoded-W3 correctness gate 未通过。逐层与四 shape
+算术分解已将原因定位为 kernel structural 算术与 dense BF16 权重物化语义不同，
+而不是 packing/permutation 错误。当前优先级是决定数值语义和 oracle；在此之前
+不自动实现 prepare，也不把 profiler 当作下一项正式 candidate。

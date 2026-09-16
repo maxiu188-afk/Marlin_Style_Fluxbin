@@ -6,6 +6,11 @@
 后续质量/码率决策已转向 uniform 3-bit；本页只保存冻结 QBB 性能合同，不再作为
 继续优化当前 QBB kernel 的指令。
 
+uniform W3 的第一轮 backend 和完整模型 trial 随后已经完成：Graph 性能约为原始
+BF16 的 1.49x，但 packed-vs-decoded W3 数值门失败。当前 W3 状态、误差归因和
+下一步语义边界见 [W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)；该结果不能
+反向改写为 QBB 或 W3 accepted full-model correctness 证据。
+
 ## 路线边界
 
 RTX PRO 4500 同卡四臂结果中，GPTQ W3 g128 为 3.154552 bit/weight、PPL

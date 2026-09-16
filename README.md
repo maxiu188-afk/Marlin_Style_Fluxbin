@@ -13,6 +13,15 @@ CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k
 硬件计数器，所以 prepare 分支仍未授权。详见
 [W3 inline 结果](docs/W3_LUT_INLINE_RESULTS.md)。
 
+四个最佳 row tile 随后接入完整 Qwen3-8B：A100 PCIe、batch1、真实前缀 KV、
+32-token full-sequence CUDA Graph 相对原始 BF16 为 **1.4880x / 1.4892x**，
+相对 decoded W3 BF16 为 **1.4923x / 1.4886x**，两组主计时稳定。但
+packed-vs-decoded logits NRMSE 为 **0.01683 / 0.01457**，超过 0.005 门限；
+正式状态是 `completed_with_backend_numerical_differences`，不能写成 correctness
+accepted。归因结果表明 kernel 与 structural W3 逐位一致，误差来自 dense 路径
+提前物化 BF16 权重、kernel 则先做 FP32 integer dot 后乘 scale 的语义差异，随后
+经 36 层传播放大。详见[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)。
+
 在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
 32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。
 
@@ -40,13 +49,16 @@ A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DIST
 ## 阅读与运行入口
 
 - [当前交接](docs/CURRENT_HANDOFF.md)：有效状态、代码入口、服务器与下一步。
+- [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：约 1.49x 性能、失败的数值门与逐层归因。
 - [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
 - [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
 - [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
 - [文档索引](docs/README.md)：质量、算法、环境和历史归档。
 
-当前入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置文件
-`configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。旧 v1 路径和结果保留。
+QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置文件
+`configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。W3 完整模型入口为
+`scripts/run_qwen3_8b_w3_full_m1_trial.py`，配置文件
+`configs/acceleration/qwen3_8b_w3_full_m1_v1.json`。旧 v1 路径和结果保留。
 上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
 不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。
 

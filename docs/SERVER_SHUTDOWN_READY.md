@@ -1,5 +1,30 @@
 # 服务器关机准备与恢复记录
 
+## 2026-09-16：W3 完整模型与误差诊断已收尾
+
+W3 性能服务器 `213.173.105.10:43680` 为 A100 80GB PCIe。正式 full-model
+任务和两项只读诊断均已结束；最后检查无 NVIDIA compute 进程或 tmux 会话，远端
+Git 工作区干净且为 `fc76b75802d57e238eaf258ab85f3803588e92c8`。
+
+- 正式状态：`completed_with_backend_numerical_differences`；Graph 性能稳定，
+  packed-vs-decoded W3 correctness gate 未通过。
+- 远端结果：`/workspace/results/qwen3-8b-w3-full-m1-v1/`。
+- 远端作业记录：`/workspace/jobs/qwen3-8b-w3-full-m1-v1/`。
+- W3 layout：`/workspace/models/fluxbin/qwen3-8b-gptq-w3-lut-planar-v1/`；manifest
+  SHA256 `f2825dda33d77491364fc857f3c4e36be114be859cf26aa76d142e0e2441edf8`。
+- 正式结果 SHA256：
+  `c68811aa065b34d497f3113e0bc873684624ee0c8fc8df199998a7e53856f423`。
+- environment SHA256：
+  `0e75d87e3fe7c2de4525cd0b3349656dae2088ad6778a017c3c1be11f710d558`。
+- 逐层归因 / 算术分解 SHA256：
+  `8620846807f7214912c752aeb79d6011f61892d71dd1c22a81e96ca96d87cbe6` /
+  `f1767d0e7e673a31923573eafa9c38673c3698fec61abc1e653fe2a386a64a85`。
+- 本地私有备份：`server_results/runpod_w3_full_m1_a100_pcie_2026-09-16/`。
+
+可以关闭该计算实例，但必须保留 `/workspace` 网络卷。正式结果、环境、日志和诊断
+JSON 已下载并核对哈希；大模型和 W3 artifact 继续只保存在网络卷。完整结论见
+[W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)。
+
 ## 2026-09-16：RTX PRO 4500 质量实验已收尾
 
 质量服务器 `213.173.109.240:44534` 上的 W3/QBB 四臂 PPL 作业退出 0，状态为

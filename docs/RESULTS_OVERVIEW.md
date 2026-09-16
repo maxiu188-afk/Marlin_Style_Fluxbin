@@ -13,11 +13,33 @@
 | 09-15 PCIe | v5_p1024/gps1，动态 KV eager v1 | 0.87696x / 0.86674x | 稳定，未加速 |
 | 09-15 SXM4 | v5_p1024/gps1，prepared eager v2.1 | 不发布 / 不发布 | 波动 6.51–10.11%，超 5% |
 | **09-15 SXM4** | **v5_p1024/gps1，sequence Graph v2.1** | **1.380972x / 1.383276x** | **两组稳定，跨度 <0.12%** |
+| **09-16 PCIe** | **GPTQ W3 inline，sequence Graph** | **1.488022x / 1.489158x** | **性能稳定；decoded-W3 数值门失败** |
 
-最新 Graph 的 32-token 延迟：原始 BF16 467.513 / 467.919 ms，packed
+QBB v2.1 Graph 的 32-token 延迟：原始 BF16 467.513 / 467.919 ms，packed
 338.539 / 338.269 ms；约 68 → 95 token/s。eager 不稳定导致整体 JSON 为
 `completed_unstable`，不能把两组 Graph 的稳定结论写成全协议均通过。
 上述数值均在 report-only 策略下测量，不代表 BF16 数值等价。
+
+最新 W3 行使用另一个权重格式、GPU 实例和正式协议，不能与 QBB 行作单因素 kernel
+消融。W3 的 32-token packed 延迟为 320.625 / 321.710 ms，原始 BF16 为
+477.097 / 479.077 ms；但 packed-vs-decoded W3 logits NRMSE 为 0.01683 / 0.01457，
+超过 0.005，因此不是 correctness accepted 结果。
+
+## GPTQ W3 完整模型误差归因
+
+W3 运行覆盖 36 层、252 个 packed Linear；同一 StaticCache 下 prepared wrapper、
+Graph、路由、prefill 和 prefix KV 检查通过。prompt 0 的第一个 decode step 在第 0 层
+已有 0.001506 NRMSE，第 8 层首次超过 0.005。把每个 packed Linear 的真实输入送入
+对应 dense W3 Linear 后，单算子本地 NRMSE 为约 0.00059--0.00264，没有单独异常
+shape。
+
+四种真实 shape 的 kernel 输出与 structural FP32 reference 转 BF16 均逐位一致；
+FP32 归约顺序差异仅 1e-7 量级。主要差异来自 decoded 路径先物化
+`BF16(scale * code)` 权重，而 kernel 先做 FP32 integer dot、再乘 BF16 scale，
+最终 BF16 舍入后产生约 0.00065--0.00218 的单层差异，并经完整模型传播放大。
+所以本次失败不是 `g_idx/desc_act`、packing、Graph 或 fallback 错误，而是 oracle
+与 kernel 的有限精度语义不一致。完整数据、哈希和后续边界见
+[W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)。
 
 ## Linear、block 与协议边界
 

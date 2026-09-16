@@ -14,6 +14,7 @@
 
 - [GPTQ W3 inline LUT 第一轮运行手册](W3_LUT_INLINE_RUNBOOK.md)
 - [GPTQ W3 inline LUT A100 PCIe 结果](W3_LUT_INLINE_RESULTS.md)
+- [GPTQ W3 inline LUT 完整模型结果与误差归因](W3_LUT_FULL_MODEL_RESULTS.md)
 - [候选批次及全模型运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)
 - [加速实验合同与恢复交接](ACCELERATION_HANDOFF.md)
 - [M=1 初始准备](M1_ACCELERATION_PREPARATION.md)
