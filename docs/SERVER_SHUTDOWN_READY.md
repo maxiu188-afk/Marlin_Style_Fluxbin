@@ -1,5 +1,28 @@
 # 服务器关机准备与恢复记录
 
+## 2026-09-16：RTX PRO 4500 质量实验已收尾
+
+质量服务器 `213.173.109.240:44534` 上的 W3/QBB 四臂 PPL 作业退出 0，状态为
+`completed_cross_device_pending_review`。每个 arm 均覆盖 36 layers、252 Linears、
+146 blocks 和 298,862 positions；最终 Case A 决策见
+[W3/QBB 状态页](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+
+- 执行源码：`f979f6b3f64aa7ccabd2d96cc5e953a83e2d7080`；结果整理与关机说明另行
+  提交到 `codex/runpod-bootstrap`。
+- summary JSON SHA256：
+  `de5e12fcd7c1db5da1952717dd15a01c9c230b34a3d2b254e64d0fc05e88e8cd`。
+- 远端结果：`/workspace/artifacts/qwen3_8b_w3_rate_distortion/`。
+- 远端 closeout：
+  `/workspace/jobs/qwen3-8b-w3-rate-distortion-v1/closeout-rtx4500-20260916/`。
+- closeout archive SHA256：
+  `812ba530f9fb4a41f97776c952c5eb5ce4f5dfef8e34fb776729a03abe49bfe7`。
+- 本地私有备份：`server_results/runpod_w3_rate_distortion_rtx4500_2026-09-16/`；
+  归档已解包并复核，共 48 个小型 evidence 文件。模型和低比特权重未下载。
+- 最终检查已执行 `sync`；无 tmux、GPU compute 或实验进程，Git 工作树干净。
+
+可以关闭该计算实例，但必须保留网络卷 `34au39ljvf`。`/opt/fluxbin-venv` 位于
+容器盘，可随实例丢弃；恢复使用冻结 lock、持久模型/snapshot 和 Git 提交。
+
 2026-09-15 prepared SXM4 trial on `213.173.102.5:11028`: completed; retry exit 0,
 Graph full-model speed 1.381x/1.383x original BF16 (stable), eager unstable.
 Both attempts, environment/tests/job logs and final JSON were downloaded and hash-verified.
@@ -72,4 +95,5 @@ embedding/norm/lm_head/tokenizer/config：
 验收、日志、持久模型清单和环境记录；大权重按此前决定只保留网络盘，不下载本机。
 
 `/opt/fluxbin-venv` 是 container disk 环境，下次按 lock 恢复即可；不用重新下载模型。
-下一次先提供新 SSH 地址、挂载原网络卷并核验 manifest。精度实验暂停，加速工作以后再做。
+当时的下一步是提供新 SSH、挂载原网络卷并核验 manifest；“精度实验暂停”是
+2026-09-13 的历史快照，已被 2026-09-16 W3/QBB Case A 决策取代。

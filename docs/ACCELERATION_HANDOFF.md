@@ -1,9 +1,18 @@
 # 加速实验合同与恢复交接
 
-更新：2026-09-15。最新结果为 prepared v2.1 全模型 Graph 对原始 BF16
+更新：2026-09-16。QBB 最新性能结果仍为 prepared v2.1 全模型 Graph 对原始 BF16
 1.381x / 1.383x，两组稳定；同轮 eager 不稳定。当前状态见
 [当前交接](CURRENT_HANDOFF.md)，逐轮证据见[加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
-本页保存有效合同，不追加已过期的“下一步”快照。
+后续质量/码率决策已转向 uniform 3-bit；本页只保存冻结 QBB 性能合同，不再作为
+继续优化当前 QBB kernel 的指令。
+
+## 路线边界
+
+RTX PRO 4500 同卡四臂结果中，GPTQ W3 g128 为 3.154552 bit/weight、PPL
+11.266115，当前 QBB 为 3.138184 bit/weight、PPL 13.167910。GPTQ 只增加
+0.5216% 存储而降低 1.9018 PPL，符合预先定义的 Case A。后续优先 uniform
+3-bit backend / solver；prepared v2.1 作为历史 QBB 性能基线保留。详见
+[W3/QBB 结果与决策](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 ## 固定模型与权重
 
@@ -16,7 +25,8 @@
 
 上述路径是既有服务器存储位置，执行时通过环境变量指定，不写入通用代码。
 大权重未下载本机；小型结果、环境、日志和验收备份留在 Git-ignored `server_results/`。
-step400 test PPL 13.169788495，原质量门槛未通过；用户授权性能研究先行，精度工作暂停。
+step400 A100 test PPL 13.169788495，原质量门槛未通过。之后的同码率质量实验已经
+完成；“精度工作暂停”不再是当前状态。
 
 ## 当前执行与数值参照
 
@@ -50,7 +60,9 @@ Linear、block、完整模型分别报告。单 block 不作为全模型启动�
 
 ## 恢复与后续工作
 
-最后一次服务器任务已退出、无 GPU 进程，证据备份完成；用户尚未确认本实例关闭。
+QBB 性能服务器任务已退出、无 GPU 进程，证据备份完成；其实际电源状态仍由用户确认。
+后续 RTX 质量服务器也已完成关机审计，路径与哈希见
+[关机记录](SERVER_SHUTDOWN_READY.md)。
 关闭计算实例时保留 `/workspace` 网络卷 `34au39ljvf`、模型、结果及缓存。
 `/opt/fluxbin-venv` 在容器盘，重启后按
 `infra/runpod/requirements-linear-a100-v1.lock` 建立本机独立环境，不跨机器复制 venv。
@@ -58,5 +70,6 @@ Linear、block、完整模型分别报告。单 block 不作为全模型启动�
 
 下一次先核对 Git/存储/权重，再生成匹配源码的环境记录、跑 CUDA 检查并使用新的结果目录。
 入口与命令见[运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)。本次文档整理不启动实验。
-未来若只更新 scales，须重做新权重的正确性检查；性能结论仍绑定原 manifest 和执行环境。
+只有后续明确要求恢复 QBB 研究时，若只更新 scales，仍须重做新权重的正确性检查；
+性能结论继续绑定原 manifest 和执行环境。
 只有格式、形状、索引、dtype、dispatch 和无数据相关分支均不变时，才可认为计算/访存规模不变。

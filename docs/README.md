@@ -8,7 +8,7 @@
 
 - [当前进度与交接](CURRENT_HANDOFF.md)：只保留当前有效状态和下一步边界
 - [结果总览](RESULTS_OVERVIEW.md)：近期完整模型对照与质量证据
-- [实验计划](EXPERIMENT_PLAN.md)
+- [历史实验计划与完成状态](EXPERIMENT_PLAN.md)
 
 ## M=1 加速与全模型运行
 
@@ -21,8 +21,8 @@
 ## 服务器环境与恢复
 
 - [首次 M=1 环境准备记录](RUNPOD_M1_SETUP_RESULTS.md)
-- [后续服务器迭代计划](SERVER_ITERATION_PLAN.md)
-- [历史关机与存储交接](SERVER_SHUTDOWN_READY.md)
+- [历史服务器迭代计划](SERVER_ITERATION_PLAN.md)
+- [关机与存储交接](SERVER_SHUTDOWN_READY.md)
 
 ## Qwen3-8B 重建、质量与蒸馏
 
@@ -32,7 +32,7 @@
 | 初始 PPL | [运行指南](QWEN3_8B_PPL_GUIDE.md)、[诊断](QWEN3_8B_PPL_DIAGNOSIS.md) | [PPL](QWEN3_8B_PPL_RESULTS.md) |
 | Hybrid / conditioned | [Hybrid 探针](QWEN3_8B_HYBRID_PROBE_GUIDE.md)、[全模型指南](QWEN3_8B_CONDITIONED_FULL_GUIDE.md) | [全模型重建](QWEN3_8B_CONDITIONED_FULL_RESULTS.md)、[PPL](QWEN3_8B_CONDITIONED_PPL_RESULTS.md) |
 | 蒸馏 | [准备与协议](QWEN3_8B_DISTILLATION_PREPARATION.md) | [训练结果](QWEN3_8B_DISTILLATION_RESULTS.md)、[测试结果](QWEN3_8B_DISTILLED_TEST_RESULTS.md) |
-| W3/QBB 同码率质量对照 | [冻结配置与运行手册](QWEN3_8B_W3_RATE_DISTORTION_RUNBOOK.md) | 代码已准备，尚未启动 GPU 实验 |
+| W3/QBB 同码率质量对照 | [冻结配置与运行手册](QWEN3_8B_W3_RATE_DISTORTION_RUNBOOK.md) | [四臂结果与 Case A 决策](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md) |
 
 ## 历史归档
 

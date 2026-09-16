@@ -1,5 +1,13 @@
 # Qwen3-8B algorithm-quality and deployment plan
 
+Status update, 2026-09-16: this plan has been executed through QBB M=1
+full-model acceleration and the subsequent same-rate W3/QBB quality decision.
+The latter selected Case A, so new work should prioritize a uniform 3-bit
+backend / solver rather than extend the current QBB kernel. The phases below
+are retained as the historical contract and must not be read as the current
+execution queue. See `CURRENT_HANDOFF.md` and
+`QWEN3_8B_W3_RATE_DISTORTION_STATUS.md`.
+
 2026-09-14 execution order: start with M=1 on Qwen3-8B, then a single complete
 transformer block, then full-model expansion. M>1 and 32B stress cells are later
 extensions, not part of the first trial. Reserve an engine-neutral interface for
@@ -8,7 +16,7 @@ First new server startup MUST record the environment before and after setup;
 after successful CUDA smoke, prepare an immutable reusable image and validate it
 on a recreated Pod. See `M1_ACCELERATION_PREPARATION.md`.
 
-Status (2026-09-13, latest user direction): accuracy experiments pause after the
+Historical status (2026-09-13): accuracy experiments paused after the
 accepted fixed step400 test PPL, **13.169788495**, improved from undistilled
 conditioned hybrid 14.951611048. The persistent step400 artifact is the frozen
 starting point for acceleration research. The user explicitly prioritizes
@@ -154,8 +162,9 @@ frozen datasets and metrics. It is not automatically launched by the PPL run.
 ## Phase B: real deployment and acceleration
 
 Phase B uses the exact step400 artifact with accepted integrity/reconstruction
-and test PPL provenance. Its manifest is pinned on the persistent volume; the
-latest user direction permits performance research without further quality tuning.
+and test PPL provenance. Its manifest is pinned on the persistent volume. At
+that stage, user direction permitted performance research without further
+quality tuning; the later W3/QBB decision now supersedes that execution queue.
 
 ### B0. Runtime contract and packed layout
 
@@ -242,9 +251,10 @@ they cannot be inferred from operator results.
 
 1. Stop before full quantization if representative real-Linears violate the
    algorithm contract.
-2. Preserve the failed model-quality decision; under the latest user direction,
-   research correctness/benchmark work may proceed on the fixed step400 artifact.
-   Product deployment acceptance remains separate.
+2. Preserve the failed model-quality decision. The historical authorization
+   allowed correctness/benchmark work on the fixed step400 artifact; current
+   work follows the later Case A route. Product deployment acceptance remains
+   separate.
 3. Stop performance promotion for any shape or batch cell that fails numerical
    correctness or timing stability.
 4. If 8B full-model acceleration is weak but 32B stress shapes are strong,
