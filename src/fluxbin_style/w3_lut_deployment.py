@@ -5,11 +5,19 @@ from functools import lru_cache
 from pathlib import Path
 
 import torch
+from torch import nn
+from torch.nn import functional as F
 
-from .gptq_deployment import validate_planar_w3
+from .gptq_deployment import FIELDS, restore_planar_w3, validate_planar_w3
 
 
 ROW_TILES = (256, 512, 1024)
+QWEN3_ROW_TILE_BY_SHAPE = {
+    (4096, 4096): 256,
+    (1024, 4096): 512,
+    (12288, 4096): 1024,
+    (4096, 12288): 1024,
+}
 
 
 @lru_cache(maxsize=len(ROW_TILES))
@@ -85,3 +93,186 @@ def w3_lut_m1_out(
         raise ValueError("out dtype must match x dtype")
     inline_main(x, layout, workspace, row_tile=row_tile)
     return finish(workspace, out, row_tile=row_tile)
+
+
+def qwen3_row_tile(out_features: int, in_features: int) -> int:
+    try:
+        return QWEN3_ROW_TILE_BY_SHAPE[(out_features, in_features)]
+    except KeyError as exc:
+        raise ValueError(f"unsupported Qwen3-8B W3 shape: {(out_features, in_features)}") from exc
+
+
+class PackedW3Linear(nn.Module):
+    """Decode-only W3 Linear with explicit dense prefill fallback.
+
+    The prepared binding owns one output and one FP32 partial workspace.  It is
+    intentionally serial and batch-one, matching the accepted full-model CUDA
+    Graph protocol.
+    """
+
+    def __init__(
+        self,
+        layout: dict[str, torch.Tensor],
+        *,
+        bias: torch.Tensor | None = None,
+        fallback: str = "error",
+        row_tile: int | None = None,
+    ):
+        super().__init__()
+        if fallback not in {"error", "dense"}:
+            raise ValueError("fallback must be error or dense")
+        self.out_features, self.in_features = validate_planar_w3(layout)
+        self.row_tile = (
+            qwen3_row_tile(self.out_features, self.in_features)
+            if row_tile is None
+            else row_tile
+        )
+        if self.row_tile not in ROW_TILES:
+            raise ValueError(f"row_tile must be one of {ROW_TILES}")
+        self.fallback = fallback
+        self.route_counts = {"packed_m1": 0, "dense_fallback": 0}
+        self.last_route = "not_called"
+        self._decode_binding = None
+        self._decode_audit = False
+        for name in FIELDS:
+            self.register_buffer(name, layout[name].detach().clone())
+        self.register_buffer("bias", None if bias is None else bias.detach().clone())
+        self.register_buffer("_workspace", None, persistent=False)
+        self.register_buffer("_decode_output", None, persistent=False)
+
+    def layout(self) -> dict[str, torch.Tensor]:
+        return {name: getattr(self, name) for name in FIELDS}
+
+    def clear_prepared_decode(self) -> None:
+        self._decode_binding = None
+        self._decode_output = None
+        self._workspace = None
+        self._decode_audit = False
+
+    def _apply(self, fn, recurse=True):
+        self.clear_prepared_decode()
+        return super()._apply(fn, recurse=recurse)
+
+    def bind_prepared_decode(self, dtype: torch.dtype) -> None:
+        if self._decode_binding is not None:
+            raise ValueError("decode already bound")
+        if dtype not in (torch.float16, torch.bfloat16):
+            raise ValueError("FP16/BF16 required")
+        layout = self.layout()
+        device = layout["planes"].device
+        if device.type != "cuda":
+            raise ValueError("prepared decode requires CUDA")
+        validate_planar_w3(layout, check_values=False)
+        if any(value.device != device or not value.is_contiguous() for value in layout.values()):
+            raise ValueError("contiguous same-device layout required")
+        extension = load_w3_lut_extension(self.row_tile)
+        self._workspace = torch.empty(
+            workspace_shape(self.out_features, self.in_features),
+            device=device,
+            dtype=torch.float32,
+        )
+        self._decode_output = torch.empty(
+            (1, self.out_features), device=device, dtype=dtype
+        )
+        output = self._decode_output
+        shaped = output.view(1, 1, self.out_features)
+        expected = (1, 1, self.in_features)
+
+        def apply(x: torch.Tensor) -> torch.Tensor:
+            if torch.is_grad_enabled():
+                raise RuntimeError("prepared decode is inference only")
+            if (
+                tuple(x.shape) != expected
+                or x.dtype != dtype
+                or x.device != device
+                or not x.is_contiguous()
+            ):
+                raise ValueError("prepared decode input shape/dtype/device/stride mismatch")
+            if self._decode_audit:
+                self.route_counts["packed_m1"] += 1
+                self.last_route = "packed_m1"
+            flat = x.view(1, self.in_features)
+            extension.inline_main(
+                flat, layout["planes"], layout["scales"], layout["perm"], self._workspace
+            )
+            extension.finish(self._workspace, output)
+            if self.bias is not None:
+                output.add_(self.bias)
+            return shaped
+
+        self._decode_binding = apply
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        if self._decode_binding is not None:
+            return self._decode_binding(x)
+        if torch.is_grad_enabled():
+            raise RuntimeError("packed inference requires no_grad/inference_mode")
+        if x.ndim < 2 or x.shape[-1] != self.in_features:
+            raise ValueError("expected [...,K] input")
+        layout = self.layout()
+        m = x.numel() // self.in_features
+        if m != 1 or not x.is_cuda or x.dtype not in (torch.float16, torch.bfloat16):
+            if self.fallback != "dense":
+                raise ValueError("unsupported input; enable explicit dense fallback if needed")
+            self.last_route = "dense_fallback"
+            self.route_counts["dense_fallback"] += 1
+            return F.linear(x, restore_planar_w3(layout, dtype=x.dtype), self.bias)
+        self.last_route = "packed_m1"
+        self.route_counts["packed_m1"] += 1
+        shape = workspace_shape(self.out_features, self.in_features)
+        if self._workspace is None or self._workspace.device != x.device:
+            self._workspace = torch.empty(shape, device=x.device, dtype=torch.float32)
+        output = torch.empty((1, self.out_features), device=x.device, dtype=x.dtype)
+        w3_lut_m1_out(
+            x.reshape(1, self.in_features).contiguous(),
+            layout,
+            output,
+            self._workspace,
+            row_tile=self.row_tile,
+        )
+        if self.bias is not None:
+            output.add_(self.bias)
+        return output.reshape(*x.shape[:-1], self.out_features)
+
+
+def replace_w3_block_linears(
+    block,
+    layer_payload,
+    *,
+    fallback: str = "error",
+    row_tile_by_shape: dict[tuple[int, int], int] | None = None,
+) -> list[str]:
+    """Replace exactly seven Qwen3 Linears after validating the complete layer."""
+    from .qwen3 import QWEN3_LINEAR_MODULES
+
+    expected = {f"{module}.{field}" for module in QWEN3_LINEAR_MODULES for field in FIELDS}
+    if set(layer_payload) != expected:
+        raise ValueError("layer must contain exactly seven complete W3 payloads")
+    policy = QWEN3_ROW_TILE_BY_SHAPE if row_tile_by_shape is None else row_tile_by_shape
+    replacements = []
+    for name in QWEN3_LINEAR_MODULES:
+        old = block.get_submodule(name)
+        layout = {field: layer_payload[f"{name}.{field}"] for field in FIELDS}
+        out_features, in_features = validate_planar_w3(layout)
+        if not isinstance(old, nn.Linear) or (
+            old.out_features,
+            old.in_features,
+        ) != (out_features, in_features):
+            raise ValueError(f"Linear shape/type mismatch: {name}")
+        try:
+            row_tile = policy[(out_features, in_features)]
+        except KeyError as exc:
+            raise ValueError(
+                f"row-tile policy missing shape: {(out_features, in_features)}"
+            ) from exc
+        replacement = PackedW3Linear(
+            layout,
+            bias=old.bias,
+            fallback=fallback,
+            row_tile=row_tile,
+        ).to(old.weight.device)
+        replacements.append((name, replacement))
+    for name, replacement in replacements:
+        parent_name, attribute = name.rsplit(".", 1)
+        setattr(block.get_submodule(parent_name), attribute, replacement)
+    return [name for name, _ in replacements]

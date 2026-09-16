@@ -3,11 +3,13 @@ from __future__ import annotations
 import time
 import torch
 from .deployment import PackedHybridLinear
+from .w3_lut_deployment import PackedW3Linear
 from .acceleration_checks import numerical_gate
 
 
 def packed_modules(model):
-    return {name:m for name,m in model.named_modules() if isinstance(m,PackedHybridLinear)}
+    packed_types = (PackedHybridLinear, PackedW3Linear)
+    return {name:m for name,m in model.named_modules() if isinstance(m,packed_types)}
 
 
 @torch.inference_mode()
