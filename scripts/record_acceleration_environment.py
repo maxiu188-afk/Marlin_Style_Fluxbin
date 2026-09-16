@@ -19,6 +19,13 @@ import time
 from pathlib import Path
 
 ROOT=Path(__file__).resolve().parents[1]
+W3_CONTRACT_FILES=(
+    'configs/acceleration/w3_lut_candidates_v1.json',
+    'scripts/record_acceleration_environment.py',
+    'scripts/prepare_qwen3_8b_w3_lut_artifacts.py',
+    'scripts/run_w3_lut_server_preflight.py',
+    'scripts/run_w3_lut_benchmark.py',
+)
 
 
 def command(args):
@@ -58,10 +65,14 @@ def main():
             'disk_free_bytes':shutil.disk_usage(args.output_dir).free,
             'source_sha256':{str(f.relative_to(ROOT)):hashlib.sha256(f.read_bytes()).hexdigest()
                               for f in sorted((ROOT/'src/fluxbin_style').rglob('*')) if f.suffix in ('.py','.cu','.cuh')},
+            'w3_contract_sha256':{name:hashlib.sha256((ROOT/name).read_bytes()).hexdigest()
+                                  for name in W3_CONTRACT_FILES},
             'build_flags':['-O3','--fmad=false','-lineinfo'],
             'candidate_extra_build_flags':{k:[f'-DROWS_PER_WARP={r}','--ptxas-options=-v']
                                            for k,r in [('v2_r1',1),('v2_r2',2),('v2',4)]} | {k:['--ptxas-options=-v'] for k in ('v3','v4','v4_late','v5')} |
                 {f'v5_p{rows}':['--ptxas-options=-v','-DPLANAR_CODES=1',f'-DLUT_ROWS={rows}']
+                 for rows in (256,512,1024)} |
+                {f'w3_lut_r{rows}':['--ptxas-options=-v',f'-DW3_LUT_ROWS={rows}']
                  for rows in (256,512,1024)}}
     ready=False
     try:

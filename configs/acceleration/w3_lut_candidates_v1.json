@@ -1,0 +1,36 @@
+{
+  "experiment_id": "qwen3-8b-w3-lut-inline-m1-v1",
+  "scope": "inline GPTQ W3 g128 LUT; M=1; four real Qwen3-8B shape classes; CUDA Graph total only",
+  "seed": 20260916,
+  "layer": 0,
+  "dtype": "bfloat16",
+  "group_size": 128,
+  "groups_per_split": 1,
+  "mode": "cuda_graph_total",
+  "warmup": 20,
+  "repeats": 100,
+  "rounds": 7,
+  "maximum_relative_range": 0.1,
+  "row_tiles": [256, 512, 1024],
+  "shape_classes": {
+    "q_o": "self_attn.q_proj",
+    "k_v": "self_attn.k_proj",
+    "gate_up": "mlp.gate_proj",
+    "down": "mlp.down_proj"
+  },
+  "expected_shapes": {
+    "q_o": [4096, 4096],
+    "k_v": [1024, 4096],
+    "gate_up": [12288, 4096],
+    "down": [4096, 12288]
+  },
+  "baselines": [
+    "decoded_w3_bf16",
+    "original_bf16",
+    "v5_p1024_gps1"
+  ],
+  "candidate_count": 12,
+  "timing_contract": "preallocated outputs/workspaces; captured graph replay covers inline LUT build, main compute and finish; excludes offline conversion, load and JIT",
+  "prepare_policy": "not implemented or benchmarked in round one; profile inline winner first",
+  "next_stage": "profile only the best stable inline candidate per shape class; prepare is authorized only if LUT construction is demonstrated to be the primary bottleneck"
+}
