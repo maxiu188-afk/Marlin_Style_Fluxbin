@@ -20,6 +20,29 @@ QWEN3_ROW_TILE_BY_SHAPE = {
     (12288, 4096): 1024,
     (4096, 12288): 1024,
 }
+QWEN3_W3_ROUTE_POLICIES = {
+    "structural": {
+        shape: {"row_tile": row_tile, "groups_per_split": 1, "arithmetic": "structural"}
+        for shape, row_tile in QWEN3_ROW_TILE_BY_SHAPE.items()
+    },
+    "fast_corrected": {
+        shape: {"row_tile": row_tile, "groups_per_split": 1, "arithmetic": "decoded_bf16"}
+        for shape, row_tile in QWEN3_ROW_TILE_BY_SHAPE.items()
+    },
+    "observed_exact": {
+        shape: {
+            "row_tile": row_tile,
+            "groups_per_split": {
+                (4096, 4096): 1,
+                (1024, 4096): 1,
+                (12288, 4096): 4,
+                (4096, 12288): 2,
+            }[shape],
+            "arithmetic": "decoded_bf16",
+        }
+        for shape, row_tile in QWEN3_ROW_TILE_BY_SHAPE.items()
+    },
+}
 
 
 @lru_cache(maxsize=len(EXPERIMENTAL_ROW_TILES))
@@ -139,6 +162,15 @@ def qwen3_row_tile(out_features: int, in_features: int) -> int:
         raise ValueError(f"unsupported Qwen3-8B W3 shape: {(out_features, in_features)}") from exc
 
 
+def qwen3_w3_route(route: str, out_features: int, in_features: int) -> dict:
+    if route not in QWEN3_W3_ROUTE_POLICIES:
+        raise ValueError(f"unknown Qwen3-8B W3 route: {route}")
+    try:
+        return dict(QWEN3_W3_ROUTE_POLICIES[route][(out_features, in_features)])
+    except KeyError as exc:
+        raise ValueError(f"unsupported Qwen3-8B W3 shape: {(out_features, in_features)}") from exc
+
+
 class PackedW3Linear(nn.Module):
     """Decode-only W3 Linear with explicit dense prefill fallback.
 
@@ -154,6 +186,9 @@ class PackedW3Linear(nn.Module):
         bias: torch.Tensor | None = None,
         fallback: str = "error",
         row_tile: int | None = None,
+        groups_per_split: int = 1,
+        arithmetic: str = "structural",
+        route: str = "structural",
     ):
         super().__init__()
         if fallback not in {"error", "dense"}:
@@ -166,6 +201,12 @@ class PackedW3Linear(nn.Module):
         )
         if self.row_tile not in ROW_TILES:
             raise ValueError(f"row_tile must be one of {ROW_TILES}")
+        if arithmetic not in ARITHMETIC_MODES:
+            raise ValueError(f"arithmetic must be one of {ARITHMETIC_MODES}")
+        workspace_shape(self.out_features, self.in_features, groups_per_split)
+        self.groups_per_split = groups_per_split
+        self.arithmetic = arithmetic
+        self.route = route
         self.fallback = fallback
         self.route_counts = {"packed_m1": 0, "dense_fallback": 0}
         self.last_route = "not_called"
@@ -204,7 +245,11 @@ class PackedW3Linear(nn.Module):
             raise ValueError("contiguous same-device layout required")
         extension = load_w3_lut_extension(self.row_tile)
         self._workspace = torch.empty(
-            workspace_shape(self.out_features, self.in_features),
+            workspace_shape(
+                self.out_features,
+                self.in_features,
+                self.groups_per_split,
+            ),
             device=device,
             dtype=torch.float32,
         )
@@ -229,10 +274,26 @@ class PackedW3Linear(nn.Module):
                 self.route_counts["packed_m1"] += 1
                 self.last_route = "packed_m1"
             flat = x.view(1, self.in_features)
-            extension.inline_main(
-                flat, layout["planes"], layout["scales"], layout["perm"], self._workspace
-            )
-            extension.finish(self._workspace, output)
+            if self.arithmetic == "structural" and self.groups_per_split == 1:
+                extension.inline_main(
+                    flat,
+                    layout["planes"],
+                    layout["scales"],
+                    layout["perm"],
+                    self._workspace,
+                )
+                extension.finish(self._workspace, output)
+            else:
+                extension.m1_out(
+                    flat,
+                    layout["planes"],
+                    layout["scales"],
+                    layout["perm"],
+                    self._workspace,
+                    output,
+                    self.groups_per_split,
+                    self.arithmetic == "decoded_bf16",
+                )
             if self.bias is not None:
                 output.add_(self.bias)
             return shaped
@@ -256,8 +317,16 @@ class PackedW3Linear(nn.Module):
             return F.linear(x, restore_planar_w3(layout, dtype=x.dtype), self.bias)
         self.last_route = "packed_m1"
         self.route_counts["packed_m1"] += 1
-        shape = workspace_shape(self.out_features, self.in_features)
-        if self._workspace is None or self._workspace.device != x.device:
+        shape = workspace_shape(
+            self.out_features,
+            self.in_features,
+            self.groups_per_split,
+        )
+        if (
+            self._workspace is None
+            or self._workspace.device != x.device
+            or tuple(self._workspace.shape) != shape
+        ):
             self._workspace = torch.empty(shape, device=x.device, dtype=torch.float32)
         output = torch.empty((1, self.out_features), device=x.device, dtype=x.dtype)
         w3_lut_m1_out(
@@ -266,6 +335,8 @@ class PackedW3Linear(nn.Module):
             output,
             self._workspace,
             row_tile=self.row_tile,
+            groups_per_split=self.groups_per_split,
+            arithmetic=self.arithmetic,
         )
         if self.bias is not None:
             output.add_(self.bias)
@@ -278,6 +349,7 @@ def replace_w3_block_linears(
     *,
     fallback: str = "error",
     row_tile_by_shape: dict[tuple[int, int], int] | None = None,
+    route: str = "structural",
 ) -> list[str]:
     """Replace exactly seven Qwen3 Linears after validating the complete layer."""
     from .qwen3 import QWEN3_LINEAR_MODULES
@@ -285,7 +357,9 @@ def replace_w3_block_linears(
     expected = {f"{module}.{field}" for module in QWEN3_LINEAR_MODULES for field in FIELDS}
     if set(layer_payload) != expected:
         raise ValueError("layer must contain exactly seven complete W3 payloads")
-    policy = QWEN3_ROW_TILE_BY_SHAPE if row_tile_by_shape is None else row_tile_by_shape
+    if route not in QWEN3_W3_ROUTE_POLICIES:
+        raise ValueError(f"unknown Qwen3-8B W3 route: {route}")
+    row_policy = QWEN3_ROW_TILE_BY_SHAPE if row_tile_by_shape is None else row_tile_by_shape
     replacements = []
     for name in QWEN3_LINEAR_MODULES:
         old = block.get_submodule(name)
@@ -297,16 +371,28 @@ def replace_w3_block_linears(
         ) != (out_features, in_features):
             raise ValueError(f"Linear shape/type mismatch: {name}")
         try:
-            row_tile = policy[(out_features, in_features)]
+            row_tile = row_policy[(out_features, in_features)]
         except KeyError as exc:
             raise ValueError(
                 f"row-tile policy missing shape: {(out_features, in_features)}"
             ) from exc
+        if row_tile_by_shape is None:
+            route_policy = qwen3_w3_route(route, out_features, in_features)
+            if route_policy["row_tile"] != row_tile:
+                raise ValueError("route and row-tile policies disagree")
+        else:
+            route_policy = {
+                "groups_per_split": 1,
+                "arithmetic": "structural",
+            }
         replacement = PackedW3Linear(
             layout,
             bias=old.bias,
             fallback=fallback,
             row_tile=row_tile,
+            groups_per_split=route_policy["groups_per_split"],
+            arithmetic=route_policy["arithmetic"],
+            route=route,
         ).to(old.weight.device)
         replacements.append((name, replacement))
     for name, replacement in replacements:

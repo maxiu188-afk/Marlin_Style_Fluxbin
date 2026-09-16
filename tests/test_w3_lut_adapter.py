@@ -13,6 +13,7 @@ from fluxbin_style.qwen3 import QWEN3_LINEAR_MODULES
 from fluxbin_style.w3_lut_deployment import (
     PackedW3Linear,
     qwen3_row_tile,
+    qwen3_w3_route,
     replace_w3_block_linears,
 )
 from fluxbin_style.static_decode import StaticDecodeSession, prepared_linears
@@ -59,6 +60,43 @@ class PackedW3LinearTest(unittest.TestCase):
         self.assertEqual(qwen3_row_tile(4096, 12288), 1024)
         with self.assertRaises(ValueError):
             qwen3_row_tile(32, 128)
+
+    def test_corrected_full_model_routes_are_frozen(self):
+        expected = {
+            (4096, 4096): (256, 1),
+            (1024, 4096): (512, 1),
+            (12288, 4096): (1024, 4),
+            (4096, 12288): (1024, 2),
+        }
+        for shape, (row_tile, observed_exact_gps) in expected.items():
+            fast = qwen3_w3_route("fast_corrected", *shape)
+            exact = qwen3_w3_route("observed_exact", *shape)
+            self.assertEqual(fast, {
+                "row_tile": row_tile,
+                "groups_per_split": 1,
+                "arithmetic": "decoded_bf16",
+            })
+            self.assertEqual(exact, {
+                "row_tile": row_tile,
+                "groups_per_split": observed_exact_gps,
+                "arithmetic": "decoded_bf16",
+            })
+        with self.assertRaises(ValueError):
+            qwen3_w3_route("missing", 4096, 4096)
+
+    def test_linear_carries_explicit_arithmetic_and_split_policy(self):
+        module = PackedW3Linear(
+            tiny_layout(),
+            row_tile=256,
+            groups_per_split=1,
+            arithmetic="decoded_bf16",
+            route="fast_corrected",
+        )
+        self.assertEqual(module.arithmetic, "decoded_bf16")
+        self.assertEqual(module.groups_per_split, 1)
+        self.assertEqual(module.route, "fast_corrected")
+        with self.assertRaises(ValueError):
+            PackedW3Linear(tiny_layout(), row_tile=256, arithmetic="missing")
 
     def test_complete_block_replacement_and_discovery(self):
         layout = tiny_layout()

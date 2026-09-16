@@ -25,6 +25,20 @@ class W3FullModelTrialTest(unittest.TestCase):
         self.assertEqual(config["primary_mode"], "sequence_graph")
         self.assertFalse(config["prepare_candidate"])
 
+    def test_corrected_protocol_adds_two_independent_packed_arms(self):
+        config = json.loads(RUNNER.CORRECTED_PROTOCOL.read_text(encoding="utf-8"))
+        previous = json.loads(RUNNER.PROTOCOL.read_text(encoding="utf-8"))
+        RUNNER.validate_protocol(config)
+        for key in ("seed", "decode_steps", "warmup", "repeats", "prompts", "max_prompt_tokens"):
+            self.assertEqual(config[key], previous[key])
+        self.assertEqual(config["packed_routes"], {
+            "packed_w3_fast_corrected": "fast_corrected",
+            "packed_w3_observed_exact": "observed_exact",
+        })
+        self.assertEqual(config["target_compute_capability"], [8, 0])
+        self.assertEqual(config["target_min_vram_bytes"], 75000000000)
+        self.assertEqual(RUNNER.packed_routes(config), config["packed_routes"])
+
     def test_timing_and_exact_route_guards(self):
         self.assertTrue(RUNNER.statistics_row([10.0, 10.1], 0.05)["stable"])
         self.assertFalse(RUNNER.statistics_row([10.0, 12.0], 0.05)["stable"])

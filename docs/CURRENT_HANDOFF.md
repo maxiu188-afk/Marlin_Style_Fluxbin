@@ -1,6 +1,6 @@
 # 当前进度与交接
 
-更新：2026-09-16。M=1 decode 的现有 QBB 加速结果已经冻结。Qwen3-8B uniform
+更新：2026-09-17。M=1 decode 的现有 QBB 加速结果已经冻结。Qwen3-8B uniform
 symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率四臂对照已完成并验收，
 结论为 **Case A：后续优先 uniform 3-bit backend / solver**。A8 不在本轮范围，
 vLLM 仅保留接口、尚未接入。
@@ -25,6 +25,11 @@ vLLM 仅保留接口、尚未接入。
 - 当前服务器的 Nsight Compute 计数器权限被宿主拒绝（`ERR_NVGPUCTRPERM`）；
   尚不能归因 LUT build、occupancy、HBM 或 shared bank conflict。prepare 诊断分支
   仍未授权、未实现。
+- **decoded-BF16 修正的两条完整模型路线已经接入，等待 A100 80GB**：
+  `fast_corrected` 对四类 shape 都使用 gps1；`observed_exact` 对 q/o、k/v、gate/up、
+  down 分别使用 gps1/1/4/2。两条都保持既有 row tile 和 `decoded_bf16` arithmetic，
+  共享同一轮 original BF16 / decoded W3 对照，但各自独立做 correctness 与稳定性验收。
+  运行入口见 [A100 corrected full-model 手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
 - **完整模型 sequence Graph 已实现 1.381x / 1.383x 原始 BF16 加速**：
   A100 SXM4 80GB，`v5_p1024/gps1`，prepared 协议 v2.1，两个固定 prompt。
@@ -61,6 +66,7 @@ vLLM 仅保留接口、尚未接入。
 | W3 prepared Linear | `src/fluxbin_style/w3_lut_deployment.py` |
 | W3 全模型 runner | `scripts/run_qwen3_8b_w3_full_m1_trial.py` |
 | W3 全模型配置 | `configs/acceleration/qwen3_8b_w3_full_m1_v1.json` |
+| W3 corrected 全模型配置 | `configs/acceleration/qwen3_8b_w3_corrected_full_m1_v1.json` |
 
 QBB prepared v2.1 最新正式运行源码为 `3c996ab`。v2 首次在动态/静态数值门槛处失败，未计时；
 v2.1 将注意力路径差异独立报告，以同一 StaticCache 下的旧 wrapper 为精确参照。
@@ -116,12 +122,10 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 
 ## 下一步边界
 
-用户已批准独立的 dense-BF16 fidelity 诊断。当前本地实现增加 `±3` BF16 权重舍入
-修正、shape-specific split-G、single-split 直接写回、R2048 和 main/finish 分阶段
-计时；配置为 46-cell diagnostic-only trial。Mac 上完整 149 项 unittest 通过，其中
-10 项 CUDA-only 跳过；所有记录过的 RunPod 地址当前均拒绝连接，因此 CUDA 编译、
-真实 Linear correctness 和计时仍为 pending。运行入口见
-[BF16/split-G 诊断手册](W3_LUT_BF16_SPLIT_RUNBOOK.md)。
+已完成的 RTX PRO 4500 诊断 46/46 cell 通过 correctness、repeat 与 Graph 检查。
+`fast_corrected` 的四类 shape 均选 gps1；`observed_exact` 选 gps1/1/4/2。诊断结果
+SHA256 为 `4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`，但这是
+Linear/layer-0 固定输入证据，不是 A100 或完整模型结论。RTX 实例已关闭并保留网络卷。
 
 若 `±3` 修正不能显著压低 corrected-vs-decoded 误差，再继续检查 BF16 输出 ULP、
 sorted/original-K 归约顺序和 FMA；不得把当前公式直接写成已确认根因。若修正通过
@@ -133,9 +137,10 @@ Linear 门，仍须以独立候选重做完整模型 0.005/0.05 correctness 和�
 诊断分支；不自动扩展 batch、Tensor Core/Marlin W3、QKV fusion、split-K 或 serving。
 现有 prepared v2.1 继续作为冻结的 QBB 性能基线。
 
-下一次上机先同步 Git、核对持久卷/manifest/snapshot、恢复环境并验证 CUDA，然后只
-运行已冻结的 BF16/split-G 诊断；该 trial 使用 CUDA events，不要求 performance
-counters。只有后续 profiler 路线需要事先确认实例允许读取 performance counters。
+下一次上机使用 A100 80GB，先同步 Git、核对持久卷/manifest/snapshot、恢复环境并
+验证 CUDA，然后运行两条 corrected full-model 路线；不重复 RTX 精度诊断，也不启动
+profiler。完整命令与独立 candidate 验收见
+[A100 corrected full-model 手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 每次新运行使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。
 

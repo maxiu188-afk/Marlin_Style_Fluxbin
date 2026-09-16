@@ -50,17 +50,24 @@ def replace_w3_model_linears(
     *,
     expected_manifest_sha256: str,
     allow_prefill_fallback: bool = False,
+    route: str = "structural",
 ) -> dict:
     """Install all 252 hash-bound W3 Linears without changing attention or cache code."""
     from torch import nn
 
     from .qwen3 import expected_qwen3_linear_shape
     from .qwen3_8b import ARCHITECTURE, validate_architecture
-    from .w3_lut_deployment import QWEN3_ROW_TILE_BY_SHAPE, replace_w3_block_linears
+    from .w3_lut_deployment import (
+        QWEN3_ROW_TILE_BY_SHAPE,
+        QWEN3_W3_ROUTE_POLICIES,
+        replace_w3_block_linears,
+    )
 
     validate_architecture(model.config.to_dict())
     if len(model.model.layers) != 36:
         raise ValueError("expected 36 decoder layers")
+    if route not in QWEN3_W3_ROUTE_POLICIES:
+        raise ValueError(f"unknown Qwen3-8B W3 route: {route}")
     records = []
     for layer in range(36):
         payload, entry = load_w3_lut_layer(
@@ -88,6 +95,7 @@ def replace_w3_model_linears(
             block,
             payload,
             fallback="dense" if allow_prefill_fallback else "error",
+            route=route,
         )
         coverage.extend(f"model.layers.{layer}.{name}" for name in modules)
     return {
@@ -101,5 +109,10 @@ def replace_w3_model_linears(
             for (out_features, in_features), row_tile in QWEN3_ROW_TILE_BY_SHAPE.items()
         },
         "prefill_fallback_enabled": allow_prefill_fallback,
+        "route": route,
+        "route_policy": {
+            f"{out_features}x{in_features}": dict(policy)
+            for (out_features, in_features), policy in QWEN3_W3_ROUTE_POLICIES[route].items()
+        },
         "status": "installed_not_validated",
     }

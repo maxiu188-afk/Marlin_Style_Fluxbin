@@ -21,12 +21,14 @@ from fluxbin_style.static_decode import StaticDecodeSession, prepared_linears
 from fluxbin_style.w3_lut_artifacts import load_w3_lut_layer, replace_w3_model_linears
 from fluxbin_style.w3_lut_deployment import (
     QWEN3_ROW_TILE_BY_SHAPE,
+    QWEN3_W3_ROUTE_POLICIES,
     load_w3_lut_extension,
 )
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_full_m1_v1.json"
+CORRECTED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_corrected_full_m1_v1.json"
 
 
 def statistics_row(samples, threshold):
@@ -69,8 +71,16 @@ def compact(trace):
 
 def validate_protocol(config):
     expected_tiles = {f"{out}x{inner}": tile for (out, inner), tile in QWEN3_ROW_TILE_BY_SHAPE.items()}
+    corrected_arms = [
+        "original_bf16",
+        "decoded_w3_bf16",
+        "packed_w3_fast_corrected",
+        "packed_w3_observed_exact",
+    ]
+    packed_routes = config.get("packed_routes", {"packed_w3_inline": "structural"})
     if (
-        config.get("arms") != ["original_bf16", "decoded_w3_bf16", "packed_w3_inline"]
+        config.get("arms")
+        not in (["original_bf16", "decoded_w3_bf16", "packed_w3_inline"], corrected_arms)
         or config.get("modes") != ["prepared_eager", "sequence_graph"]
         or config.get("primary_mode") != "sequence_graph"
         or config.get("row_tile_by_shape") != expected_tiles
@@ -80,9 +90,34 @@ def validate_protocol(config):
         or config.get("repeats", 0) < 3
     ):
         raise ValueError("frozen W3 full-model protocol drifted")
+    expected_routes = (
+        {"packed_w3_inline": "structural"}
+        if config["arms"][-1] == "packed_w3_inline"
+        else {
+            "packed_w3_fast_corrected": "fast_corrected",
+            "packed_w3_observed_exact": "observed_exact",
+        }
+    )
+    if packed_routes != expected_routes:
+        raise ValueError("frozen W3 packed-route mapping drifted")
+    for route in packed_routes.values():
+        if route not in QWEN3_W3_ROUTE_POLICIES:
+            raise ValueError(f"unknown packed route: {route}")
+    if config["arms"] == corrected_arms and (
+        config.get("target_gpu_family") != "NVIDIA A100"
+        or config.get("target_compute_capability") != [8, 0]
+        or config.get("target_min_vram_bytes") != 75000000000
+        or config.get("linear_evidence_sha256")
+        != "4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca"
+    ):
+        raise ValueError("corrected full-model provenance/device gate drifted")
 
 
-def load_model(snapshot, layout_root, manifest_sha256, arm):
+def packed_routes(config):
+    return config.get("packed_routes", {"packed_w3_inline": "structural"})
+
+
+def load_model(snapshot, layout_root, manifest_sha256, arm, route_by_arm):
     model = AutoModelForCausalLM.from_pretrained(
         snapshot,
         local_files_only=True,
@@ -102,12 +137,13 @@ def load_model(snapshot, layout_root, manifest_sha256, arm):
                 decoder.get_submodule(name).weight.copy_(weight)
                 del layout, weight
             del payload
-    elif arm == "packed_w3_inline":
+    elif arm in route_by_arm:
         coverage = replace_w3_model_linears(
             model,
             layout_root,
             expected_manifest_sha256=manifest_sha256,
             allow_prefill_fallback=True,
+            route=route_by_arm[arm],
         )
         if coverage["linear_count"] != 252:
             raise RuntimeError("incomplete packed W3 coverage")
@@ -123,14 +159,19 @@ def main():
     parser.add_argument("--w3-layout-manifest-sha256", required=True)
     parser.add_argument("--environment", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--protocol", type=Path, default=PROTOCOL)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
     if not torch.cuda.is_available():
         raise RuntimeError("NVIDIA CUDA required; no CPU/MPS substitution")
 
-    config = json.loads(PROTOCOL.read_text(encoding="utf-8"))
+    protocol_path = args.protocol.resolve()
+    if protocol_path not in {PROTOCOL.resolve(), CORRECTED_PROTOCOL.resolve()}:
+        raise ValueError("protocol must be a repository-frozen W3 full-model config")
+    config = json.loads(protocol_path.read_text(encoding="utf-8"))
     validate_protocol(config)
+    route_by_arm = packed_routes(config)
     environment = json.loads(args.environment.read_text(encoding="utf-8"))
     sources = {
         str(path.relative_to(ROOT)): sha256_file(path)
@@ -146,6 +187,12 @@ def main():
         != torch.cuda.get_device_name(0)
     ):
         raise ValueError("runtime differs from environment record")
+    if "target_gpu_family" in config and (
+        config["target_gpu_family"] not in torch.cuda.get_device_name(0)
+        or list(torch.cuda.get_device_capability(0)) != config["target_compute_capability"]
+        or torch.cuda.get_device_properties(0).total_memory < config["target_min_vram_bytes"]
+    ):
+        raise ValueError("corrected trial requires the frozen A100 target")
     if sha256_file(args.w3_layout_root / "manifest.json") != args.w3_layout_manifest_sha256:
         raise ValueError("W3 layout manifest drifted")
 
@@ -180,7 +227,8 @@ def main():
         "status": "running",
         "stage": "w3_inline_prepared_static_full_model_m1",
         "protocol": config,
-        "protocol_sha256": sha256_file(PROTOCOL),
+        "protocol_path": str(protocol_path.relative_to(ROOT)),
+        "protocol_sha256": sha256_file(protocol_path),
         "runner_sha256": sha256_file(Path(__file__)),
         "environment_sha256": sha256_file(args.environment),
         "source_sha256": sources,
@@ -193,7 +241,7 @@ def main():
         "numerical_policy": "packed-vs-decoded W3 is the backend gate; quantized-vs-original is report-only; prepared wrapper and Graph are exact",
         "scope": "batch1 real-prefix static KV, 32 fixed continuation tokens, embedding/all36blocks/LM head/argmax",
         "excluded_from_decode": "load, conversion, prefill, KV reset, graph capture, audits, CPU output copies",
-        "residency_policy": "all three models and both prompt caches resident; interleaved arm order",
+        "residency_policy": "all configured models and prompt caches resident; interleaved arm order",
         "prepare_candidate": False,
         "arms": {},
         "execution_order": [],
@@ -217,6 +265,7 @@ def main():
                 args.w3_layout_root,
                 args.w3_layout_manifest_sha256,
                 arm,
+                route_by_arm,
             )
             models[arm] = model
             arm_record = {
@@ -238,7 +287,7 @@ def main():
                     raise RuntimeError("nonfinite dynamic oracle")
                 if arm == "original_bf16":
                     references[prompt_index] = trace
-                if arm == "packed_w3_inline" and not validate_routes(
+                if arm in route_by_arm and not validate_routes(
                     trace, expected_linears=252, steps=config["decode_steps"]
                 ):
                     raise RuntimeError("dynamic packed W3 coverage failed")
@@ -272,11 +321,11 @@ def main():
                 exact_trace(audit, checked_static[arm, prompt_index])
                 if not dynamic_static["fed_tokens_equal"]:
                     raise RuntimeError("dynamic/static fed-token drift")
-                if arm == "packed_w3_inline":
+                if arm in route_by_arm:
                     require_routes(audit["routes"], config["decode_steps"])
                 graph_trace = session.capture()
                 exact_trace(graph_trace, audit)
-                if arm == "packed_w3_inline":
+                if arm in route_by_arm:
                     require_routes(session.capture_routes, config["decode_steps"])
                 report["arms"][arm]["prompts"][prompt_index].update(
                     prepared_audit=compact(audit),
@@ -300,7 +349,8 @@ def main():
                 for key in ("wall_ms", "device_ms")
             }
             for repeat in range(config["repeats"]):
-                arms = config["arms"][repeat % 3 :] + config["arms"][: repeat % 3]
+                offset = repeat % len(config["arms"])
+                arms = config["arms"][offset:] + config["arms"][:offset]
                 if repeat % 2:
                     arms = list(reversed(arms))
                 modes = config["modes"] if repeat % 2 == 0 else list(reversed(config["modes"]))
@@ -334,11 +384,6 @@ def main():
 
         comparisons = []
         for prompt_index in range(len(prompts)):
-            backend_check = compare_trace(
-                audits["packed_w3_inline", prompt_index],
-                audits["decoded_w3_bf16", prompt_index],
-                logprob_tolerance=config["logprob_max_abs_tolerance"],
-            )
             quantization_report = compare_trace(
                 audits["decoded_w3_bf16", prompt_index],
                 audits["original_bf16", prompt_index],
@@ -349,24 +394,41 @@ def main():
                     arm: report["arms"][arm]["prompts"][prompt_index]["timings"][mode]
                     for arm in config["arms"]
                 }
-                stable = all(value["stable"] for row in rows.values() for value in row.values())
-                packed = rows["packed_w3_inline"]["wall_ms"]["median"]
-                comparisons.append(
-                    {
-                        "prompt_index": prompt_index,
-                        "mode": mode,
-                        "primary": mode == config["primary_mode"],
-                        "stable": stable,
-                        "speedup_vs_original": (
-                            rows["original_bf16"]["wall_ms"]["median"] / packed if stable else None
-                        ),
-                        "speedup_vs_decoded_w3": (
-                            rows["decoded_w3_bf16"]["wall_ms"]["median"] / packed if stable else None
-                        ),
-                        "packed_vs_decoded_w3_check": backend_check,
-                        "decoded_w3_vs_original_report_only": quantization_report,
-                    }
-                )
+                for packed_arm, route in route_by_arm.items():
+                    compared_arms = ("original_bf16", "decoded_w3_bf16", packed_arm)
+                    stable = all(
+                        value["stable"]
+                        for arm in compared_arms
+                        for value in rows[arm].values()
+                    )
+                    backend_check = compare_trace(
+                        audits[packed_arm, prompt_index],
+                        audits["decoded_w3_bf16", prompt_index],
+                        logprob_tolerance=config["logprob_max_abs_tolerance"],
+                    )
+                    packed = rows[packed_arm]["wall_ms"]["median"]
+                    comparisons.append(
+                        {
+                            "prompt_index": prompt_index,
+                            "mode": mode,
+                            "packed_arm": packed_arm,
+                            "route": route,
+                            "primary": mode == config["primary_mode"],
+                            "stable": stable,
+                            "speedup_vs_original": (
+                                rows["original_bf16"]["wall_ms"]["median"] / packed
+                                if stable
+                                else None
+                            ),
+                            "speedup_vs_decoded_w3": (
+                                rows["decoded_w3_bf16"]["wall_ms"]["median"] / packed
+                                if stable
+                                else None
+                            ),
+                            "packed_vs_decoded_w3_check": backend_check,
+                            "decoded_w3_vs_original_report_only": quantization_report,
+                        }
+                    )
         report["comparisons"] = comparisons
         primary = [item for item in comparisons if item["primary"]]
         report["all_timings_stable"] = all(item["stable"] for item in comparisons)
@@ -379,6 +441,27 @@ def main():
             for arm in report["arms"].values()
             for prompt in arm["prompts"]
         )
+        report["candidate_acceptance"] = {
+            packed_arm: {
+                "route": route,
+                "primary_timings_stable": all(
+                    item["stable"]
+                    for item in primary
+                    if item["packed_arm"] == packed_arm
+                ),
+                "backend_checks_passed": all(
+                    item["packed_vs_decoded_w3_check"]["passed"]
+                    for item in primary
+                    if item["packed_arm"] == packed_arm
+                ),
+            }
+            for packed_arm, route in route_by_arm.items()
+        }
+        for candidate in report["candidate_acceptance"].values():
+            candidate["accepted"] = (
+                candidate["primary_timings_stable"]
+                and candidate["backend_checks_passed"]
+            )
         if not report["all_backend_checks_passed"]:
             report["status"] = "completed_with_backend_numerical_differences"
         elif not report["primary_timings_stable"]:

@@ -1,9 +1,14 @@
 # GPTQ W3 BF16 舍入修正与 split-G 诊断手册
 
-更新：2026-09-16。本轮是独立的诊断实验，不覆盖既有 4×3 Linear 结果，也不自动
-进入完整模型。目标只有两个：验证 `±3` BF16 权重舍入修正是否消除 retained
+更新：2026-09-17。本轮独立诊断已经在 RTX PRO 4500 上完成，不覆盖既有 4×3 Linear
+结果。目标只有两个：验证 `±3` BF16 权重舍入修正是否消除 retained
 decoded-BF16 差异，以及测量 `groups_per_split`、single-split 直接写回和 R2048 的
 Linear 级空间。
+
+正式 diagnostic 结果为 46/46 cell correctness、repeat、Graph 通过，result SHA256
+为 `4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`。本页命令保留
+作复现记录；当前执行入口已经转到
+[A100 corrected full-model 手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
 ## 实验边界
 
