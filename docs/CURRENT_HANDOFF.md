@@ -7,6 +7,14 @@ vLLM 仅保留接口、尚未接入。
 
 ## 当前结论
 
+- **GPTQ W3 inline LUT 第一轮 4×3 Linear trial 已完成**：A100 80GB PCIe，
+  同轮 CUDA Graph total，12/12 cell 正确且稳定。最佳 q/o R256、k/v R512、
+  gate/up R1024、down R1024 相对原始 BF16 分别为 1.731x、0.982x、2.678x、
+  2.616x；详见 [W3 inline 结果](W3_LUT_INLINE_RESULTS.md)。
+- 当前服务器的 Nsight Compute 计数器权限被宿主拒绝（`ERR_NVGPUCTRPERM`）；
+  尚不能归因 LUT build、occupancy、HBM 或 shared bank conflict。prepare 诊断分支
+  仍未授权、未实现。
+
 - **完整模型 sequence Graph 已实现 1.381x / 1.383x 原始 BF16 加速**：
   A100 SXM4 80GB，`v5_p1024/gps1`，prepared 协议 v2.1，两个固定 prompt。
   32 token 耗时约 468 → 338 ms，约 68 → 95 token/s。
@@ -81,12 +89,14 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 
 ## 下一步边界
 
-下一阶段转向 uniform 3-bit backend / solver 的方案评估；不要自动重跑量化、
-四臂 PPL 或继续扩展当前 QBB kernel 候选。现有 prepared v2.1 仅作为冻结的
-QBB 性能基线保留，不能把 RTX 质量实验解释成速度证据。QBB FP16-scales 的
-2.6317-bit 点保留为低码率质量参照，但不改变 Case A 主路线。
+下一步是在允许读取 NVIDIA performance counters 的实例上，只 profile 四个最佳
+inline W3 candidate 和同 shape 的 `v5_p1024/gps1`。只有 profiler 证明 LUT build
+是主要瓶颈，才另开 prepare 诊断分支。不要自动重跑量化、四臂 PPL，不扩展 batch、
+Tensor Core/Marlin W3、QKV fusion、split-K 或完整模型；现有 prepared v2.1 只作为
+冻结的 QBB 性能基线。
 
-下一次上机先同步 Git、核对持久卷/manifest/snapshot，再恢复环境、验证 CUDA。
+下一次上机先确认实例允许 performance counters，再同步 Git、核对持久卷/manifest/
+snapshot、恢复环境并验证 CUDA。
 每次新运行使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。
 

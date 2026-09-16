@@ -176,3 +176,59 @@ tmux kill-session -t w3lut-semantics
 
 不要在本轮自动启动 profiler 或新增 prepare 实现。先审阅 12-cell JSON，选出每个 shape
 的最佳稳定 inline candidate，再单独冻结 profiling 命令和触发判据。
+
+## Stage 4：受限 profiler
+
+Stage 3 全部稳定后，每个 shape 只 profile 最佳 inline candidate 和同 shape 的
+`v5_p1024/gps1`。`scripts/profile_w3_lut_inline.py` 会从正式 4×3 JSON 自动选择
+winner，重新核对 source/environment/artifact/input hash，并在 capture 前再次执行
+正确性、重复一致性和 finite-workspace 门。profile 是诊断证据，不产生新的 latency
+或 speedup。
+
+先做 performance-counter 权限 smoke。`ncu` 的命令路径可能没有加入默认 PATH：
+
+```bash
+export PATH=/usr/local/cuda-12.8/bin:$PATH
+ncu --version
+grep RmProfilingAdminOnly /proc/driver/nvidia/params
+ncu --profile-from-start off --section LaunchStats --section Occupancy \
+  --section SpeedOfLight --force-overwrite -o "$result_root/ncu-permission-smoke" \
+  python -c 'import torch; x=torch.randn(1024,device="cuda"); torch.cuda.synchronize(); torch.cuda.profiler.start(); y=x+1; torch.cuda.synchronize(); torch.cuda.profiler.stop()'
+```
+
+若出现 `ERR_NVGPUCTRPERM`，立即停止：不得把静态 ptxas 信息、CUDA event timing
+或理论 occupancy 冒充 profiler 计数器，也不得启动 prepare 分支。需要换到宿主允许
+读取 NVIDIA performance counters 的实例。
+
+权限通过后，固定使用以下 sections；每个 shape 生成独立 `.ncu-rep` 和 runner JSON：
+
+```bash
+mkdir -p "$result_root/profile"
+for shape in q_o k_v gate_up down; do
+  ncu --profile-from-start off --target-processes all --replay-mode kernel \
+    --section LaunchStats \
+    --section Occupancy \
+    --section SchedulerStats \
+    --section MemoryWorkloadAnalysis \
+    --section MemoryWorkloadAnalysis_Chart \
+    --section SpeedOfLight \
+    --section InstructionStats \
+    --section SourceCounters \
+    --force-overwrite -o "$result_root/profile/$shape" \
+    python scripts/profile_w3_lut_inline.py \
+      --environment "$result_root/environment-d433cfa/environment.json" \
+      --benchmark-result "$result_root/w3-lut-inline-4x3-d433cfa.json" \
+      --w3-layout-root "$w3_layout_root" \
+      --w3-layout-manifest-sha256 "$(sha256sum "$w3_layout_root/manifest.json" | cut -d' ' -f1)" \
+      --qbb-artifact-root "$qbb_root" \
+      --shape-class "$shape" \
+      --output "$result_root/profile/$shape.json"
+done
+```
+
+验收时至少提取 registers/thread、shared memory/CTA、active CTA/SM、achieved
+occupancy、eligible warps/scheduler、DRAM throughput/bytes、shared load traffic/bank
+conflicts、global sectors/request 和 kernel duration，并保留 W3 main/finish 与 v5
+main/finish 的 kernel 级记录。只有 source/counter 证据显示 inline LUT construction
+是主要瓶颈，才允许另开 prepare 诊断计划；正式比较仍必须重新使用包含全部阶段的
+CUDA Graph total。

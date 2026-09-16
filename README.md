@@ -6,6 +6,13 @@ backend / solver。vLLM 保留接口但尚未接入。
 
 ## 当前结果（2026-09-16）
 
+Qwen3-8B GPTQ W3 inline LUT 的 A100 PCIe 4×3 Linear trial 已完成。按同轮
+CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k/v
+**0.982x**、gate/up **2.678x**、down **2.616x**。12/12 cell 正确且稳定，
+但 k/v 尚未超过 BF16；当前实例又因 `ERR_NVGPUCTRPERM` 无法采集 Nsight Compute
+硬件计数器，所以 prepare 分支仍未授权。详见
+[W3 inline 结果](docs/W3_LUT_INLINE_RESULTS.md)。
+
 在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
 32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。
 
