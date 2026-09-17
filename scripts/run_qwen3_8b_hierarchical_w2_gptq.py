@@ -327,6 +327,7 @@ def write_layer(
     return completed
 
 
+@torch.no_grad()
 def quantize_module(
     module: torch.nn.Linear,
     hessian: torch.Tensor,

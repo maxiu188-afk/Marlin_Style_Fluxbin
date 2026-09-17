@@ -19,7 +19,10 @@ from fluxbin_style.hierarchical_w2 import (
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
-from run_qwen3_8b_hierarchical_w2_gptq import validate_device_policy  # noqa: E402
+from run_qwen3_8b_hierarchical_w2_gptq import (  # noqa: E402
+    quantize_module,
+    validate_device_policy,
+)
 sys.path.pop(0)
 
 
@@ -142,6 +145,25 @@ class HierarchicalW2Test(unittest.TestCase):
                 capability=[12, 0],
                 execution_policy="formal-a100",
             )
+
+    def test_runner_can_write_reconstruction_into_trainable_linear(self) -> None:
+        config = json.loads(
+            (ROOT / "configs/evaluation/qwen3_8b_hierarchical_w2_v1.json").read_text()
+        )
+        module = torch.nn.Linear(128, 3, bias=False)
+        self.assertTrue(module.weight.requires_grad)
+        tensors: dict[str, torch.Tensor] = {}
+        record = quantize_module(
+            module,
+            torch.eye(128),
+            module_name="self_attn.q_proj",
+            variant=config["variants"]["H2.50"],
+            config=config,
+            payload_tensors=tensors,
+        )
+        self.assertEqual(record["parameter_count"], 384)
+        self.assertEqual(len(tensors), 7)
+        self.assertTrue(torch.isfinite(module.weight).all())
 
 
 if __name__ == "__main__":
