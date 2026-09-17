@@ -15,6 +15,7 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 
 from fluxbin_style.evaluation import atomic_json, sha256_file, tensor_sha256
 from fluxbin_style.full_model_trial import compare_trace, decode_trace, validate_routes
+from fluxbin_style.fused_modules import fused_qwen3_modules
 from fluxbin_style.gptq_deployment import FIELDS, restore_planar_w3
 from fluxbin_style.qwen3 import QWEN3_LINEAR_MODULES
 from fluxbin_style.static_decode import StaticDecodeSession, prepared_linears
@@ -29,6 +30,10 @@ from fluxbin_style.w3_lut_deployment import (
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_full_m1_v1.json"
 CORRECTED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_corrected_full_m1_v1.json"
+# Same frozen structural protocol with the non-Linear fusions enabled; the
+# fused path is not bit-exact with stock, so it gets its own protocol id rather
+# than changing the meaning of an existing one.
+FUSED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json"
 
 
 def statistics_row(samples, threshold, *, trim_per_side=0):
@@ -149,6 +154,11 @@ def validate_protocol(config):
         raise ValueError("repeats too small for the declared timing_trim_per_side")
     if not isinstance(limit, (int, float)) or isinstance(limit, bool) or not limit > 0:
         raise ValueError("packed_vs_decoded_relative_limit must be a positive number")
+    fused = config.get("fused_nonlinear_modules")
+    if not isinstance(fused, dict) or set(fused) != {"rms_norm", "rope"} or not all(
+        isinstance(value, bool) for value in fused.values()
+    ):
+        raise ValueError("fused_nonlinear_modules must declare bool rms_norm and rope")
     expected_routes = (
         {"packed_w3_inline": "structural"}
         if config["arms"][-1] == "packed_w3_inline"
@@ -226,7 +236,7 @@ def main():
         raise RuntimeError("NVIDIA CUDA required; no CPU/MPS substitution")
 
     protocol_path = args.protocol.resolve()
-    if protocol_path not in {PROTOCOL.resolve(), CORRECTED_PROTOCOL.resolve()}:
+    if protocol_path not in {PROTOCOL.resolve(), CORRECTED_PROTOCOL.resolve(), FUSED_PROTOCOL.resolve()}:
         raise ValueError("protocol must be a repository-frozen W3 full-model config")
     config = json.loads(protocol_path.read_text(encoding="utf-8"))
     validate_protocol(config)
@@ -307,7 +317,17 @@ def main():
         "next_stage": "not_launched",
     }
     atomic_json(args.output, report)
+    # Patching happens before any model runs and covers every arm, so the arms
+    # keep sharing one non-Linear path. The fused kernels are not bit-exact with
+    # stock, so a partial application would silently invalidate the comparison.
+    fusion = ExitStack()
     try:
+        requested = config["fused_nonlinear_modules"]
+        report["fused_nonlinear_modules"] = (
+            fusion.enter_context(fused_qwen3_modules(**requested))
+            if any(requested.values())
+            else dict(requested)
+        )
         models = {}
         sessions = {}
         dynamic = {}
@@ -547,6 +567,7 @@ def main():
         report.update(status="failed", error=f"{type(exc).__name__}: {exc}")
         raise
     finally:
+        fusion.close()
         atomic_json(args.output, report)
     print(report["status"])
 

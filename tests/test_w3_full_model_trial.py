@@ -123,6 +123,27 @@ class W3FullModelTrialTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             RUNNER.validate_protocol({**config, "repeats": 4, "timing_trim_per_side": 1})
 
+    def test_fused_protocol_enables_nonlinear_fusion_without_touching_frozen_ones(self):
+        for path in (RUNNER.PROTOCOL, RUNNER.CORRECTED_PROTOCOL):
+            frozen = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(
+                frozen["fused_nonlinear_modules"], {"rms_norm": False, "rope": False}
+            )
+            RUNNER.validate_protocol(frozen)
+        fused = json.loads(RUNNER.FUSED_PROTOCOL.read_text(encoding="utf-8"))
+        RUNNER.validate_protocol(fused)
+        self.assertEqual(fused["fused_nonlinear_modules"], {"rms_norm": True, "rope": True})
+        # A fused run must be a distinct protocol id, not a redefinition.
+        base = json.loads(RUNNER.PROTOCOL.read_text(encoding="utf-8"))
+        self.assertNotEqual(fused["id"], base["id"])
+        for key in ("prompts", "seed", "decode_steps", "repeats", "warmup", "arms",
+                    "row_tile_by_shape", "max_relative_timing_range"):
+            self.assertEqual(fused[key], base[key])
+        for bad in ({}, {"rms_norm": True}, {"rms_norm": True, "rope": 1},
+                    {"rms_norm": True, "rope": True, "silu": True}):
+            with self.assertRaises(ValueError):
+                RUNNER.validate_protocol({**base, "fused_nonlinear_modules": bad})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,5 +1,5 @@
 {
-  "id": "qwen3-8b-w3-inline-prepared-full-m1-v1",
+  "id": "qwen3-8b-w3-fused-nonlinear-full-m1-v1",
   "seed": 20260914,
   "decode_steps": 32,
   "warmup": 8,
@@ -14,8 +14,8 @@
   "timing_trim_per_side": 1,
   "packed_vs_decoded_relative_limit": 1.0,
   "fused_nonlinear_modules": {
-    "rms_norm": false,
-    "rope": false
+    "rms_norm": true,
+    "rope": true
   },
   "arms": [
     "original_bf16",

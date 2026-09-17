@@ -13,6 +13,10 @@
   "max_relative_timing_range": 0.05,
   "timing_trim_per_side": 1,
   "packed_vs_decoded_relative_limit": 1.0,
+  "fused_nonlinear_modules": {
+    "rms_norm": false,
+    "rope": false
+  },
   "arms": [
     "original_bf16",
     "decoded_w3_bf16",
