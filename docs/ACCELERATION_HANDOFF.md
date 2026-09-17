@@ -1,6 +1,6 @@
 # 加速实验合同与恢复交接
 
-更新：2026-09-16。QBB 最新性能结果仍为 prepared v2.1 全模型 Graph 对原始 BF16
+更新：2026-09-17。QBB 最新性能结果仍为 prepared v2.1 全模型 Graph 对原始 BF16
 1.381x / 1.383x，两组稳定；同轮 eager 不稳定。当前状态见
 [当前交接](CURRENT_HANDOFF.md)，逐轮证据见[加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
 后续质量/码率决策已转向 uniform 3-bit；本页只保存冻结 QBB 性能合同，不再作为
@@ -10,6 +10,14 @@ uniform W3 的第一轮 backend 和完整模型 trial 随后已经完成：Graph
 BF16 的 1.49x，但 packed-vs-decoded W3 数值门失败。当前 W3 状态、误差归因和
 下一步语义边界见 [W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)；该结果不能
 反向改写为 QBB 或 W3 accepted full-model correctness 证据。
+
+两条 decoded-BF16 corrected 完整模型路线也已在 A100 PCIe 完成。按 raw CUDA
+median，`fast_corrected` 为 1.3441x / 1.3427x，`observed_exact` 为
+1.2703x / 1.2699x；两者的 correctness 均失败，formal comparison stability 也因
+isolated outlier 未全通过。用户当前以加速效果为主，因此约 1.49x structural W3
+继续作为性能主线，corrected 路线只保留为负面 follow-up。3.154552-bit W3 相对
+BF16 的理论存储优势约 5.07x，但相对理想 W4 只有约 1.27x；bitplane decode、LUT、
+split-G workspace/finish reduction 和 A100 缺少原生 INT3 MMA 会显著稀释带宽收益。
 
 ## 路线边界
 
@@ -78,3 +86,8 @@ QBB 性能服务器任务已退出、无 GPU 进程，证据备份完成；其�
 只有后续明确要求恢复 QBB 研究时，若只更新 scales，仍须重做新权重的正确性检查；
 性能结论继续绑定原 manifest 和执行环境。
 只有格式、形状、索引、dtype、dispatch 和无数据相关分支均不变时，才可认为计算/访存规模不变。
+
+若恢复 W3 性能研究，先在允许 performance counters 的 A100 上 profile structural
+路线，量化 main/finish 双 kernel、32/96 个 partial split、LUT build/barrier 和非
+Linear 固定时间，再决定 fusion、persistent kernel 或 Tensor Core-friendly W3 重构。
+不自动重跑 corrected 路线，也不因性能优先而把 correctness 失败改写为 accepted。

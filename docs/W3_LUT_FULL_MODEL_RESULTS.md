@@ -1,8 +1,9 @@
 # GPTQ W3 inline LUT：完整模型结果与误差归因
 
 更新：2026-09-17。本文记录 Qwen3-8B、batch 1、M=1 decode 的 W3 inline LUT
-完整模型 trial。正式状态为 `completed_with_backend_numerical_differences`：性能结果稳定，
-但 packed-vs-decoded W3 数值门未通过，因此**不是完整模型 correctness accepted 结果**。
+structural 与 decoded-BF16 corrected 完整模型 trial。两次正式状态都是
+`completed_with_backend_numerical_differences`，因此都不是完整模型 correctness
+accepted 结果；性能结论分别按各自计时门解释。
 
 ## 结论
 
@@ -18,6 +19,56 @@ greedy tokens 和 fed tokens 相同，只说明本次固定 continuation 没有 
 
 因此当前证据支持“W3 inline kernel 在完整模型 decode 上有约 1.49x 性能潜力”，
 不支持“它已严格复现 retained decoded-BF16 GPTQ 模型”。
+
+## 2026-09-17 corrected follow-up：性能优先结论
+
+同型 NVIDIA A100 80GB PCIe 上又完成四臂同轮对照：original BF16、decoded W3
+BF16、`fast_corrected` 和 `observed_exact`。四臂及其 cache/Graph 同时驻留，allocated
+43,840,886,784 bytes，setup peak 54,803,371,008 bytes。下表是 10 次交错测量的
+CUDA device median；每个值都对应 32-token full-sequence Graph。
+
+| prompt | original BF16 | decoded W3 BF16 | fast corrected | fast vs original | observed exact | observed vs original |
+|---|---:|---:|---:|---:|---:|---:|
+| 0 | 476.338 ms | 476.319 ms | 354.399 ms | **1.34407x** | 374.968 ms | **1.27034x** |
+| 1 | 476.726 ms | 476.716 ms | 355.055 ms | **1.34268x** | 375.391 ms | **1.26995x** |
+
+`fast_corrected` 相对 decoded W3 为 1.34402x / 1.34265x，约 90.29 / 90.13
+token/s；`observed_exact` 为 1.27029x / 1.26992x，约 85.34 / 85.25 token/s。
+两条 corrected 路线都没有达到 1.5x，也都慢于历史 structural 运行的
+320.625 / 321.710 ms、1.4880x / 1.4892x。跨运行比较不是单因素消融；按中位数估算，
+fast corrected 比 structural 慢约 10%，observed exact 慢约 17%。因此只看速度时，
+structural 路线仍是当前 W3 主线，corrected 路线不应替代它。
+
+正式 JSON 没有发布 speedup 字段，因为冻结的 max-min stability gate 看到三个孤立
+outlier：prompt 0 decoded W3 有一次 511.310 ms，prompt 1 original BF16 有一次
+558.427 ms，prompt 1 observed exact 有一次 452.869 ms；wall-time 还存在 host-side
+outlier。去掉各组 min/max 后，八个 CUDA device timing cell 的相对极差均不超过
+0.26%；`fast_corrected` 自身两组 CUDA device 计时也通过 5% 门，但 wall-time 未通过。
+因此表中数值是**可复核的 raw CUDA median 性能观测**，不是 formal-stable comparison
+acceptance。
+
+correctness 没有随修正通过：
+
+| route | prompt 0 logits NRMSE / max log-prob | prompt 1 logits NRMSE / max log-prob | accepted |
+|---|---:|---:|---|
+| fast corrected | 0.020764 / 1.09243 | 0.022001 / 1.12491 | false |
+| observed exact | 0.019733 / 0.71975 | 0.017023 / 0.95927 | false |
+
+冻结门限为 logits NRMSE 0.005、max log-prob 0.05。两条路线的 prepared wrapper、
+Graph 检查均精确；每个 prompt 都捕获 252 条 packed route，`dense_fallback=0`，
+greedy/fed tokens 也一致。因此 failure 不是 dispatch、Graph 或 fallback 问题。
+`±3` correction 能复现逐权重 BF16 物化后的显式 FP32 grouped matvec，但 dense
+oracle 是 cuBLAS BF16 GEMM，其 reduction tree 与 kernel 的“先 group dot、后乘 scale、
+再 split reduction”不同。实数公式相同，浮点执行顺序不同；RTX layer-0/fixed-input 的
+最终 BF16 coincidence 不能外推为全输入、全层 bit-exact，36 层传播后差异继续放大。
+
+W3 的有效存储为 3.154552 bit/weight，相对 BF16 是约 5.07x，但相对理想 W4 只有
+约 1.27x。A100 没有原生 INT3 MMA；当前路径还要做 3 个 bitplane 解码、activation
+LUT、shared-memory build/barrier、permutation gather、FP32 partial workspace 和 finish
+reduction。gps1 会产生 32 或 96 个 partial split；252 个 Linear × 32 token 又有
+8064 次 main/finish 调用。即使整段被 CUDA Graph 捕获，device-side launch/dependency、
+非 Linear 模型工作和 reduction 流量仍存在。相比成熟的 Tensor Core-friendly W4A16，
+W3 的额外开销只要超过约 27%，就会吃掉其相对 W4 的理论存储优势。
 
 ## 冻结协议与性能
 
@@ -87,23 +138,23 @@ packing 和 LUT bit-plane 解码错误。表中各 NRMSE 使用不同中间精�
 增加 payload。RTX PRO 4500 的 46/46 cell 均通过 correctness、repeat 与 Graph 检查；
 gps1 对 q/o、k/v 达到 fixed-input bit-exact，对 gate/up 仅余约 4.01e-8 NRMSE，down
 从 0.001821 降至 0.000154。gate/up gps4、down gps2 在该输入上进一步达到 bit-exact。
-这些结果支持把修正路线接入完整模型，但仍不是跨输入根因闭环或 A100 结果。诊断
+这些结果支持把修正路线接入完整模型，但并不是跨输入根因闭环。上面的 A100
+follow-up 已进一步证明 fixed-input exact 不能外推为完整模型 exact。诊断
 result SHA256 为
-`4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`；下一步见
+`4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`；完整执行记录见
 [A100 corrected full-model 手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
 ## 决策边界
 
-当前不能放宽阈值后把本轮改写为 accepted，也不能用两个 prompt 的 greedy token
-一致代替质量验证。下一步应先明确语义：
+不能放宽阈值后把任一轮改写为 accepted，也不能用两个 prompt 的 greedy token 一致
+代替质量验证。用户当前明确以加速效果为主，所以性能主线保留 structural W3；它仍须
+被视为另一个部署算术语义，后续若要发布质量结论，应单独完成完整 PPL/质量验证。
+corrected 两条路线冻结为负面 follow-up，不自动重跑。
 
-1. 如果目标是严格复现 retained decoded-BF16 GPTQModel，需要用已实现的
-   per-weight BF16 舍入修正重做完整模型正确性、性能门。
-2. 如果保留当前 structural W3 算术，应把它视为另一个部署模型，单独完成完整
-   PPL/质量验证；它不能直接通过当前 decoded-W3 oracle。
-
-Nsight Compute 在该宿主仍因 `ERR_NVGPUCTRPERM` 不可用。prepare 不是当前优先项；
-在数值语义决策前，不自动继续 profiler、prepare、多 batch 或 serving。
+下一轮性能工作应优先在允许 performance counters 的实例上 profile structural 路线，
+核实 main/finish fusion、partial workspace、LUT build/barrier 和非 Linear 固定时间的
+占比，再决定 persistent/fused Linear 或 Tensor Core-friendly W3 重构。现有宿主的
+Nsight Compute 因 `ERR_NVGPUCTRPERM` 不可用；不自动扩展 batch、serving 或 prepare。
 
 ## 来源与保存
 
@@ -119,3 +170,18 @@ Nsight Compute 在该宿主仍因 `ERR_NVGPUCTRPERM` 不可用。prepare 不是�
 `server_results/runpod_w3_full_m1_a100_pcie_2026-09-16/`，不提交 GitHub。
 最后检查时无 GPU compute 进程或 tmux，会话和结果均已收尾；计算实例可以关闭，
 但应保留 `/workspace` 网络卷。
+
+corrected follow-up 的附加来源：
+
+- 执行源码 revision：`d0f85b49745d169b6ffc1f4a7e4d97a197e6911d`。
+- protocol SHA256：`f7d3f12cc29a645e1d9862c4fc245a8ffc32b22428136e6b8c86427b55256b24`。
+- runner SHA256：`511a9ac78e3fc5437ed19833fe4b71f47c2899798503197871e0dd163547054e`。
+- environment JSON SHA256：`9f045ce580131aac8f717d53ea7fe1a85c5c8f389c5fce0111ce30afed23091e`。
+- 正式结果 JSON SHA256：`08271b47c7db3e5197557a6fef25af659cf90e885621e7d4660a99d3c3a2c0cd`。
+
+远端 corrected 结果位于
+`/workspace/results/qwen3-8b-w3-corrected-full-m1-v1-a100-pcie-20260917-retry1/`；
+私有本地备份位于
+`server_results/runpod_w3_corrected_full_m1_a100_pcie_2026-09-17/`，不提交 GitHub。
+retry1 退出 0，最后审计 GPU、tmux 和实验进程均为空；服务器已经 shutdown-ready，
+实际电源状态仍由用户确认。

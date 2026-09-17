@@ -1,6 +1,6 @@
 # 当前结果总览
 
-更新：2026-09-16。速度比均为原始 BF16 / packed，大于 1 表示加速；
+更新：2026-09-17。速度比均为原始 BF16 / packed，大于 1 表示加速；
 以下是不同硬件与协议的历史结果，不是可直接归因的单因素消融。
 
 ## 近期完整模型结果
@@ -14,6 +14,8 @@
 | 09-15 SXM4 | v5_p1024/gps1，prepared eager v2.1 | 不发布 / 不发布 | 波动 6.51–10.11%，超 5% |
 | **09-15 SXM4** | **v5_p1024/gps1，sequence Graph v2.1** | **1.380972x / 1.383276x** | **两组稳定，跨度 <0.12%** |
 | **09-16 PCIe** | **GPTQ W3 inline，sequence Graph** | **1.488022x / 1.489158x** | **性能稳定；decoded-W3 数值门失败** |
+| **09-17 PCIe** | **W3 fast corrected，sequence Graph** | **1.344074x / 1.342683x** | **raw CUDA median；device 稳定、wall 不稳定，correctness 失败** |
+| **09-17 PCIe** | **W3 observed exact，sequence Graph** | **1.270342x / 1.269945x** | **raw CUDA median；一处离群点，correctness 失败** |
 
 QBB v2.1 Graph 的 32-token 延迟：原始 BF16 467.513 / 467.919 ms，packed
 338.539 / 338.269 ms；约 68 → 95 token/s。eager 不稳定导致整体 JSON 为
@@ -24,6 +26,20 @@ QBB v2.1 Graph 的 32-token 延迟：原始 BF16 467.513 / 467.919 ms，packed
 消融。W3 的 32-token packed 延迟为 320.625 / 321.710 ms，原始 BF16 为
 477.097 / 479.077 ms；但 packed-vs-decoded W3 logits NRMSE 为 0.01683 / 0.01457，
 超过 0.005，因此不是 correctness accepted 结果。
+
+09-17 corrected 四臂同轮测量中，`fast_corrected` 的 32-token 延迟为
+354.399 / 355.055 ms，`observed_exact` 为 374.968 / 375.391 ms；original BF16
+为 476.338 / 476.726 ms。协议的 formal stability gate 因 decoded prompt 0、
+original prompt 1 和 observed prompt 1 各一个 isolated outlier 未通过，所以表内是
+raw CUDA median 观测，不是正式发布的 stable speedup；去掉各组 min/max 后相对极差
+均不超过 0.26%，且 fast corrected 自身两组 CUDA device 计时通过 5% 门；其 wall-time
+仍有 host-side outlier。
+
+性能优先的决策是保留约 1.49x structural W3 为主线：fast corrected 约慢 10%，
+observed exact 约慢 17%，两者都未到 1.5x。3.154552-bit W3 相对 BF16 虽有约
+5.07x 存储优势，相对理想 W4 却只有约 1.27x；A100 无原生 INT3 MMA，而当前 W3
+还有 bitplane decode、LUT/shared-memory 同步、split-G workspace 与 finish reduction。
+这些开销超过 27% 就足以抵消它相对成熟 W4A16 的理论带宽优势。
 
 ## GPTQ W3 完整模型误差归因
 
@@ -36,10 +52,11 @@ shape。
 四种真实 shape 的 kernel 输出与 structural FP32 reference 转 BF16 均逐位一致；
 FP32 输出层面对照中的归约顺序差异仅 1e-7 量级。现有证据将问题缩小到 decoded
 路径的 `BF16(scale * code)` 权重物化、kernel 的 FP32 integer-dot 路径及最终 BF16
-舍入之间；但这些 NRMSE 不是可相加的因果分解，尚未证明具体主导项。已实现的 `±3`
-舍入修正 trial 将直接检验 per-weight rounding 假设。因此本次失败不是已观察到的
-`g_idx/desc_act`、packing、Graph 或 fallback 错误，但有限精度根因仍待闭环。完整
-数据、哈希和后续边界见
+舍入之间。后续 `±3` corrected full-model 运行仍得到 0.0170--0.0220 logits NRMSE，
+证明 fixed layer-0/input 的逐位 coincidence 不能外推到 cuBLAS BF16 GEMM：显式
+grouped matvec 与 cuBLAS reduction tree 的浮点执行顺序不同。本次失败不是已观察到的
+`g_idx/desc_act`、packing、Graph 或 fallback 错误；两条 corrected 路线同样不是
+correctness accepted。完整数据、哈希和后续边界见
 [W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)。
 
 ## Linear、block 与协议边界

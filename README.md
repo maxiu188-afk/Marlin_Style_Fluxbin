@@ -4,7 +4,7 @@
 性能链已冻结；同码率质量实验选择 Case A，后续优先评估 uniform 3-bit
 backend / solver。vLLM 保留接口但尚未接入。
 
-## 当前结果（2026-09-16）
+## 当前结果（2026-09-17）
 
 Qwen3-8B GPTQ W3 inline LUT 的 A100 PCIe 4×3 Linear trial 已完成。按同轮
 CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k/v
@@ -18,11 +18,26 @@ CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k
 相对 decoded W3 BF16 为 **1.4923x / 1.4886x**，两组主计时稳定。但
 packed-vs-decoded logits NRMSE 为 **0.01683 / 0.01457**，超过 0.005 门限；
 正式状态是 `completed_with_backend_numerical_differences`，不能写成 correctness
-accepted。现有诊断证明 kernel 与 structural W3 逐位一致，并把问题缩小到 dense
-BF16 权重物化、归约顺序和最终 BF16 舍入之间的有限精度差异；但尚未用因果消融证明
-具体主导项。独立的 `±3` BF16 舍入修正与 split-G trial 已实现、等待 NVIDIA GPU
-验证。详见[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)和
-[修正诊断手册](docs/W3_LUT_BF16_SPLIT_RUNBOOK.md)。
+accepted。
+
+随后在同型 A100 PCIe 上完成两条 decoded-BF16 corrected 路线。按 10 次 CUDA event
+中位数，`fast_corrected` 相对原始 BF16 为 **1.3441x / 1.3427x**，
+`observed_exact` 为 **1.2703x / 1.2699x**；两者都慢于历史 structural 路线的约
+1.49x，也没有达到 1.5x。协议的全比较稳定性门因三个 arm/prompt 中各一个离群样本
+未通过，因此这些是可复核的 raw median 性能观测，不是 formal-stable acceptance；
+`fast_corrected` 自身两组 CUDA device timing 都稳定，但 wall-time 仍有 host-side
+outlier。两条 corrected 路线的完整模型 correctness
+仍未通过，说明 `±3` 修正只能复现显式 FP32 grouped matvec 的逐权重 BF16 物化语义，
+不能复现 cuBLAS BF16 GEMM 的归约顺序。按“性能优先”口径，当前 W3 性能主线仍是
+structural 路线，corrected 路线保留为负面诊断。详见
+[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)和
+[A100 corrected 运行记录](docs/W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
+
+GPTQ W3 的有效存储为 3.154552 bit/weight，相对 BF16 的理论存储优势约 **5.07x**，
+但相对理想 W4 只有约 **1.27x**。当前 W3 还承担 3 个 bitplane 解码、activation LUT、
+shared-memory 同步、split-G FP32 workspace 和 finish reduction；A100 又没有原生 INT3
+Tensor Core MMA。因此“对 BF16 的 5x 带宽优势”不会直接变成相对成熟 W4A16 的
+5x 加速，额外开销超过约 27% 就足以吃掉 W3 相对 W4 的存储优势。
 
 在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
 32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。
@@ -51,7 +66,7 @@ A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DIST
 ## 阅读与运行入口
 
 - [当前交接](docs/CURRENT_HANDOFF.md)：有效状态、代码入口、服务器与下一步。
-- [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：约 1.49x 性能、失败的数值门与逐层归因。
+- [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：structural 约 1.49x、corrected 约 1.34x/1.27x，以及失败的数值门与逐层归因。
 - [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
 - [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
 - [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
@@ -64,8 +79,8 @@ QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置�
 上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
 不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。
 
-最后一次服务器验收已完成，证据备份且 GPU 进程退出，可以停止计算实例并保留
-网络卷；当前电源状态需下次连接时核验。容器本地环境按 lock 恢复，持久保存模型、
+最后一次 corrected A100 服务器验收已完成，任务退出 0，证据备份且 GPU/tmux/实验
+进程均为空，可以停止计算实例并保留网络卷；当前电源状态需下次连接时核验。容器本地环境按 lock 恢复，持久保存模型、
 包缓存和兼容的编译缓存，最近恢复约 40 秒。基础镜像 digest 未确认，自建镜像暂缓。
 镜像配置及早期构建失败记录见 [RunPod 说明](infra/runpod/README.md)。
 

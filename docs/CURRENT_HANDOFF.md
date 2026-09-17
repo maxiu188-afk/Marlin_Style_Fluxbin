@@ -25,11 +25,18 @@ vLLM 仅保留接口、尚未接入。
 - 当前服务器的 Nsight Compute 计数器权限被宿主拒绝（`ERR_NVGPUCTRPERM`）；
   尚不能归因 LUT build、occupancy、HBM 或 shared bank conflict。prepare 诊断分支
   仍未授权、未实现。
-- **decoded-BF16 修正的两条完整模型路线已经接入，等待 A100 80GB**：
-  `fast_corrected` 对四类 shape 都使用 gps1；`observed_exact` 对 q/o、k/v、gate/up、
-  down 分别使用 gps1/1/4/2。两条都保持既有 row tile 和 `decoded_bf16` arithmetic，
-  共享同一轮 original BF16 / decoded W3 对照，但各自独立做 correctness 与稳定性验收。
-  运行入口见 [A100 corrected full-model 手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
+- **两条 decoded-BF16 corrected 完整模型路线已在 A100 PCIe 跑完**：按 10 次
+  CUDA event 中位数，`fast_corrected` 相对原始 BF16 为 1.3441x / 1.3427x，
+  `observed_exact` 为 1.2703x / 1.2699x。两者都低于历史 structural 路线的约
+  1.49x；性能优先时继续以 structural 为主线。协议的全比较稳定门因 isolated
+  outlier 未通过，所以这些数值是 raw median 观测，不是 formal-stable acceptance；
+  `fast_corrected` 自身两组 CUDA device 计时均稳定，但 wall-time 有 host-side outlier。
+- 两条 corrected 路线的 correctness 仍失败：`fast_corrected` logits NRMSE 为
+  0.02076 / 0.02200，`observed_exact` 为 0.01973 / 0.01702，均超过 0.005。
+  prepared wrapper、Graph 和 252 条 packed route 全部精确且无 dense fallback，
+  因而失败不是路由问题。`±3` 修正复现显式 FP32 grouped matvec 的 decoded-BF16
+  物化语义，但不能复现 cuBLAS BF16 GEMM 的归约树；36 层传播后仍会放大差异。
+  详见 [A100 corrected full-model 记录](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
 - **完整模型 sequence Graph 已实现 1.381x / 1.383x 原始 BF16 加速**：
   A100 SXM4 80GB，`v5_p1024/gps1`，prepared 协议 v2.1，两个固定 prompt。
@@ -76,6 +83,12 @@ W3 完整模型正式运行源码为 `fc76b75`。四个最佳 row tile、layout 
 protocol、runner、environment 和正式结果均由 SHA256 绑定；诊断只读正式 artifact，
 没有改写正式 JSON 或阈值。
 
+W3 corrected 完整模型运行源码为 `d0f85b4`。protocol、runner、layout manifest、
+environment 和结果分别绑定到 SHA256 `f7d3f12c...56b24`、
+`511a9ac7...054e`、`f2825dda...edf8`、`9f045ce5...091e` 和
+`08271b47...c0cd`；正式状态为
+`completed_with_backend_numerical_differences`。
+
 ## 服务器与证据
 
 W3 完整模型服务器最后一次观测：`213.173.105.10:43680`，A100 80GB PCIe。
@@ -85,6 +98,17 @@ W3 完整模型服务器最后一次观测：`213.173.105.10:43680`，A100 80GB 
 `f1767d0e...4a85`。远端结果位于 `/workspace/results/qwen3-8b-w3-full-m1-v1/`，
 私有本地备份位于 `server_results/runpod_w3_full_m1_a100_pcie_2026-09-16/`。
 可以关闭计算实例并保留 `/workspace` 网络卷；实际电源状态仍由用户确认。
+
+W3 corrected 服务器最后一次观测：`213.173.105.8:42353`，A100 80GB PCIe。
+retry1 于 2026-09-17 02:25:55Z 启动、03:00:14Z 完成，退出 0；最后检查 GPU、
+tmux 和实验进程均为空。远端结果位于
+`/workspace/results/qwen3-8b-w3-corrected-full-m1-v1-a100-pcie-20260917-retry1/`，
+本地私有备份位于
+`server_results/runpod_w3_corrected_full_m1_a100_pcie_2026-09-17/`，结果 SHA256
+为 `08271b47c7db3e5197557a6fef25af659cf90e885621e7d4660a99d3c3a2c0cd`。
+首个启动因 tmux quoting 选到 system Python，在模型加载前失败；失败日志保留，retry1
+改用绝对 venv Python 后完成。实例已完成关机准备并保留 `/workspace`；实际电源状态
+仍由用户确认。
 
 M=1 性能服务器最后一次观测：`213.173.102.5:11028`，A100 SXM4 80GB，任务退出 0，
 GPU 无剩余实验进程；已完成关机准备，**尚无用户确认本实例已关闭**。
@@ -127,21 +151,19 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 SHA256 为 `4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`，但这是
 Linear/layer-0 固定输入证据，不是 A100 或完整模型结论。RTX 实例已关闭并保留网络卷。
 
-若 `±3` 修正不能显著压低 corrected-vs-decoded 误差，再继续检查 BF16 输出 ULP、
-sorted/original-K 归约顺序和 FMA；不得把当前公式直接写成已确认根因。若修正通过
-Linear 门，仍须以独立候选重做完整模型 0.005/0.05 correctness 和性能门。不得放宽
-门限后把本轮改写为 accepted。
+corrected 路线现已冻结为负面性能/正确性 follow-up，不再自动重跑。用户当前以加速
+效果为主，因此后续优化应从约 1.49x 的 structural 路线出发，优先减少 main/finish
+双 kernel、32/96 个 partial split 的 FP32 workspace 往返、每次 Linear 的 LUT build
+与同步，并评估能否使用更接近 Marlin 的 Tensor Core 友好 W3 数据流。252 个 Linear
+乘 32 token 共 8064 次调用，固定 launch/依赖和非 Linear 模型时间都会稀释理论带宽收益。
 
-只有数值路线明确后，才决定是否在允许 performance counters 的实例上 profile 四个
-最佳 inline candidate。prepare 仍只能在 profiler 证明 LUT build 为主要瓶颈后作为
-诊断分支；不自动扩展 batch、Tensor Core/Marlin W3、QKV fusion、split-K 或 serving。
-现有 prepared v2.1 继续作为冻结的 QBB 性能基线。
+3.154552-bit W3 相对 BF16 的存储优势约 5.07x，但相对理想 W4 只有约 1.27x；A100
+没有原生 INT3 MMA。若 W3 的 bitplane decode、LUT、同步和 reduction 开销超过 27%，
+其带宽优势就不足以超过成熟 W4A16。若恢复上机，先做可采 performance counters 的
+structural profile，再决定 main/finish fusion、persistent/fused Linear 或 Tensor Core
+重构；correctness 失败继续作为边界，不得改写为 accepted。
 
-下一次上机使用 A100 80GB，先同步 Git、核对持久卷/manifest/snapshot、恢复环境并
-验证 CUDA，然后运行两条 corrected full-model 路线；不重复 RTX 精度诊断，也不启动
-profiler。完整命令与独立 candidate 验收见
-[A100 corrected full-model 手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
-每次新运行使用独立输出目录和匹配的源码/环境记录，保留失败证据。
+每次新运行仍使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。
 
 ## 历史资料
