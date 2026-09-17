@@ -44,23 +44,28 @@ vLLM 仅保留接口、尚未接入。
   1.514x，实测 1.488x，误差 1.8%。硬上限：Linear 归零 2.64x，Linear 达 BF16 同等
   带宽约 1.98x。**不动这 32% 就到不了 2x 以上。** 详见
   [非 Linear 路径融合](NONLINEAR_FUSION.md)。
-- **0.005 数值门在 harness 噪声地板以下（重读已有 JSON，非新运行）**：零量化的
-  `original_bf16` 臂在数学等价的 mask 改写下 logits NRMSE 已是 0.01431 / 0.01153，
-  同样不通过；QBB 线独立复现同一地板 0.01167--0.01359。放大链条为逐 Linear
-  0.00059--0.00264 →（深度约 4x）step-0 logits 0.0085596 →（自回归约 2x）step-32
-  0.01683。**上述几处 correctness 失败因此不能读作 kernel 算错**，也解释了 `±3`
+- **0.005 NRMSE / 0.05 max-logprob 门都低于 harness 整段 trace 放大基线（重读已有
+  JSON，非新运行）**：
+  零量化的 `original_bf16` 臂在数学等价的 mask 改写下，整段 logits trace NRMSE 已是
+  0.01431 / 0.01153，同样不通过；QBB 线独立复现同一基线 0.01167--0.01359。放大链条为
+  逐 Linear 0.00059--0.00264 →（深度约 4x）step-0 logits 0.0085596 →（后续自回归
+  位置放大）整段 trace 聚合 NRMSE 0.01683。**上述几处 correctness 失败因此不能读作
+  kernel 算错**，也解释了 `±3`
   修正为何 Linear 层面有效而端到端更差。详见
   [数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)。
 - **已实现、尚未在 GPU 验证**：(a) 自校准相对数值门
-  `packed_vs_decoded_relative_check`（以同轮 `original_bf16` 的 dyn-vs-static 为地板，
-  limit 由 protocol 声明、默认 1.0）与逐步 NRMSE `stepwise_normalized_rmse`；
+  `packed_vs_decoded_relative_check`（以同轮 `original_bf16` 的 dyn-vs-static 为控制
+  基线，limit 由 protocol 声明、默认 1.0）；max-logprob 也使用同轮控制比值门，并与
+  shape/finite、forced/greedy token 不变量组成正式 backend 验收；旧 0.005/0.05 绝对门
+  只保留为 legacy 审计字段；另有逐步 NRMSE `stepwise_normalized_rmse`；
   (b) 鲁棒化计时门 `trimmed_relative_range`（去首尾各一样本，median 仍用全样本，
   故加速比数值不变）；(c) Qwen3 RMSNorm/RoPE 融合；(d) shared-memory bank conflict
-  计时探针。166 项测试通过。
+  计时探针。170 项测试通过。
 - 用新门重放归档结果：09-16 structural 的判定与加速比**完全不变**；09-17 的三个
   cell 从 void 恢复为可发布的负面性能结果，`fast_corrected` p1 因 wall-time 有两个
-  尖峰仍判不稳。相对门下所有 cell 仍不通过，ratio 1.18--1.91——这是有意义的负面
-  结果，不是相对不可达阈值的 3.4 倍。
+  尖峰仍判不稳。复合相对门下所有 cell 仍不通过：NRMSE ratio 1.18--1.91；structural
+  的 logprob ratio 通过，corrected 两条路线不通过。这是有意义的负面结果，不是相对
+  不可达绝对阈值的倍数。
 - 需要注意的反例：`torch.nn.functional.rms_norm` **不是**融合 kernel。
   `aten::rms_norm` 是 CompositeImplicitAutograd、无后端注册，CUDA 上分解成同样 8 个
   op；torch 2.9 才有 `_fused_rms_norm`，服务器是 2.8。因此 RMSNorm 融合走 Inductor，
@@ -100,10 +105,11 @@ vLLM 仅保留接口、尚未接入。
 | W3 packed kernel | `src/fluxbin_style/csrc/w3_lut.cu` |
 | W3 prepared Linear | `src/fluxbin_style/w3_lut_deployment.py` |
 | W3 全模型 runner | `scripts/run_qwen3_8b_w3_full_m1_trial.py` |
-| W3 全模型配置 | `configs/acceleration/qwen3_8b_w3_full_m1_v1.json` |
+| W3 历史全模型配置 | `configs/acceleration/qwen3_8b_w3_full_m1_v1.json`（冻结旧门） |
+| W3 新 stock 配置 | `configs/acceleration/qwen3_8b_w3_full_m1_v2.json`（复合相对门） |
 | W3 corrected 全模型配置 | `configs/acceleration/qwen3_8b_w3_corrected_full_m1_v1.json` |
 | 非 Linear 融合 | `src/fluxbin_style/fused_modules.py` |
-| W3 fused 全模型配置 | `configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json` |
+| W3 fused 全模型配置 | `configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json` |
 | bank conflict 探针 | `scripts/run_w3_lut_bank_conflict_probe.py`（计时专用，输出数值无效） |
 | GPU 验证批次 | `scripts/run_w3_gpu_validation_batch.sh` + `scripts/summarize_w3_gpu_validation_batch.py` |
 
@@ -210,8 +216,9 @@ compiled RMSNorm 实际几个 kernel（CPU 为 2，外推的 -56% 依赖它等�
 没有原生 INT3 MMA。若 W3 的 bitplane decode、LUT、同步和 reduction 开销超过 27%，
 其带宽优势就不足以超过成熟 W4A16。若恢复上机，先做可采 performance counters 的
 structural profile，再决定 main/finish fusion、persistent/fused Linear 或 Tensor Core
-重构；correctness 失败继续作为边界，不得改写为 accepted——但按上文标定，现行 0.005
-门在 0.005 处没有分辨力，应改用相对门或 step-0 门评判，而不是放宽绝对阈值。
+重构；历史 correctness 失败继续作为边界，不追溯改写为 accepted。后续运行已经改用
+同轮 NRMSE/max-logprob 相对门与 trace 不变量，step-0 指标继续独立报告；不得再用旧
+0.005/0.05 绝对门决定新结果，也不得为了通过而放宽相对 limit。
 
 每次新运行仍使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。

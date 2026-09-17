@@ -1,5 +1,5 @@
 {
-  "id": "qwen3-8b-w3-inline-prepared-full-m1-v1",
+  "id": "qwen3-8b-w3-inline-prepared-full-m1-v2",
   "seed": 20260914,
   "decode_steps": 32,
   "warmup": 8,
@@ -11,6 +11,14 @@
   "max_prompt_tokens": 128,
   "logprob_max_abs_tolerance": 0.05,
   "max_relative_timing_range": 0.05,
+  "timing_trim_per_side": 1,
+  "backend_acceptance_policy": "relative_nrmse_logprob_plus_trace_invariants_v1",
+  "packed_vs_decoded_relative_limit": 1.0,
+  "packed_vs_decoded_logprob_relative_limit": 1.0,
+  "fused_nonlinear_modules": {
+    "rms_norm": false,
+    "rope": false
+  },
   "arms": [
     "original_bf16",
     "decoded_w3_bf16",

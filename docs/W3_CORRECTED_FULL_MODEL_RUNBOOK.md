@@ -26,7 +26,7 @@ outlier 触发，不能从 Linear 结果或中位数改写为 formal acceptance�
 性能主线仍是 structural，corrected 结果作为数值语义和额外开销的负面 follow-up。
 修正在 Linear 层面有效但端到端指标反而变差，原因见
 [数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门限低于本 harness 自身的
-放大地板，局部精度提升被淹没。
+放大基线，局部精度提升被淹没。
 
 首个 tmux launch 因 quoting 选到 system Python，在模型加载前失败。retry1 显式使用
 venv Python 后完成；因此下面的复现模板要求先固定并验证 `python_bin`。
@@ -201,3 +201,8 @@ original BF16 和 decoded W3 报告；不得用一条路线的通过替代另一
 `all_dynamic_static_checks_passed` 是独立 report-only 字段，不应被误写成 candidate
 acceptance 的硬断言。本次它和全部 candidate acceptance 都为 false，但
 prepared-wrapper/Graph exact 与 route coverage 仍单独通过。
+
+以上是 `d0f85b4` 已归档运行当时的历史验收合同，不追溯改写。后续 GPU batch 使用
+[重新标定后的复合数值门](W3_NUMERICAL_GATE_CALIBRATION.md)：旧 0.005 NRMSE / 0.05
+logprob 判定保留为 legacy 审计字段，正式 acceptance 改由相对 NRMSE、相对
+max-logprob 加 trace 不变量控制。

@@ -116,7 +116,7 @@ run_job split-sweep "$batch_result/split-sweep/result.json" \
 #    Without it the fusion delta would be a cross-session comparison.
 run_job full-model-stock "$batch_result/full-model-stock/result.json" \
   "$batch_python" "$batch_root/scripts/run_qwen3_8b_w3_full_m1_trial.py" \
-  --protocol "$batch_root/configs/acceleration/qwen3_8b_w3_full_m1_v1.json" \
+  --protocol "$batch_root/configs/acceleration/qwen3_8b_w3_full_m1_v2.json" \
   --snapshot-root "$snapshot_root" \
   --w3-layout-root "$layout_root" \
   --w3-layout-manifest-sha256 "$layout_sha" \
@@ -126,7 +126,7 @@ run_job full-model-stock "$batch_result/full-model-stock/result.json" \
 # 4. Same protocol with the RMSNorm/RoPE fusions enabled.
 run_job full-model-fused "$batch_result/full-model-fused/result.json" \
   "$batch_python" "$batch_root/scripts/run_qwen3_8b_w3_full_m1_trial.py" \
-  --protocol "$batch_root/configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json" \
+  --protocol "$batch_root/configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json" \
   --snapshot-root "$snapshot_root" \
   --w3-layout-root "$layout_root" \
   --w3-layout-manifest-sha256 "$layout_sha" \

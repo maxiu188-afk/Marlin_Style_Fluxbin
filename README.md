@@ -44,21 +44,25 @@ structural 路线，corrected 路线保留为负面诊断。详见
 在小 Qwen3 上实测占一个 decode step 全部 compute op 的 55%。详见
 [非 Linear 路径融合](docs/NONLINEAR_FUSION.md)。
 
-**0.005 这道数值门在本 harness 的噪声地板以下。** 零量化的 `original_bf16` 臂在一次
-数学等价的注意力 mask 改写下，最终 logits NRMSE 已经是 **0.01431 / 0.01153**，同样
-过不了 0.005；QBB 线在不同 GPU、不同量化方案上独立复现同一地板（0.01167--0.01359）。
+**0.005 NRMSE / 0.05 max-logprob 两道绝对门都低于本 harness 的整段 trace 放大基线。**
+零量化的 `original_bf16` 臂在一次数学等价的注意力 mask 改写下，整段 logits trace
+NRMSE 已经是 **0.01431 / 0.01153**，max-logprob error 是 **0.6875 / 0.7827**，同样
+无法通过旧门；QBB 线在不同 GPU、不同量化方案上独立复现相近 NRMSE 基线
+（0.01167--0.01359）。
 因此上文几处 packed-vs-decoded 的失败**不能读作“kernel 算错了”**——这道门在 0.005 处
 没有分辨力，32 步自回归把 0.002 量级的逐 Linear 差异放大到 0.017。kernel 正确性的
 现有证据是 Linear 级 structural 逐位一致，与该门独立。这也解释了 `±3` 修正为何在
 Linear 层面有效却让端到端指标变差。详见
 [数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)。
 
-据此已实现但**尚未在 GPU 上验证**：自校准的相对数值门与鲁棒化计时门、Qwen3
+据此已实现但**尚未在 GPU 上验证**：自校准的 NRMSE 与 max-logprob 相对数值门及其
+fail-closed 复合验收（shape/finite、forced/greedy token）、鲁棒化计时门、Qwen3
 RMSNorm/RoPE 融合路径（CPU 实测 decode step compute op 降 49%，CUDA 预期 56%，
 外推整模约 1.71x 与约 139 tok/s）、shared-memory bank conflict 计时探针。四个待验证
 作业已打包为一次租卡会话，见
-[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。融合路径与 stock
-不是逐位一致，因此它是独立 protocol id，不与 frozen structural v1 的历史数字并表。
+[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。本轮 stock/fused 使用
+独立 v2 protocol；融合路径与 stock 不是逐位一致，也不与 frozen structural v1 的历史
+数字并表。
 
 GPTQ W3 的有效存储为 3.154552 bit/weight，相对 BF16 的理论存储优势约 **5.07x**，
 但相对理想 W4 只有约 **1.27x**。当前 W3 还承担 3 个 bitplane 解码、activation LUT、
@@ -104,11 +108,12 @@ A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DIST
 
 QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置文件
 `configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。W3 完整模型入口为
-`scripts/run_qwen3_8b_w3_full_m1_trial.py`，配置文件
-`configs/acceleration/qwen3_8b_w3_full_m1_v1.json`。旧 v1 路径和结果保留。
+`scripts/run_qwen3_8b_w3_full_m1_trial.py`。历史结果绑定冻结的
+`configs/acceleration/qwen3_8b_w3_full_m1_v1.json`；新 GPU batch 的 stock 对照使用
+`configs/acceleration/qwen3_8b_w3_full_m1_v2.json`。旧 v1 路径和结果保留。
 非 Linear 融合入口为 `src/fluxbin_style/fused_modules.py`，配置文件
-`configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json`；两个既有 frozen protocol
-显式声明关闭融合，行为不变。批次入口为
+`configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json`；v2 stock/fused 除融合开关与
+protocol id 外保持一致，并共同使用新复合数值门。批次入口为
 `scripts/run_w3_gpu_validation_batch.sh`。
 上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
 不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。

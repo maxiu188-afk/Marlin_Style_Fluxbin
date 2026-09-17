@@ -78,10 +78,11 @@ reduction 通常是 1 个，**需要首轮 GPU 运行确认**。
 
 ## 运行入口
 
-新增 `configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json`，protocol id
-`qwen3-8b-w3-fused-nonlinear-full-m1-v1`，除 `fused_nonlinear_modules` 全开外与
-frozen structural v1 逐字段相同（有测试比对）。两个既有 frozen protocol 显式声明
-`{"rms_norm": false, "rope": false}`，行为不变。runner 把实际生效的配置写入结果的
+GPU batch 使用 `configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json`，protocol id
+`qwen3-8b-w3-fused-nonlinear-full-m1-v2`；同轮 stock 对照是
+`configs/acceleration/qwen3_8b_w3_full_m1_v2.json`。两者除 protocol id 与
+`fused_nonlinear_modules` 开关外逐字段相同（有测试比对），并共同使用重新标定的复合
+数值门。历史 v1 配置及其结果不改写。runner 把实际生效的配置写入结果的
 `fused_nonlinear_modules` 字段。
 
 融合路径与 stock 不是逐位一致，所以它是**独立的 protocol id**，不是对既有 id 的

@@ -107,8 +107,22 @@ def summarize_full_model(report, steps):
         "available": True,
         "status": report.get("status"),
         "fused_nonlinear_modules": report.get("fused_nonlinear_modules"),
+        "backend_acceptance_policy": report.get("backend_acceptance_policy"),
+        "candidate_acceptance": report.get("candidate_acceptance"),
         "primary_timings_stable": report.get("primary_timings_stable"),
+        "all_backend_checks_passed": report.get("all_backend_checks_passed"),
+        "all_calibrated_backend_checks_passed": report.get(
+            "all_calibrated_backend_checks_passed"
+        ),
+        "all_backend_invariants_passed": report.get("all_backend_invariants_passed"),
         "all_relative_backend_checks_passed": report.get("all_relative_backend_checks_passed"),
+        "all_relative_nrmse_checks_passed": report.get("all_relative_nrmse_checks_passed"),
+        "all_relative_logprob_checks_passed": report.get(
+            "all_relative_logprob_checks_passed"
+        ),
+        "all_legacy_absolute_backend_checks_passed": report.get(
+            "all_legacy_absolute_backend_checks_passed"
+        ),
         "sequence_graph_device_ms": rows,
         "primary_comparisons": [
             {
@@ -116,8 +130,22 @@ def summarize_full_model(report, steps):
                 "packed_arm": item.get("packed_arm"),
                 "speedup_vs_original": item.get("speedup_vs_original"),
                 "stable": item.get("stable"),
-                "packed_vs_decoded_nrmse": item["packed_vs_decoded_w3_check"]["logits"]["normalized_rmse"],
+                "packed_vs_decoded_nrmse": item.get(
+                    "packed_vs_decoded_w3_check", {}
+                ).get("logits", {}).get("normalized_rmse"),
                 "relative_check": item.get("packed_vs_decoded_relative_check", {}).get("ratio"),
+                "relative_logprob_check": item.get(
+                    "packed_vs_decoded_logprob_relative_check", {}
+                ).get("ratio"),
+                "backend_acceptance_passed": item.get(
+                    "packed_vs_decoded_backend_acceptance", {}
+                ).get("passed"),
+                "backend_invariants_passed": item.get(
+                    "packed_vs_decoded_backend_acceptance", {}
+                ).get("invariants_passed"),
+                "legacy_absolute_check_passed": item.get(
+                    "packed_vs_decoded_backend_acceptance", {}
+                ).get("legacy_absolute_check_passed"),
             }
             for item in report.get("comparisons", [])
             if item.get("primary")

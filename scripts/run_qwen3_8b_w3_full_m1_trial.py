@@ -30,10 +30,13 @@ from fluxbin_style.w3_lut_deployment import (
 ROOT = Path(__file__).resolve().parents[1]
 PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_full_m1_v1.json"
 CORRECTED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_corrected_full_m1_v1.json"
-# Same frozen structural protocol with the non-Linear fusions enabled; the
-# fused path is not bit-exact with stock, so it gets its own protocol id rather
-# than changing the meaning of an existing one.
-FUSED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json"
+CALIBRATED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_full_m1_v2.json"
+# The fused path is not bit-exact with stock, so the calibrated stock/fused
+# pair uses distinct v2 protocol ids rather than changing historical v1.
+FUSED_CALIBRATED_PROTOCOL = ROOT / "configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json"
+
+LEGACY_ACCEPTANCE_POLICY = "legacy_absolute_v1"
+CALIBRATED_ACCEPTANCE_POLICY = "relative_nrmse_logprob_plus_trace_invariants_v1"
 
 
 def statistics_row(samples, threshold, *, trim_per_side=0):
@@ -68,34 +71,165 @@ def statistics_row(samples, threshold, *, trim_per_side=0):
     }
 
 
-def relative_backend_gate(packed_nrmse, floor_nrmse, limit):
-    """Gate packed-vs-decoded against the harness's own amplification floor.
+def relative_backend_gate(packed_nrmse, control_nrmse, limit):
+    """Gate packed-vs-decoded against the harness's own amplification control.
 
     The absolute 0.005 logits NRMSE limit is below what this harness produces for
     a zero-quantization control: original_bf16 compared against itself under a
     mathematically equivalent attention-mask reformulation lands at 0.0115-0.0143
-    after 32 autoregressive decode steps. This gate therefore asks whether the
+    over the complete 32-step logits trace. This gate therefore asks whether the
     packed backend deviates more than the harness deviates from itself, which is
-    self-calibrating and needs no hand-picked threshold. See
-    docs/W3_NUMERICAL_GATE_CALIBRATION.md. It does not replace the frozen
-    absolute gate; both are reported.
+    self-calibrating and needs no fixed absolute threshold. See
+    docs/W3_NUMERICAL_GATE_CALIBRATION.md. It does not erase the frozen
+    absolute gate: v1 retains it for historical acceptance, while calibrated
+    v2 reports it without using it to accept or reject a candidate.
     """
     usable = (
-        packed_nrmse is not None
-        and floor_nrmse is not None
+        isinstance(packed_nrmse, (int, float))
+        and not isinstance(packed_nrmse, bool)
+        and isinstance(control_nrmse, (int, float))
+        and not isinstance(control_nrmse, bool)
         and math.isfinite(packed_nrmse)
-        and math.isfinite(floor_nrmse)
-        and floor_nrmse > 0
+        and math.isfinite(control_nrmse)
+        and control_nrmse > 0
+        and isinstance(limit, (int, float))
+        and not isinstance(limit, bool)
+        and math.isfinite(limit)
+        and limit > 0
     )
     return {
         "metric": "logits.normalized_rmse",
-        "noise_floor_source": "original_bf16.dynamic_static_check",
-        "noise_floor_nrmse": floor_nrmse,
+        "control_source": "original_bf16.dynamic_static_check",
+        "control_nrmse": control_nrmse,
         "packed_nrmse": packed_nrmse,
-        "ratio": packed_nrmse / floor_nrmse if usable else None,
+        "ratio": packed_nrmse / control_nrmse if usable else None,
         "limit": limit,
-        "passed": bool(usable and packed_nrmse <= floor_nrmse * limit),
+        "passed": bool(usable and packed_nrmse <= control_nrmse * limit),
     }
+
+
+def relative_logprob_gate(packed_max_error, control_max_error, limit):
+    """Calibrate max log-probability error against the same-run BF16 control."""
+    usable = (
+        isinstance(packed_max_error, (int, float))
+        and not isinstance(packed_max_error, bool)
+        and math.isfinite(packed_max_error)
+        and isinstance(control_max_error, (int, float))
+        and not isinstance(control_max_error, bool)
+        and math.isfinite(control_max_error)
+        and control_max_error > 0
+        and isinstance(limit, (int, float))
+        and not isinstance(limit, bool)
+        and math.isfinite(limit)
+        and limit > 0
+    )
+    return {
+        "metric": "max_abs_logprob_error",
+        "control_source": "original_bf16.dynamic_static_check",
+        "control_max_abs_error": control_max_error,
+        "packed_max_abs_error": packed_max_error,
+        "ratio": packed_max_error / control_max_error if usable else None,
+        "limit": limit,
+        "passed": bool(usable and packed_max_error <= control_max_error * limit),
+    }
+
+
+def calibrated_backend_gate(
+    trace_check,
+    control_nrmse,
+    nrmse_limit,
+    control_logprob_max_error,
+    logprob_relative_limit,
+):
+    """Combine the calibrated NRMSE budget with fail-closed trace invariants.
+
+    The legacy absolute numerical gate remains in ``trace_check['passed']`` for
+    auditability, but its fixed 0.005 trace-NRMSE limit is below the measured
+    amplification baseline of this harness.  New trials therefore accept the
+    backend on the relative gate only when shape/finite metrics, forced context,
+    greedy predictions and the same-run relative log-probability bound also
+    pass.  This prevents replacing over-strict scalar thresholds with an
+    under-specified scalar threshold.
+    """
+    logits = trace_check.get("logits", {})
+    finite_logit_metrics = all(
+        isinstance(logits.get(key), (int, float))
+        and not isinstance(logits.get(key), bool)
+        and math.isfinite(logits[key])
+        for key in ("max_abs_error", "reference_rms", "normalized_rmse")
+    )
+    logprob_error = trace_check.get("max_abs_logprob_error")
+    finite_logprob_metric = bool(
+        isinstance(logprob_error, (int, float))
+        and not isinstance(logprob_error, bool)
+        and math.isfinite(logprob_error)
+    )
+    invariants = {
+        "shape_and_finite_logit_metrics": finite_logit_metrics,
+        "fed_tokens_equal": trace_check.get("fed_tokens_equal") is True,
+        "greedy_tokens_equal": trace_check.get("greedy_tokens_equal") is True,
+        "finite_logprob_metric": finite_logprob_metric,
+    }
+    relative = relative_backend_gate(
+        logits.get("normalized_rmse"), control_nrmse, nrmse_limit
+    )
+    relative_logprob = relative_logprob_gate(
+        logprob_error, control_logprob_max_error, logprob_relative_limit
+    )
+    invariants_passed = all(invariants.values())
+    relative_checks_passed = bool(relative["passed"] and relative_logprob["passed"])
+    return {
+        "policy": "relative_nrmse_logprob_plus_trace_invariants_v1",
+        "relative_check": relative,
+        "relative_logprob_check": relative_logprob,
+        "relative_checks_passed": relative_checks_passed,
+        "invariants": invariants,
+        "invariants_passed": invariants_passed,
+        "legacy_absolute_check_passed": trace_check.get("passed") is True,
+        "passed": bool(relative_checks_passed and invariants_passed),
+    }
+
+
+def build_candidate_acceptance(primary_comparisons, route_by_arm, acceptance_policy):
+    """Aggregate per-prompt primary checks without vacuous acceptance."""
+    candidates = {}
+    for packed_arm, route in route_by_arm.items():
+        rows = [
+            item for item in primary_comparisons if item["packed_arm"] == packed_arm
+        ]
+        if not rows:
+            raise RuntimeError(f"missing primary comparisons for {packed_arm}")
+        legacy_passed = all(
+            item["packed_vs_decoded_w3_check"]["passed"] for item in rows
+        )
+        calibrated_passed = all(
+            item["packed_vs_decoded_backend_acceptance"]["passed"] for item in rows
+        )
+        candidate = {
+            "route": route,
+            "acceptance_policy": acceptance_policy,
+            "primary_timings_stable": all(item["stable"] for item in rows),
+            "legacy_absolute_backend_checks_passed": legacy_passed,
+            "relative_backend_checks_passed": all(
+                item["packed_vs_decoded_backend_acceptance"]["relative_checks_passed"]
+                for item in rows
+            ),
+            "backend_invariants_passed": all(
+                item["packed_vs_decoded_backend_acceptance"]["invariants_passed"]
+                for item in rows
+            ),
+            "calibrated_backend_checks_passed": calibrated_passed,
+            "backend_checks_passed": (
+                calibrated_passed
+                if acceptance_policy == CALIBRATED_ACCEPTANCE_POLICY
+                else legacy_passed
+            ),
+        }
+        candidate["accepted"] = bool(
+            candidate["primary_timings_stable"] and candidate["backend_checks_passed"]
+        )
+        candidates[packed_arm] = candidate
+    return candidates
 
 
 def exact_trace(actual, expected):
@@ -144,17 +278,38 @@ def validate_protocol(config):
         or config.get("repeats", 0) < 3
     ):
         raise ValueError("frozen W3 full-model protocol drifted")
-    trim = config.get("timing_trim_per_side")
-    limit = config.get("packed_vs_decoded_relative_limit")
+    acceptance_policy = config.get("backend_acceptance_policy", LEGACY_ACCEPTANCE_POLICY)
+    if acceptance_policy not in {LEGACY_ACCEPTANCE_POLICY, CALIBRATED_ACCEPTANCE_POLICY}:
+        raise ValueError("unknown backend_acceptance_policy")
+    trim = config.get("timing_trim_per_side", 0)
+    limit = config.get("packed_vs_decoded_relative_limit", 1.0)
+    logprob_relative_limit = config.get("packed_vs_decoded_logprob_relative_limit")
     if not isinstance(trim, int) or isinstance(trim, bool) or not 0 <= trim <= 2:
         raise ValueError("timing_trim_per_side must be an integer in [0,2]")
     # A declared trim must actually apply, otherwise statistics_row silently
     # falls back to the raw range and the protocol would misdescribe the gate.
     if trim and config["repeats"] - 2 * trim < 3:
         raise ValueError("repeats too small for the declared timing_trim_per_side")
-    if not isinstance(limit, (int, float)) or isinstance(limit, bool) or not limit > 0:
+    if (
+        not isinstance(limit, (int, float))
+        or isinstance(limit, bool)
+        or not math.isfinite(limit)
+        or not limit > 0
+    ):
         raise ValueError("packed_vs_decoded_relative_limit must be a positive number")
-    fused = config.get("fused_nonlinear_modules")
+    if acceptance_policy == CALIBRATED_ACCEPTANCE_POLICY:
+        if (
+            not isinstance(logprob_relative_limit, (int, float))
+            or isinstance(logprob_relative_limit, bool)
+            or not math.isfinite(logprob_relative_limit)
+            or not logprob_relative_limit > 0
+        ):
+            raise ValueError(
+                "packed_vs_decoded_logprob_relative_limit must be a positive number"
+            )
+    elif logprob_relative_limit is not None:
+        raise ValueError("legacy protocol must not redefine calibrated logprob acceptance")
+    fused = config.get("fused_nonlinear_modules", {"rms_norm": False, "rope": False})
     if not isinstance(fused, dict) or set(fused) != {"rms_norm", "rope"} or not all(
         isinstance(value, bool) for value in fused.values()
     ):
@@ -228,7 +383,7 @@ def main():
     parser.add_argument("--w3-layout-manifest-sha256", required=True)
     parser.add_argument("--environment", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
-    parser.add_argument("--protocol", type=Path, default=PROTOCOL)
+    parser.add_argument("--protocol", type=Path, default=CALIBRATED_PROTOCOL)
     args = parser.parse_args()
     if args.output.exists():
         raise FileExistsError(args.output)
@@ -236,10 +391,16 @@ def main():
         raise RuntimeError("NVIDIA CUDA required; no CPU/MPS substitution")
 
     protocol_path = args.protocol.resolve()
-    if protocol_path not in {PROTOCOL.resolve(), CORRECTED_PROTOCOL.resolve(), FUSED_PROTOCOL.resolve()}:
+    if protocol_path not in {
+        PROTOCOL.resolve(),
+        CORRECTED_PROTOCOL.resolve(),
+        CALIBRATED_PROTOCOL.resolve(),
+        FUSED_CALIBRATED_PROTOCOL.resolve(),
+    }:
         raise ValueError("protocol must be a repository-frozen W3 full-model config")
     config = json.loads(protocol_path.read_text(encoding="utf-8"))
     validate_protocol(config)
+    acceptance_policy = config.get("backend_acceptance_policy", LEGACY_ACCEPTANCE_POLICY)
     route_by_arm = packed_routes(config)
     environment = json.loads(args.environment.read_text(encoding="utf-8"))
     sources = {
@@ -307,7 +468,32 @@ def main():
         "primary_baseline": "original_bf16",
         "primary_mode": config["primary_mode"],
         "primary_metric": "same-run full-sequence CUDA Graph total",
-        "numerical_policy": "packed-vs-decoded W3 is the backend gate; quantized-vs-original is report-only; prepared wrapper and Graph are exact",
+        "numerical_policy": (
+            "packed-vs-decoded W3 uses same-run relative NRMSE and max-logprob budgets plus finite/shape/token invariants; the legacy absolute 0.005/0.05 gates and quantized-vs-original comparison are report-only; prepared wrapper and Graph are exact"
+            if acceptance_policy == CALIBRATED_ACCEPTANCE_POLICY
+            else "historical packed-vs-decoded W3 absolute 0.005 NRMSE plus 0.05 max-logprob gate; calibrated comparisons are diagnostic only; quantized-vs-original is report-only; prepared wrapper and Graph are exact"
+        ),
+        "backend_acceptance_policy": {
+            "id": acceptance_policy,
+            "nrmse_scope": "complete prefill-plus-32-decode-position logits trace",
+            "control": "same-run same-prompt original_bf16 dynamic-vs-static trace NRMSE",
+            "relative_limit": config.get("packed_vs_decoded_relative_limit", 1.0),
+            "logprob_control": "same-run same-prompt original_bf16 dynamic-vs-static max log-probability error",
+            "logprob_relative_limit": config.get(
+                "packed_vs_decoded_logprob_relative_limit", 1.0
+            ),
+            "required_invariants": [
+                "shape_and_finite_logit_metrics",
+                "fed_tokens_equal",
+                "greedy_tokens_equal",
+                "finite_logprob_metric",
+            ],
+            "legacy_absolute_0.005_nrmse_and_0.05_logprob_gates": (
+                "report_only"
+                if acceptance_policy == CALIBRATED_ACCEPTANCE_POLICY
+                else "acceptance"
+            ),
+        },
         "scope": "batch1 real-prefix static KV, 32 fixed continuation tokens, embedding/all36blocks/LM head/argmax",
         "excluded_from_decode": "load, conversion, prefill, KV reset, graph capture, audits, CPU output copies",
         "residency_policy": "all configured models and prompt caches resident; interleaved arm order",
@@ -322,7 +508,9 @@ def main():
     # stock, so a partial application would silently invalidate the comparison.
     fusion = ExitStack()
     try:
-        requested = config["fused_nonlinear_modules"]
+        requested = config.get(
+            "fused_nonlinear_modules", {"rms_norm": False, "rope": False}
+        )
         report["fused_nonlinear_modules"] = (
             fusion.enter_context(fused_qwen3_modules(**requested))
             if any(requested.values())
@@ -454,7 +642,7 @@ def main():
                             key: statistics_row(
                                 samples[arm, prompt_index, mode, key],
                                 config["max_relative_timing_range"],
-                                trim_per_side=config["timing_trim_per_side"],
+                                trim_per_side=config.get("timing_trim_per_side", 0),
                             )
                             for key in ("wall_ms", "device_ms")
                         }
@@ -470,7 +658,9 @@ def main():
                 logprob_tolerance=config["logprob_max_abs_tolerance"],
             )
             control = report["arms"]["original_bf16"]["prompts"][prompt_index]
-            noise_floor = control["dynamic_static_check"]["logits"]["normalized_rmse"]
+            control_check = control["dynamic_static_check"]
+            control_nrmse = control_check["logits"]["normalized_rmse"]
+            control_logprob_max_error = control_check["max_abs_logprob_error"]
             for mode in config["modes"]:
                 rows = {
                     arm: report["arms"][arm]["prompts"][prompt_index]["timings"][mode]
@@ -487,6 +677,13 @@ def main():
                         audits[packed_arm, prompt_index],
                         audits["decoded_w3_bf16", prompt_index],
                         logprob_tolerance=config["logprob_max_abs_tolerance"],
+                    )
+                    calibrated_check = calibrated_backend_gate(
+                        backend_check,
+                        control_nrmse,
+                        config.get("packed_vs_decoded_relative_limit", 1.0),
+                        control_logprob_max_error,
+                        config.get("packed_vs_decoded_logprob_relative_limit", 1.0),
                     )
                     packed = rows[packed_arm]["wall_ms"]["median"]
                     comparisons.append(
@@ -508,11 +705,11 @@ def main():
                                 else None
                             ),
                             "packed_vs_decoded_w3_check": backend_check,
-                            "packed_vs_decoded_relative_check": relative_backend_gate(
-                                backend_check["logits"]["normalized_rmse"],
-                                noise_floor,
-                                config["packed_vs_decoded_relative_limit"],
-                            ),
+                            "packed_vs_decoded_relative_check": calibrated_check["relative_check"],
+                            "packed_vs_decoded_logprob_relative_check": calibrated_check[
+                                "relative_logprob_check"
+                            ],
+                            "packed_vs_decoded_backend_acceptance": calibrated_check,
                             "decoded_w3_vs_original_report_only": quantization_report,
                         }
                     )
@@ -520,43 +717,41 @@ def main():
         primary = [item for item in comparisons if item["primary"]]
         report["all_timings_stable"] = all(item["stable"] for item in comparisons)
         report["primary_timings_stable"] = all(item["stable"] for item in primary)
-        report["all_backend_checks_passed"] = all(
+        report["all_legacy_absolute_backend_checks_passed"] = all(
             item["packed_vs_decoded_w3_check"]["passed"] for item in primary
         )
-        report["all_relative_backend_checks_passed"] = all(
+        report["all_relative_nrmse_checks_passed"] = all(
             item["packed_vs_decoded_relative_check"]["passed"] for item in primary
+        )
+        report["all_relative_logprob_checks_passed"] = all(
+            item["packed_vs_decoded_logprob_relative_check"]["passed"]
+            for item in primary
+        )
+        report["all_relative_backend_checks_passed"] = all(
+            item["packed_vs_decoded_backend_acceptance"]["relative_checks_passed"]
+            for item in primary
+        )
+        report["all_backend_invariants_passed"] = all(
+            item["packed_vs_decoded_backend_acceptance"]["invariants_passed"]
+            for item in primary
+        )
+        calibrated_checks_passed = all(
+            item["packed_vs_decoded_backend_acceptance"]["passed"] for item in primary
+        )
+        report["all_calibrated_backend_checks_passed"] = calibrated_checks_passed
+        report["all_backend_checks_passed"] = (
+            calibrated_checks_passed
+            if acceptance_policy == CALIBRATED_ACCEPTANCE_POLICY
+            else report["all_legacy_absolute_backend_checks_passed"]
         )
         report["all_dynamic_static_checks_passed"] = all(
             prompt["dynamic_static_check"]["passed"]
             for arm in report["arms"].values()
             for prompt in arm["prompts"]
         )
-        report["candidate_acceptance"] = {
-            packed_arm: {
-                "route": route,
-                "primary_timings_stable": all(
-                    item["stable"]
-                    for item in primary
-                    if item["packed_arm"] == packed_arm
-                ),
-                "backend_checks_passed": all(
-                    item["packed_vs_decoded_w3_check"]["passed"]
-                    for item in primary
-                    if item["packed_arm"] == packed_arm
-                ),
-                "relative_backend_checks_passed": all(
-                    item["packed_vs_decoded_relative_check"]["passed"]
-                    for item in primary
-                    if item["packed_arm"] == packed_arm
-                ),
-            }
-            for packed_arm, route in route_by_arm.items()
-        }
-        for candidate in report["candidate_acceptance"].values():
-            candidate["accepted"] = (
-                candidate["primary_timings_stable"]
-                and candidate["backend_checks_passed"]
-            )
+        report["candidate_acceptance"] = build_candidate_acceptance(
+            primary, route_by_arm, acceptance_policy
+        )
         if not report["all_backend_checks_passed"]:
             report["status"] = "completed_with_backend_numerical_differences"
         elif not report["primary_timings_stable"]:

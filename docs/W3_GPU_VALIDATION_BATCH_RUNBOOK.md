@@ -41,7 +41,9 @@ gate/up 与 down 的 R=2048 和 gps 1/2/4/8。这很重要,因为 09-17 的 `obs
 
 **3/4. 全模型 stock 与 fused**。融合会同时加速两个臂,所以**融合增益必须在同一会话
 内对照**,否则就是跨实例比较。两者除 `fused_nonlinear_modules` 外逐字段相同(有测试
-比对),但是**不同的 protocol id**,结果不能混进同一张表。
+比对),但是**不同的 protocol id**,结果不能混进同一张表。批次明确使用
+`qwen3_8b_w3_full_m1_v2.json` 与 `qwen3_8b_w3_fused_full_m1_v2.json`;冻结 v1 不会被
+重跑或重分类。
 
 ## 执行
 
@@ -88,6 +90,9 @@ bash scripts/run_w3_gpu_validation_batch.sh \
 
 作业 3/4 都会自动产出逐步 NRMSE(`stepwise_normalized_rmse`),其中对照臂的
 step-0 dyn-vs-static 值正是[数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)缺的那项。
+正式 backend 判定读取 `packed_vs_decoded_backend_acceptance`:相对 NRMSE、相对
+max-logprob、有限性与 forced/greedy token 必须全部通过。旧 0.005/0.05 结果只看
+`all_legacy_absolute_backend_checks_passed`,不得用它否决或接受本轮候选。
 
 ## 边界
 
