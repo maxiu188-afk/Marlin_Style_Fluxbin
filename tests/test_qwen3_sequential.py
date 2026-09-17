@@ -4,6 +4,7 @@ import torch
 
 from fluxbin_style import (
     capture_first_layer_inputs,
+    capture_linear_hessian,
     capture_layer_hessians,
     propagate_layer_inputs,
 )
@@ -46,6 +47,14 @@ class Qwen3SequentialTests(unittest.TestCase):
         self.assertEqual(tuple(hessians.hessians["gate_up"].shape), (16, 16))
         self.assertEqual(tuple(hessians.hessians["down"].shape), (32, 32))
         self.assertEqual(set(hessians.activation_rows.values()), {16})
+        single = capture_linear_hessian(
+            layer,
+            layer.self_attn.o_proj,
+            capture.inputs,
+            capture.forward_kwargs,
+        )
+        self.assertEqual(tuple(single.hessian.shape), (16, 16))
+        self.assertEqual(single.activation_rows, 16)
         outputs = torch.empty_like(capture.inputs)
         propagate_layer_inputs(
             layer,

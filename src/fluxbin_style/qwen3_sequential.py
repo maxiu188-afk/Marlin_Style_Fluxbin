@@ -109,6 +109,53 @@ class LayerHessianCapture:
     activation_rows: dict[str, int]
 
 
+@dataclass(frozen=True)
+class LinearHessianCapture:
+    hessian: torch.Tensor
+    activation_rows: int
+
+
+@torch.no_grad()
+def capture_linear_hessian(
+    layer: torch.nn.Module,
+    source: torch.nn.Linear,
+    inputs: torch.Tensor,
+    forward_kwargs: dict[str, Any],
+) -> LinearHessianCapture:
+    """Capture one exact-input Hessian after earlier modules were replaced.
+
+    Re-running the layer between true-sequential groups is deliberate: the
+    source input then reflects all already-quantized modules in that layer.
+    """
+
+    if inputs.ndim != 3:
+        raise ValueError("inputs must have shape [samples, sequence_length, hidden]")
+    if not isinstance(source, torch.nn.Linear):
+        raise TypeError("source must be Linear")
+    accumulator = InputHessianAccumulator(source.in_features, device=inputs.device)
+
+    def collect(
+        _module: torch.nn.Module,
+        module_inputs: tuple[torch.Tensor, ...],
+        _output: torch.Tensor,
+    ) -> None:
+        accumulator.add(module_inputs[0])
+
+    handle = source.register_forward_hook(collect)
+    try:
+        for sample_index in range(inputs.shape[0]):
+            hidden_states(layer(inputs[sample_index : sample_index + 1], **forward_kwargs))
+    finally:
+        handle.remove()
+    expected_rows = inputs.shape[0] * inputs.shape[1]
+    if accumulator.sample_count != expected_rows:
+        raise RuntimeError("activation-row count drifted")
+    return LinearHessianCapture(
+        hessian=accumulator.value(),
+        activation_rows=accumulator.sample_count,
+    )
+
+
 @torch.no_grad()
 def capture_layer_hessians(
     layer: torch.nn.Module,
