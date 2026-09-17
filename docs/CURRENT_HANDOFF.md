@@ -7,7 +7,9 @@
 QuaRot/SpinQuant、蒸馏、layer-wise mixed precision 和 `lm_head` 改动均不在
 范围内。实现、冻结配置、可续跑持久卷包装和判读边界见
 [hierarchical W2 runbook](QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。本次准备没有
-启动 GPU 实验。
+启动 GPU 实验。若 A100 无可用卡，这组纯精度实验可显式选择已固定的 RTX PRO
+4500 Blackwell `same-device-quality` 路径；四个 W2 臂与 W3 必须在同一设备上
+完成，结果标为 cross-device，不冒充 A100 reproduction。
 
 更新：2026-09-17。M=1 decode 的现有 QBB 加速结果已经冻结。Qwen3-8B uniform
 symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率四臂对照已完成并验收，

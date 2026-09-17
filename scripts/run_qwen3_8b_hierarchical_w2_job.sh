@@ -12,6 +12,15 @@ h2_job=$2
 h2_output=$3
 h2_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 h2_python=${FLUXBIN_PYTHON:-python}
+h2_execution_policy=${FLUXBIN_EXECUTION_POLICY:-formal-a100}
+
+case "$h2_execution_policy" in
+  formal-a100|same-device-quality) ;;
+  *)
+    echo "unsupported FLUXBIN_EXECUTION_POLICY: $h2_execution_policy" >&2
+    exit 2
+    ;;
+esac
 
 if [ ! -d "$h2_persist" ] || [ ! -d "$h2_persist/models" ]; then
   echo "persistent volume is unavailable: $h2_persist" >&2
@@ -22,7 +31,7 @@ if [ -e "$h2_job" ]; then
   exit 1
 fi
 if [ -n "$(git -C "$h2_root" status --porcelain)" ]; then
-  echo 'repository worktree is not clean; refusing a formal quality run' >&2
+  echo 'repository worktree is not clean; refusing a quality run' >&2
   git -C "$h2_root" status --short >&2
   exit 1
 fi
@@ -34,6 +43,7 @@ fi
 mkdir -p "$h2_output"
 mkdir "$h2_job" || exit 1
 printf '%s\n' running > "$h2_job/status"
+printf '%s\n' "$h2_execution_policy" > "$h2_job/execution-policy"
 git -C "$h2_root" rev-parse HEAD > "$h2_job/git-revision"
 git -C "$h2_root" status --short --branch > "$h2_job/git-status"
 command -v "$h2_python" > "$h2_job/python-executable.txt"
@@ -91,6 +101,7 @@ fi
 
 "$h2_python" -u "$h2_root/scripts/run_qwen3_8b_hierarchical_w2_gptq.py" \
   --config "$h2_config" --arm H2.50 --snapshot-root "$h2_snapshot" \
+  --execution-policy "$h2_execution_policy" \
   --calibration-manifest "$h2_calibration/manifest.json" \
   --calibration-tokens "$h2_calibration/tokens.safetensors" \
   --artifact-dir "$h2_output/H2.50/layers" --output "$h2_output/H2.50/result.preflight-unused.json" \
@@ -113,6 +124,7 @@ for h2_arm in H2.50 H2.625 H2.75 H2.875; do
     "$h2_python" -u "$h2_root/scripts/run_qwen3_8b_hierarchical_w2_gptq.py"
     --config "$h2_config"
     --arm "$h2_arm"
+    --execution-policy "$h2_execution_policy"
     --snapshot-root "$h2_snapshot"
     --calibration-manifest "$h2_calibration/manifest.json"
     --calibration-tokens "$h2_calibration/tokens.safetensors"
@@ -134,6 +146,7 @@ done
 h2_ppl_command=(
   "$h2_python" -u "$h2_root/scripts/run_qwen3_8b_hierarchical_w2_ppl.py"
   --config "$h2_config"
+  --execution-policy "$h2_execution_policy"
   --snapshot-root "$h2_snapshot"
   --protocol-manifest "$h2_protocol"
   --token-artifact "$h2_tokens"
@@ -156,7 +169,11 @@ h2_code=$?
 printf '%s\n' "$h2_code" > "$h2_job/exit-code"
 if [ "$h2_code" -eq 0 ] && [ -f "$h2_output/ppl-result.json" ]; then
   sha256sum "$h2_output"/*/result.json "$h2_output/ppl-result.json" > "$h2_job/results.sha256"
-  printf '%s\n' completed_pending_review > "$h2_job/status"
+  if [ "$h2_execution_policy" = formal-a100 ]; then
+    printf '%s\n' completed_pending_review > "$h2_job/status"
+  else
+    printf '%s\n' completed_cross_device_pending_review > "$h2_job/status"
+  fi
 else
   printf '%s\n' failed_ppl > "$h2_job/status"
 fi

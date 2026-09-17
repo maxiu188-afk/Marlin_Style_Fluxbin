@@ -17,8 +17,14 @@ distillation.
 
 The direct reference is GPTQ W3 g128: 3.125 semantic bpw, 3.154551630
 measured tensor bpw, and historical same-protocol PPL 11.266114820. The new
-run scores that same decoded W3 artifact again on the same A100 process before
+run scores that same decoded W3 artifact again on the selected device before
 the four W2 arms.
+
+This is a quality-only study, so a pinned RTX PRO 4500 Blackwell path is also
+available when A100 capacity is unavailable. It is explicitly recorded as
+`same-device-quality`, not an A100 reproduction. All four W2 arms and the W3
+reference PPL must use that same device and runtime; do not mix A100 and RTX
+rows in one curve.
 
 The W2 payload reports both rates. `nominal_bpw` is the formula requested by
 the experiment. `actual_bpw_including_permutation_and_steps` additionally
@@ -68,6 +74,18 @@ output=/workspace/results/qwen3-8b-hierarchical-w2-v1
 tmux new-session -d -s hierarchical-w2 \
   "FLUXBIN_PYTHON=$(command -v python) bash scripts/run_qwen3_8b_hierarchical_w2_job.sh /workspace '$job' '$output'"
 ```
+
+The command above defaults to the formal A100 gate. On the pinned RTX PRO 4500
+Blackwell route, launch with the explicit cross-device policy:
+
+```bash
+tmux new-session -d -s hierarchical-w2 \
+  "FLUXBIN_EXECUTION_POLICY=same-device-quality FLUXBIN_PYTHON=$(command -v python) bash scripts/run_qwen3_8b_hierarchical_w2_job.sh /workspace '$job' '$output'"
+```
+
+The RTX result status is `completed_cross_device_pending_review`. The runner
+still requires CC 12.0, the frozen package versions, exact artifacts, and the
+same-device W3 replay; selecting this policy does not weaken those gates.
 
 The output root may already contain incomplete per-layer artifacts. A new job
 directory plus the same output root resumes those layers. The wrapper rejects

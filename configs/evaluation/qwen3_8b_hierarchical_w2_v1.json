@@ -115,6 +115,11 @@
   "execution": {
     "quality_device_names": ["NVIDIA A100 80GB PCIe", "NVIDIA A100-SXM4-80GB"],
     "compute_capability": [8, 0],
+    "cross_device_quality": {
+      "device_name_contains": "RTX PRO 4500",
+      "compute_capability": [12, 0],
+      "status": "cross_device_report_only"
+    },
     "python_major_minor": [3, 12],
     "torch": "2.8.0+cu128",
     "transformers": "5.14.1",

@@ -40,6 +40,9 @@ from fluxbin_style.hierarchical_w2 import (
 
 ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/evaluation/qwen3_8b_hierarchical_w2_v1.json"
+FORMAL_EXECUTION_POLICY = "formal-a100"
+CROSS_DEVICE_EXECUTION_POLICY = "same-device-quality"
+EXECUTION_POLICIES = (FORMAL_EXECUTION_POLICY, CROSS_DEVICE_EXECUTION_POLICY)
 GROUPS = (
     ("qkv", "self_attn.q_proj", ("self_attn.q_proj", "self_attn.k_proj", "self_attn.v_proj")),
     ("o", "self_attn.o_proj", ("self_attn.o_proj",)),
@@ -70,6 +73,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--calibration-tokens", type=Path, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--execution-policy",
+        choices=EXECUTION_POLICIES,
+        default=FORMAL_EXECUTION_POLICY,
+    )
     parser.add_argument("--stop-after-layer", type=int)
     parser.add_argument("--validate-only", action="store_true")
     return parser.parse_args()
@@ -117,6 +125,12 @@ def validate_config(config: dict[str, Any]) -> None:
         raise ValueError("GPTQ controls drifted")
     if not all(config["policy"].values()):
         raise ValueError("an exclusion policy was disabled")
+    if config["execution"].get("cross_device_quality") != {
+        "device_name_contains": "RTX PRO 4500",
+        "compute_capability": [12, 0],
+        "status": "cross_device_report_only",
+    }:
+        raise ValueError("cross-device quality route drifted")
 
 
 def validate_inputs(config: dict[str, Any], args: argparse.Namespace) -> torch.Tensor:
@@ -146,7 +160,41 @@ def validate_inputs(config: dict[str, Any], args: argparse.Namespace) -> torch.T
     return tokens.to(torch.int64)
 
 
-def validate_runtime(config: dict[str, Any]) -> torch.device:
+def validate_device_policy(
+    config: dict[str, Any],
+    *,
+    device_name: str,
+    capability: list[int],
+    execution_policy: str,
+) -> bool:
+    expected = config["execution"]
+    formal_match = (
+        device_name in expected["quality_device_names"]
+        and capability == expected["compute_capability"]
+    )
+    if execution_policy == FORMAL_EXECUTION_POLICY:
+        if not formal_match:
+            raise RuntimeError(
+                f"formal A100 gate failed: {device_name}, capability={capability}"
+            )
+        return True
+    if execution_policy != CROSS_DEVICE_EXECUTION_POLICY:
+        raise ValueError(f"unsupported execution policy: {execution_policy}")
+    cross = expected["cross_device_quality"]
+    if (
+        cross["device_name_contains"] not in device_name
+        or capability != cross["compute_capability"]
+    ):
+        raise RuntimeError(
+            "same-device-quality permits only the pinned RTX PRO 4500 Blackwell route: "
+            f"{device_name}, capability={capability}"
+        )
+    return formal_match
+
+
+def validate_runtime(
+    config: dict[str, Any], *, execution_policy: str
+) -> tuple[torch.device, dict[str, Any]]:
     if list(sys.version_info[:2]) != config["execution"]["python_major_minor"]:
         raise RuntimeError(f"Python runtime drifted: {platform.python_version()}")
     if not torch.cuda.is_available():
@@ -155,8 +203,12 @@ def validate_runtime(config: dict[str, Any]) -> torch.device:
     expected = config["execution"]
     device_name = torch.cuda.get_device_name(0)
     capability = list(torch.cuda.get_device_capability(0))
-    if device_name not in expected["quality_device_names"] or capability != expected["compute_capability"]:
-        raise RuntimeError(f"formal A100 gate failed: {device_name}, capability={capability}")
+    formal_match = validate_device_policy(
+        config,
+        device_name=device_name,
+        capability=capability,
+        execution_policy=execution_policy,
+    )
     observed = {
         "torch": torch.__version__,
         "transformers": __import__("transformers").__version__,
@@ -166,7 +218,14 @@ def validate_runtime(config: dict[str, Any]) -> torch.device:
     for name, value in observed.items():
         if value != expected[name]:
             raise RuntimeError(f"{name} runtime drifted: {value}")
-    return torch.device("cuda:0")
+    return torch.device("cuda:0"), {
+        "execution_policy": execution_policy,
+        "formal_a100_device_match": formal_match,
+        "device": device_name,
+        "compute_capability": capability,
+        "python": platform.python_version(),
+        **observed,
+    }
 
 
 def module_payload(tensors: dict[str, torch.Tensor], name: str) -> dict[str, torch.Tensor]:
@@ -325,7 +384,7 @@ def main() -> None:
     if args.validate_only:
         print("HIERARCHICAL_W2_INPUTS_PASSED; no quantization launched", flush=True)
         return
-    device = validate_runtime(config)
+    device, runtime = validate_runtime(config, execution_policy=args.execution_policy)
     implementation_hash, implementation_files = source_hash()
     config_hash = sha256_file(args.config)
     variant = config["variants"][args.arm]
@@ -515,14 +574,12 @@ def main() -> None:
             "algorithm_total_excluding_model_load_and_io": hessian_capture_seconds + projection_gptq_seconds,
         },
         "execution": {
+            **runtime,
             "resumed_layers": resumed,
             "newly_quantized_layers": newly_quantized,
             "elapsed_seconds": time.monotonic() - started,
             "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
-            "device": torch.cuda.get_device_name(0),
             "host": platform.node(),
-            "python": platform.python_version(),
-            "torch": torch.__version__,
         },
         "artifacts": artifacts,
         "next_stage": "run_frozen_ppl" if complete else "resume_same_arm",

@@ -24,9 +24,13 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from run_qwen3_8b_w3_rate_distortion_ppl import apply_gptq_dense  # noqa: E402
 from run_qwen3_two_base_rank1_s8_ppl import load_protocol, score_model  # noqa: E402
 from run_qwen3_8b_hierarchical_w2_gptq import (  # noqa: E402
+    CROSS_DEVICE_EXECUTION_POLICY,
+    EXECUTION_POLICIES,
+    FORMAL_EXECUTION_POLICY,
     PAYLOAD_FIELDS,
     source_hash,
     validate_config,
+    validate_device_policy,
 )
 sys.path.pop(0)
 
@@ -49,11 +53,18 @@ def parse_args() -> argparse.Namespace:
         parser.add_argument(f"--{slug}-result", type=Path, required=True)
         parser.add_argument(f"--{slug}-artifact-dir", type=Path, required=True)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument(
+        "--execution-policy",
+        choices=EXECUTION_POLICIES,
+        default=FORMAL_EXECUTION_POLICY,
+    )
     parser.add_argument("--validate-only", action="store_true")
     return parser.parse_args()
 
 
-def validate_runtime(config: dict[str, Any]) -> tuple[torch.device, dict[str, Any]]:
+def validate_runtime(
+    config: dict[str, Any], *, execution_policy: str
+) -> tuple[torch.device, dict[str, Any]]:
     if list(sys.version_info[:2]) != config["execution"]["python_major_minor"]:
         raise RuntimeError(f"Python runtime drifted: {platform.python_version()}")
     if not torch.cuda.is_available():
@@ -62,8 +73,12 @@ def validate_runtime(config: dict[str, Any]) -> tuple[torch.device, dict[str, An
     expected = config["execution"]
     name = torch.cuda.get_device_name(0)
     capability = list(torch.cuda.get_device_capability(0))
-    if name not in expected["quality_device_names"] or capability != expected["compute_capability"]:
-        raise RuntimeError(f"formal A100 gate failed: {name}, capability={capability}")
+    formal_match = validate_device_policy(
+        config,
+        device_name=name,
+        capability=capability,
+        execution_policy=execution_policy,
+    )
     observed = {
         "torch": torch.__version__,
         "transformers": __import__("transformers").__version__,
@@ -76,6 +91,8 @@ def validate_runtime(config: dict[str, Any]) -> tuple[torch.device, dict[str, An
     return torch.device("cuda:0"), {
         "device": name,
         "compute_capability": capability,
+        "execution_policy": execution_policy,
+        "formal_a100_device_match": formal_match,
         "python": platform.python_version(),
         **observed,
     }
@@ -124,6 +141,7 @@ def validate_hierarchical(
     artifact_dir: Path,
     config_hash: str,
     implementation_hash: str,
+    execution_policy: str,
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     result = json.loads(result_path.read_text())
     expected = {
@@ -137,6 +155,8 @@ def validate_hierarchical(
             raise ValueError(f"hierarchical result drifted: {arm}:{key}")
     if result.get("variant") != config["variants"][arm]:
         raise ValueError(f"variant drifted: {arm}")
+    if result.get("execution", {}).get("execution_policy") != execution_policy:
+        raise ValueError(f"execution policy drifted: {arm}")
     if result.get("coverage") != {
         "layer_count": EXPECTED_LAYERS,
         "linear_count": EXPECTED_LINEARS,
@@ -243,11 +263,12 @@ def main() -> None:
             artifact_dir=artifact_dir,
             config_hash=config_hash,
             implementation_hash=implementation_hash,
+            execution_policy=args.execution_policy,
         )
     if args.validate_only:
         print("HIERARCHICAL_W2_PPL_PREFLIGHT=passed; no PPL launched", flush=True)
         return
-    device, runtime = validate_runtime(config)
+    device, runtime = validate_runtime(config, execution_policy=args.execution_policy)
     from transformers import AutoModelForCausalLM
 
     torch.manual_seed(config["seed"])
@@ -305,7 +326,13 @@ def main() -> None:
     )
     result = {
         "schema_version": 1,
-        "status": "completed_pending_review" if valid else "completed_invalid_metrics",
+        "status": (
+            "completed_pending_review"
+            if valid and args.execution_policy == FORMAL_EXECUTION_POLICY
+            else "completed_cross_device_pending_review"
+            if valid and args.execution_policy == CROSS_DEVICE_EXECUTION_POLICY
+            else "completed_invalid_metrics"
+        ),
         "created_at_utc": dt.datetime.now(dt.timezone.utc).isoformat(),
         "config_sha256": config_hash,
         "quantization_implementation_sha256": implementation_hash,

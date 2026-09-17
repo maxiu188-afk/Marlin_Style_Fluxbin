@@ -1,4 +1,5 @@
 import json
+import sys
 import unittest
 from pathlib import Path
 
@@ -17,6 +18,9 @@ from fluxbin_style.hierarchical_w2 import (
 
 
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "scripts"))
+from run_qwen3_8b_hierarchical_w2_gptq import validate_device_policy  # noqa: E402
+sys.path.pop(0)
 
 
 class HierarchicalW2Test(unittest.TestCase):
@@ -110,6 +114,34 @@ class HierarchicalW2Test(unittest.TestCase):
         self.assertTrue(all(config["policy"].values()))
         self.assertTrue(config["hierarchical_projection"]["direct_gptq_projection"])
         self.assertEqual(config["evaluation"]["other_accuracy_metrics"], [])
+
+    def test_quality_execution_policies_are_explicit(self) -> None:
+        config = json.loads(
+            (ROOT / "configs/evaluation/qwen3_8b_hierarchical_w2_v1.json").read_text()
+        )
+        self.assertTrue(
+            validate_device_policy(
+                config,
+                device_name="NVIDIA A100-SXM4-80GB",
+                capability=[8, 0],
+                execution_policy="formal-a100",
+            )
+        )
+        self.assertFalse(
+            validate_device_policy(
+                config,
+                device_name="NVIDIA RTX PRO 4500 Blackwell Generation",
+                capability=[12, 0],
+                execution_policy="same-device-quality",
+            )
+        )
+        with self.assertRaises(RuntimeError):
+            validate_device_policy(
+                config,
+                device_name="NVIDIA RTX PRO 4500 Blackwell Generation",
+                capability=[12, 0],
+                execution_policy="formal-a100",
+            )
 
 
 if __name__ == "__main__":
