@@ -23,6 +23,7 @@ from run_qwen3_8b_hierarchical_w2_gptq import (  # noqa: E402
     quantize_module,
     validate_device_policy,
 )
+from run_qwen3_8b_hierarchical_w2_ppl import selected_hierarchical_arms  # noqa: E402
 sys.path.pop(0)
 
 
@@ -164,6 +165,16 @@ class HierarchicalW2Test(unittest.TestCase):
         self.assertEqual(record["parameter_count"], 384)
         self.assertEqual(len(tensors), 7)
         self.assertTrue(torch.isfinite(module.weight).all())
+
+    def test_endpoint_scope_skips_intermediate_budgets(self) -> None:
+        self.assertEqual(
+            selected_hierarchical_arms("endpoint-only"),
+            ("H2.50", "H2.875"),
+        )
+        self.assertEqual(
+            selected_hierarchical_arms("full-four"),
+            ("H2.50", "H2.625", "H2.75", "H2.875"),
+        )
 
 
 if __name__ == "__main__":

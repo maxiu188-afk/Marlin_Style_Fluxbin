@@ -2,6 +2,13 @@
 
 ## 2026-09-17：hierarchical-scale W2 PPL 曲线已准备，尚未运行
 
+更新：离线数值复核确认四种 relative-scale 位宽的投影误差几乎平坦且非单调，
+四臂任务已在 H2.50 完成、H2.625 仅保存 10 个 partial layers 时按用户授权停止。
+当前边界改为只补跑 H2.875，并只比较 W3/H2.50/H2.875 PPL；端点差 `<0.05`
+即确认平坦性，不再完成 H2.625/H2.75。真实 H2.50 的 252 个 Linear 均为
+`dead_columns=0`，因此现有端点有效；dead-column fail-closed 在端点产物完成后
+单独修复，避免改变两端实现哈希。
+
 下一项已授权的质量任务是固定四臂 GPTQ-only hierarchical W2
 （H2.50/H2.625/H2.75/H2.875），直接对照现有 W3-g128。kernel、rotation、
 QuaRot/SpinQuant、蒸馏、layer-wise mixed precision 和 `lm_head` 改动均不在

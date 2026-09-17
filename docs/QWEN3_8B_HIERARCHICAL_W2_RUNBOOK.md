@@ -1,5 +1,19 @@
 # Qwen3-8B hierarchical-scale W2 quality runbook
 
+## 2026-09-17 endpoint pivot
+
+Offline numerical review found the four relative-scale bit allocations nearly
+flat and sometimes non-monotonic. The live four-arm wrapper was therefore
+cancelled after H2.50 completed and H2.625 had committed 10 partial layers.
+The authorized diagnostic now runs only H2.875 and scores W3, H2.50, and
+H2.875. An absolute endpoint PPL difference below 0.05 confirms the flat-curve
+hypothesis; H2.625/H2.75 are intentionally not completed or scored.
+
+Use `scripts/run_qwen3_8b_hierarchical_w2_endpoint_job.sh` for this bounded
+route. The dead-column fail-closed fix is deferred until both endpoint
+artifacts are produced with the same implementation hash; the completed
+H2.50 artifact had zero dead columns in all 252 Linears.
+
 This is a four-point GPTQ quality experiment only. It quantizes the 252
 transformer-block Linears, leaves `lm_head` unchanged, evaluates dense BF16
 materializations on the frozen WikiText2 protocol, and stops. It does not

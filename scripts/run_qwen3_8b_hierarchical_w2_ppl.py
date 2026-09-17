@@ -39,6 +39,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CONFIG = ROOT / "configs/evaluation/qwen3_8b_hierarchical_w2_v1.json"
 HIERARCHICAL_ARMS = ("H2.50", "H2.625", "H2.75", "H2.875")
 ARMS = ("gptq_w3_g128_sym", *HIERARCHICAL_ARMS)
+ENDPOINT_ARMS = ("H2.50", "H2.875")
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,8 +51,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--w3-manifest", type=Path, required=True)
     parser.add_argument("--w3-dir", type=Path, required=True)
     for slug in ("h2-50", "h2-625", "h2-75", "h2-875"):
-        parser.add_argument(f"--{slug}-result", type=Path, required=True)
-        parser.add_argument(f"--{slug}-artifact-dir", type=Path, required=True)
+        parser.add_argument(f"--{slug}-result", type=Path)
+        parser.add_argument(f"--{slug}-artifact-dir", type=Path)
+    parser.add_argument(
+        "--evaluation-scope",
+        choices=("full-four", "endpoint-only"),
+        default="full-four",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument(
         "--execution-policy",
@@ -124,13 +130,29 @@ def validate_w3(config: dict[str, Any], manifest_path: Path, decoded_dir: Path) 
     return manifest, records
 
 
+def selected_hierarchical_arms(evaluation_scope: str) -> tuple[str, ...]:
+    if evaluation_scope == "full-four":
+        return HIERARCHICAL_ARMS
+    if evaluation_scope == "endpoint-only":
+        return ENDPOINT_ARMS
+    raise ValueError(f"unsupported evaluation scope: {evaluation_scope}")
+
+
 def hierarchical_arg_pairs(args: argparse.Namespace) -> dict[str, tuple[Path, Path]]:
-    return {
+    all_pairs = {
         "H2.50": (args.h2_50_result, args.h2_50_artifact_dir),
         "H2.625": (args.h2_625_result, args.h2_625_artifact_dir),
         "H2.75": (args.h2_75_result, args.h2_75_artifact_dir),
         "H2.875": (args.h2_875_result, args.h2_875_artifact_dir),
     }
+    selected = selected_hierarchical_arms(args.evaluation_scope)
+    result: dict[str, tuple[Path, Path]] = {}
+    for arm in selected:
+        result_path, artifact_dir = all_pairs[arm]
+        if result_path is None or artifact_dir is None:
+            raise ValueError(f"missing required endpoint input: {arm}")
+        result[arm] = (result_path, artifact_dir)
+    return result
 
 
 def validate_hierarchical(
@@ -247,6 +269,8 @@ def main() -> None:
     validate_config(config)
     if config["evaluation"]["arms"] != list(ARMS):
         raise ValueError("evaluation arms drifted")
+    selected_arms = selected_hierarchical_arms(args.evaluation_scope)
+    arms = ("gptq_w3_g128_sym", *selected_arms)
     validate_snapshot(config, args.snapshot_root)
     protocol_config = {"accepted_protocol": config["evaluation"]["accepted_protocol"]}
     blocks, protocol_manifest = load_protocol(protocol_config, args)
@@ -285,7 +309,7 @@ def main() -> None:
     model.config.use_cache = False
     metrics: dict[str, dict[str, Any]] = {}
     coverage: dict[str, dict[str, Any]] = {}
-    for arm in ARMS:
+    for arm in arms:
         if arm == "gptq_w3_g128_sym":
             coverage[arm] = apply_gptq_dense(model, w3_records, device=device)
         else:
@@ -303,7 +327,7 @@ def main() -> None:
 
     reference_ppl = metrics["gptq_w3_g128_sym"]["perplexity"]
     comparison = {}
-    for arm in HIERARCHICAL_ARMS:
+    for arm in selected_arms:
         ppl = metrics[arm]["perplexity"]
         result = hierarchical_results[arm]
         comparison[arm] = {
@@ -316,18 +340,27 @@ def main() -> None:
             "quantization_time_breakdown_seconds": result["time_breakdown_seconds"],
             "mean_weight_reconstruction_mse": result["reconstruction"]["mean_squared_error"],
         }
-    ppl_curve = [metrics[arm]["perplexity"] for arm in HIERARCHICAL_ARMS]
+    ppl_curve = [metrics[arm]["perplexity"] for arm in selected_arms]
     monotonic = all(left >= right for left, right in zip(ppl_curve, ppl_curve[1:]))
     valid = all(
         metrics[arm].get("metrics_valid")
         and metrics[arm].get("scored_transition_count") == config["evaluation"]["accepted_protocol"]["scored_transition_count"]
         and math.isfinite(metrics[arm]["perplexity"])
-        for arm in ARMS
+        for arm in arms
+    )
+    endpoint_difference = (
+        abs(metrics["H2.875"]["perplexity"] - metrics["H2.50"]["perplexity"])
+        if args.evaluation_scope == "endpoint-only"
+        else None
     )
     result = {
         "schema_version": 1,
         "status": (
-            "completed_pending_review"
+            "completed_endpoint_pending_review"
+            if valid and args.execution_policy == FORMAL_EXECUTION_POLICY and args.evaluation_scope == "endpoint-only"
+            else "completed_cross_device_endpoint_pending_review"
+            if valid and args.execution_policy == CROSS_DEVICE_EXECUTION_POLICY and args.evaluation_scope == "endpoint-only"
+            else "completed_pending_review"
             if valid and args.execution_policy == FORMAL_EXECUTION_POLICY
             else "completed_cross_device_pending_review"
             if valid and args.execution_policy == CROSS_DEVICE_EXECUTION_POLICY
@@ -357,11 +390,20 @@ def main() -> None:
         "metrics": metrics,
         "coverage": coverage,
         "comparison": comparison,
+        "evaluation_scope": args.evaluation_scope,
+        "endpoint_test": {
+            "absolute_ppl_difference_h2_875_vs_h2_50": endpoint_difference,
+            "flat_curve_threshold": 0.05,
+            "flat_curve_confirmed": (
+                endpoint_difference < 0.05 if endpoint_difference is not None else None
+            ),
+        },
         "curve": {
-            "budget_order": list(HIERARCHICAL_ARMS),
+            "budget_order": list(selected_arms),
             "perplexity": ppl_curve,
             "monotonically_non_increasing": monotonic,
             "monotonicity_is_report_only_not_an_acceptance_gate": True,
+            "intermediate_budgets_intentionally_not_scored": args.evaluation_scope == "endpoint-only",
         },
         "other_accuracy_metrics": [],
         "elapsed_seconds": time.monotonic() - started,
