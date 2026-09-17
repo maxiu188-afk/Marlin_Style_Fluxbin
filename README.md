@@ -33,6 +33,33 @@ structural 路线，corrected 路线保留为负面诊断。详见
 [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)和
 [A100 corrected 运行记录](docs/W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
+对已有结果 JSON 的重新分析给出两个当前最重要的结论，都不是新的 GPU 运行。
+
+**加速的主要障碍已不在 Linear。** 用 Linear 级 BF16 臂逐 shape 反推，252 个 Linear
+只占 batch-1 decode 的 **62.1%**（9.263 ms/token），lm_head 占 5.8%，其余 **32.1%**
+（4.787 ms/token）是小算子的 kernel 数量乘固定延迟，不是带宽。把每层 Linear 2.205x
+代入可预测整模 1.514x，实测 1.488x，误差 1.8%，分解自洽。由此得到硬上限：**Linear
+时间归零也只有 2.64x，Linear 打到 BF16 同等带宽约 1.98x**。stock
+`Qwen3RMSNorm.forward` 每次调用发 8 个 elementwise/reduction kernel、每层 4 个，
+在小 Qwen3 上实测占一个 decode step 全部 compute op 的 55%。详见
+[非 Linear 路径融合](docs/NONLINEAR_FUSION.md)。
+
+**0.005 这道数值门在本 harness 的噪声地板以下。** 零量化的 `original_bf16` 臂在一次
+数学等价的注意力 mask 改写下，最终 logits NRMSE 已经是 **0.01431 / 0.01153**，同样
+过不了 0.005；QBB 线在不同 GPU、不同量化方案上独立复现同一地板（0.01167--0.01359）。
+因此上文几处 packed-vs-decoded 的失败**不能读作“kernel 算错了”**——这道门在 0.005 处
+没有分辨力，32 步自回归把 0.002 量级的逐 Linear 差异放大到 0.017。kernel 正确性的
+现有证据是 Linear 级 structural 逐位一致，与该门独立。这也解释了 `±3` 修正为何在
+Linear 层面有效却让端到端指标变差。详见
+[数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)。
+
+据此已实现但**尚未在 GPU 上验证**：自校准的相对数值门与鲁棒化计时门、Qwen3
+RMSNorm/RoPE 融合路径（CPU 实测 decode step compute op 降 49%，CUDA 预期 56%，
+外推整模约 1.71x 与约 139 tok/s）、shared-memory bank conflict 计时探针。四个待验证
+作业已打包为一次租卡会话，见
+[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。融合路径与 stock
+不是逐位一致，因此它是独立 protocol id，不与 frozen structural v1 的历史数字并表。
+
 GPTQ W3 的有效存储为 3.154552 bit/weight，相对 BF16 的理论存储优势约 **5.07x**，
 但相对理想 W4 只有约 **1.27x**。当前 W3 还承担 3 个 bitplane 解码、activation LUT、
 shared-memory 同步、split-G FP32 workspace 和 finish reduction；A100 又没有原生 INT3
@@ -67,6 +94,9 @@ A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DIST
 
 - [当前交接](docs/CURRENT_HANDOFF.md)：有效状态、代码入口、服务器与下一步。
 - [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：structural 约 1.49x、corrected 约 1.34x/1.27x，以及失败的数值门与逐层归因。
+- [非 Linear 路径融合](docs/NONLINEAR_FUSION.md)：62/38 开销分解、约 2.0x 的硬上限与已实现的 RMSNorm/RoPE 融合。
+- [数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门为何不可达、放大链条与重做后的门。
+- [GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)：一次租卡跑完的四个待验证作业。
 - [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
 - [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
 - [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
@@ -76,6 +106,10 @@ QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置�
 `configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。W3 完整模型入口为
 `scripts/run_qwen3_8b_w3_full_m1_trial.py`，配置文件
 `configs/acceleration/qwen3_8b_w3_full_m1_v1.json`。旧 v1 路径和结果保留。
+非 Linear 融合入口为 `src/fluxbin_style/fused_modules.py`，配置文件
+`configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json`；两个既有 frozen protocol
+显式声明关闭融合，行为不变。批次入口为
+`scripts/run_w3_gpu_validation_batch.sh`。
 上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
 不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。
 

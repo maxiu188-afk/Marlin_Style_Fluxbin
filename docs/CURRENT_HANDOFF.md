@@ -38,6 +38,34 @@ vLLM 仅保留接口、尚未接入。
   物化语义，但不能复现 cuBLAS BF16 GEMM 的归约树；36 层传播后仍会放大差异。
   详见 [A100 corrected full-model 记录](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
+- **加速的主要障碍已不在 Linear（重读已有 JSON，非新运行）**：252 个 Linear 占
+  batch-1 decode 的 62.1%（9.263 ms/token），lm_head 5.8%，其余 32.1%
+  （4.787 ms/token）是小算子 kernel 数量乘固定延迟。代入每层 Linear 2.205x 预测整模
+  1.514x，实测 1.488x，误差 1.8%。硬上限：Linear 归零 2.64x，Linear 达 BF16 同等
+  带宽约 1.98x。**不动这 32% 就到不了 2x 以上。** 详见
+  [非 Linear 路径融合](NONLINEAR_FUSION.md)。
+- **0.005 数值门在 harness 噪声地板以下（重读已有 JSON，非新运行）**：零量化的
+  `original_bf16` 臂在数学等价的 mask 改写下 logits NRMSE 已是 0.01431 / 0.01153，
+  同样不通过；QBB 线独立复现同一地板 0.01167--0.01359。放大链条为逐 Linear
+  0.00059--0.00264 →（深度约 4x）step-0 logits 0.0085596 →（自回归约 2x）step-32
+  0.01683。**上述几处 correctness 失败因此不能读作 kernel 算错**，也解释了 `±3`
+  修正为何 Linear 层面有效而端到端更差。详见
+  [数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)。
+- **已实现、尚未在 GPU 验证**：(a) 自校准相对数值门
+  `packed_vs_decoded_relative_check`（以同轮 `original_bf16` 的 dyn-vs-static 为地板，
+  limit 由 protocol 声明、默认 1.0）与逐步 NRMSE `stepwise_normalized_rmse`；
+  (b) 鲁棒化计时门 `trimmed_relative_range`（去首尾各一样本，median 仍用全样本，
+  故加速比数值不变）；(c) Qwen3 RMSNorm/RoPE 融合；(d) shared-memory bank conflict
+  计时探针。166 项测试通过。
+- 用新门重放归档结果：09-16 structural 的判定与加速比**完全不变**；09-17 的三个
+  cell 从 void 恢复为可发布的负面性能结果，`fast_corrected` p1 因 wall-time 有两个
+  尖峰仍判不稳。相对门下所有 cell 仍不通过，ratio 1.18--1.91——这是有意义的负面
+  结果，不是相对不可达阈值的 3.4 倍。
+- 需要注意的反例：`torch.nn.functional.rms_norm` **不是**融合 kernel。
+  `aten::rms_norm` 是 CompositeImplicitAutograd、无后端注册，CUDA 上分解成同样 8 个
+  op；torch 2.9 才有 `_fused_rms_norm`，服务器是 2.8。因此 RMSNorm 融合走 Inductor，
+  该事实已固定为回归测试。
+
 - **完整模型 sequence Graph 已实现 1.381x / 1.383x 原始 BF16 加速**：
   A100 SXM4 80GB，`v5_p1024/gps1`，prepared 协议 v2.1，两个固定 prompt。
   32 token 耗时约 468 → 338 ms，约 68 → 95 token/s。
@@ -74,6 +102,10 @@ vLLM 仅保留接口、尚未接入。
 | W3 全模型 runner | `scripts/run_qwen3_8b_w3_full_m1_trial.py` |
 | W3 全模型配置 | `configs/acceleration/qwen3_8b_w3_full_m1_v1.json` |
 | W3 corrected 全模型配置 | `configs/acceleration/qwen3_8b_w3_corrected_full_m1_v1.json` |
+| 非 Linear 融合 | `src/fluxbin_style/fused_modules.py` |
+| W3 fused 全模型配置 | `configs/acceleration/qwen3_8b_w3_fused_full_m1_v1.json` |
+| bank conflict 探针 | `scripts/run_w3_lut_bank_conflict_probe.py`（计时专用，输出数值无效） |
+| GPU 验证批次 | `scripts/run_w3_gpu_validation_batch.sh` + `scripts/summarize_w3_gpu_validation_batch.py` |
 
 QBB prepared v2.1 最新正式运行源码为 `3c996ab`。v2 首次在动态/静态数值门槛处失败，未计时；
 v2.1 将注意力路径差异独立报告，以同一 StaticCache 下的旧 wrapper 为精确参照。
@@ -151,17 +183,35 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 SHA256 为 `4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`，但这是
 Linear/layer-0 固定输入证据，不是 A100 或完整模型结论。RTX 实例已关闭并保留网络卷。
 
-corrected 路线现已冻结为负面性能/正确性 follow-up，不再自动重跑。用户当前以加速
-效果为主，因此后续优化应从约 1.49x 的 structural 路线出发，优先减少 main/finish
-双 kernel、32/96 个 partial split 的 FP32 workspace 往返、每次 Linear 的 LUT build
-与同步，并评估能否使用更接近 Marlin 的 Tensor Core 友好 W3 数据流。252 个 Linear
-乘 32 token 共 8064 次调用，固定 launch/依赖和非 Linear 模型时间都会稀释理论带宽收益。
+corrected 路线现已冻结为负面性能/正确性 follow-up，不再自动重跑。其中
+`observed_exact`（gate/up gps4、down gps2）已在 A100 上比 gps1 慢 5.80% / 5.73%，
+arithmetic 相同故可干净归因到 gps：gate/up 的 grid 从 (12,32)=384 个 block 掉到
+(12,8)=96 个，低于 108 个 SM，省下的 12 个百分点 partial 流量补不回 occupancy 损失。
+中间点 gate/up gps2（192 blocks）尚未测过。
+
+**下一步是跑已准备好的 GPU 验证批次**，而不是继续改 kernel。按 62/38 分解，非 Linear
+是比 kernel 更大的杠杆，且两者独立；在拿到真机数据前不宜再猜。批次含四个作业
+（bank conflict 探针、A100 上的 46-cell split/row-tile sweep、同会话 stock 与 fused
+全模型对照），fail-soft 且可续跑，约 90 分钟，见
+[GPU 验证批次运行手册](W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。批次还会复检 Nsight：
+若该实例允许硬件计数器，profile 的价值高于批次内任何一项。
+
+批次最关键的两个风险点：融合是否在 CUDA Graph capture 下真的生效（若 fused 与 stock
+的 `original_bf16` 每 token 基本相同，说明 torch.compile 未生效），以及 CUDA 上每次
+compiled RMSNorm 实际几个 kernel（CPU 为 2，外推的 -56% 依赖它等于 1）。
+
+批次之后按结果择一：探针若显示 conflict 占比高，kernel 重写针对查表结构而非 LUT
+构建；否则转查 DRAM 访存与 occupancy。更远的两项尚未做——lm_head 量化（约省
+0.66 ms/token，但该层对量化最敏感，建议先试 W8），以及把整个 `Qwen3DecoderLayer`
+交给 torch.compile（53 → 约 12 kernel/层，前提是把 `PYBIND11_MODULE` 绑定的 W3 op
+注册为 `torch.library.custom_op`，否则每 token 在 252 个 packed Linear 上 graph break）。
 
 3.154552-bit W3 相对 BF16 的存储优势约 5.07x，但相对理想 W4 只有约 1.27x；A100
 没有原生 INT3 MMA。若 W3 的 bitplane decode、LUT、同步和 reduction 开销超过 27%，
 其带宽优势就不足以超过成熟 W4A16。若恢复上机，先做可采 performance counters 的
 structural profile，再决定 main/finish fusion、persistent/fused Linear 或 Tensor Core
-重构；correctness 失败继续作为边界，不得改写为 accepted。
+重构；correctness 失败继续作为边界，不得改写为 accepted——但按上文标定，现行 0.005
+门在 0.005 处没有分辨力，应改用相对门或 step-0 门评判，而不是放宽绝对阈值。
 
 每次新运行仍使用独立输出目录和匹配的源码/环境记录，保留失败证据。
 vLLM 接口继续保留，接入工作尚未开始；不自动恢复 profiler、A8、精度搜索或 32B 实验。
