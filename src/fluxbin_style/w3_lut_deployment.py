@@ -45,8 +45,15 @@ QWEN3_W3_ROUTE_POLICIES = {
 }
 
 
-@lru_cache(maxsize=len(EXPERIMENTAL_ROW_TILES))
-def load_w3_lut_extension(row_tile: int):
+@lru_cache(maxsize=2 * len(EXPERIMENTAL_ROW_TILES))
+def load_w3_lut_extension(row_tile: int, uniform_index_probe: bool = False):
+    """Build the W3 LUT extension for one row tile.
+
+    `uniform_index_probe` selects the timing-only build described in w3_lut.cu:
+    it removes shared-memory bank conflicts by broadcasting the LUT index and
+    therefore returns wrong values. It gets its own extension name so it can
+    never share a build cache entry, or a loaded module, with the real kernel.
+    """
     if row_tile not in EXPERIMENTAL_ROW_TILES:
         raise ValueError(f"row_tile must be one of {EXPERIMENTAL_ROW_TILES}")
     if not torch.cuda.is_available():
@@ -55,7 +62,7 @@ def load_w3_lut_extension(row_tile: int):
 
     root = Path(__file__).resolve().parent / "csrc"
     return load(
-        name=f"fluxbin_w3_lut_r{row_tile}",
+        name=f"fluxbin_w3_lut_r{row_tile}" + ("_uniformprobe" if uniform_index_probe else ""),
         sources=[str(root / "w3_lut.cu")],
         extra_cuda_cflags=[
             "-O3",
@@ -63,6 +70,7 @@ def load_w3_lut_extension(row_tile: int):
             "-lineinfo",
             "--ptxas-options=-v",
             f"-DW3_LUT_ROWS={row_tile}",
+            f"-DW3_LUT_UNIFORM_INDEX_PROBE={int(bool(uniform_index_probe))}",
         ],
         verbose=True,
     )

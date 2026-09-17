@@ -19,6 +19,7 @@
 - [GPTQ W3 corrected A100 完整模型结果与复现手册](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)
 - [完整模型 logits 数值门的标定](W3_NUMERICAL_GATE_CALIBRATION.md)
 - [非 Linear 路径融合：分析、实现与预期](NONLINEAR_FUSION.md)
+- [W3 GPU 验证批次运行手册](W3_GPU_VALIDATION_BATCH_RUNBOOK.md)
 - [候选批次及全模型运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)
 - [加速实验合同与恢复交接](ACCELERATION_HANDOFF.md)
 - [M=1 初始准备](M1_ACCELERATION_PREPARATION.md)

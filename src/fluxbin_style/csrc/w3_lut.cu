@@ -14,6 +14,18 @@
 #define W3_LUT_ROWS 256
 #endif
 
+// Timing-only diagnostic. The LUT index is a weight byte, so the 32 lanes of a
+// warp read 32 data-dependent addresses in a 256-float table and collide on
+// shared-memory banks. Setting this to 1 broadcasts lane 0's byte so every lane
+// reads one address, removing the conflicts while keeping the weight loads
+// live. Nsight Compute is unavailable on the current host (ERR_NVGPUCTRPERM),
+// so this measures the conflict cost from wall time instead. Builds with the
+// probe enabled produce NUMERICALLY WRONG output by construction and must never
+// be used for correctness, full-model routing or published outputs.
+#ifndef W3_LUT_UNIFORM_INDEX_PROBE
+#define W3_LUT_UNIFORM_INDEX_PROBE 0
+#endif
+
 constexpr int kThreads = 256;
 constexpr int kRows = W3_LUT_ROWS;
 constexpr int kRowsPerThread = kRows / kThreads;
@@ -75,10 +87,18 @@ __global__ void w3_lut_inline_main(const T* __restrict__ x,
       for (int chunk = 0; chunk < kChunks; ++chunk) {
         const int word = chunk >> 2;
         const int shift = 8 * (chunk & 3);
-        const unsigned p0 = (words[0][word] >> shift) & 0xffu;
-        const unsigned p1 = (words[1][word] >> shift) & 0xffu;
+        unsigned p0 = (words[0][word] >> shift) & 0xffu;
+        unsigned p1 = (words[1][word] >> shift) & 0xffu;
         // Plane 2 is stored inverted, so p2=0 means the logical high bit is 1.
-        const unsigned p2 = (words[2][word] >> shift) & 0xffu;
+        unsigned p2 = (words[2][word] >> shift) & 0xffu;
+#if W3_LUT_UNIFORM_INDEX_PROBE
+        // See W3_LUT_UNIFORM_INDEX_PROBE: wrong results on purpose. The shuffle
+        // keeps the loads alive and costs one instruction, so the measured
+        // difference is a lower bound on the bank-conflict cost.
+        p0 = __shfl_sync(0xffffffffu, p0, 0);
+        p1 = __shfl_sync(0xffffffffu, p1, 0);
+        p2 = __shfl_sync(0xffffffffu, p2, 0);
+#endif
         accum0 += lut[chunk * 256 + p0];
         accum1 += lut[chunk * 256 + p1];
         accum2 += lut[chunk * 256 + p2];
