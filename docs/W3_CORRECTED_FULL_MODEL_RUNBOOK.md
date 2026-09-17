@@ -24,6 +24,9 @@ outlier 触发，不能从 Linear 结果或中位数改写为 formal acceptance�
 
 按性能优先口径，两条 corrected 路线均不如历史 structural W3 的约 1.49x；当前
 性能主线仍是 structural，corrected 结果作为数值语义和额外开销的负面 follow-up。
+修正在 Linear 层面有效但端到端指标反而变差，原因见
+[数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门限低于本 harness 自身的
+放大地板，局部精度提升被淹没。
 
 首个 tmux launch 因 quoting 选到 system Python，在模型加载前失败。retry1 显式使用
 venv Python 后完成；因此下面的复现模板要求先固定并验证 `python_bin`。
@@ -58,6 +61,37 @@ prepared wrapper 和整段 CUDA Graph 协议。差别只有 `groups_per_split`�
 Linear 诊断结果 SHA256 为
 `4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca`；配置把该哈希、
 A100 compute capability 8.0 和至少 75,000,000,000 bytes VRAM 作为启动门。
+
+### `groups_per_split` 的性能代价：occupancy 分析
+
+两条路线的 arithmetic 相同，唯一差别是 `groups_per_split`，所以两者的时间差可以
+干净地归到 gps 上：`observed_exact` 比 `fast_corrected` 慢 **5.80% / 5.73%**
+（374.968 vs 354.399、375.391 vs 355.055）。
+
+gps 同时影响两件相反的事。省下的是 FP32 partial 流量：`launch_split` 下
+`splits = ceil(G/gps)`，partial 的读写合计 `2·splits·O·4` bytes，而 packed 权重是
+`G·O·50` bytes（G·128·O·3.125/8），所以 partial 的额外流量恰为 `16%/gps`，
+并且 `splits>1` 时每个 Linear 还要多一次 `finish_m1` 启动。gps 从 1 升到 4 可把
+这 16% 降到 4%。
+
+付出的是 grid 规模。A100 有 108 个 SM，kernel 为 256 threads/block：
+
+| shape | gps | grid `(ceil(O/R), splits)` | blocks |
+|---|---:|---|---:|
+| gate/up `[12288,4096]` R1024 G32 | 1 | (12, 32) | 384 |
+| gate/up `[12288,4096]` R1024 G32 | **4** | (12, 8) | **96** |
+| down `[4096,12288]` R1024 G96 | 1 | (4, 96) | 384 |
+| down `[4096,12288]` R1024 G96 | **2** | (4, 48) | 192 |
+
+`observed_exact` 把 gate/up 从 384 个 block 降到 96 个，**低于 SM 数**，每个 SM 至多
+一个 block、in-flight warp 数不足以掩藏 DRAM 延迟。实测的 +5.8% 与这个方向一致：
+省下的 12 个百分点 partial 流量不足以补偿 occupancy 损失。
+
+这是基于 grid 算术的推断，不是 profiler 证据；本宿主的 Nsight Compute 仍因
+`ERR_NVGPUCTRPERM` 不可用。`observed_exact` 的这组 gps 当初是按**数值**选的
+（RTX 固定输入下 bit-exact），不是按性能选的；其完整模型 NRMSE 为 0.01973 /
+0.01702，说明那个 bit-exact 未跨输入泛化。gate/up gps=2（192 blocks）这一中间点
+尚未测过。
 
 ## 固定入口
 

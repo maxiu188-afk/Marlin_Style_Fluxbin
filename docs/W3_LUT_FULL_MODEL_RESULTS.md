@@ -147,7 +147,10 @@ result SHA256 为
 ## 决策边界
 
 不能放宽阈值后把任一轮改写为 accepted，也不能用两个 prompt 的 greedy token 一致
-代替质量验证。用户当前明确以加速效果为主，所以性能主线保留 structural W3；它仍须
+代替质量验证。但 0.005 这道门本身已被标定为不可达：零量化的 `original_bf16` 臂在一次
+数学等价的 mask 改写下就落在 0.01431 / 0.01153，QBB 线独立复现同一地板。详见
+[数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)；继续按现行门限迭代 kernel 只会产生
+误导性的负面结果。用户当前明确以加速效果为主，所以性能主线保留 structural W3；它仍须
 被视为另一个部署算术语义，后续若要发布质量结论，应单独完成完整 PPL/质量验证。
 corrected 两条路线冻结为负面 follow-up，不自动重跑。
 
