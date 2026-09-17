@@ -46,12 +46,21 @@ date -u +%Y-%m-%dT%H:%M:%SZ > "$batch_job/started-at"
 
 environment_json=$batch_result/environment/environment.json
 if [ ! -f "$environment_json" ]; then
-  mkdir -p "$batch_result/environment"
-  "$batch_python" "$batch_root/scripts/record_acceleration_environment.py" \
-    --output "$environment_json" 2>&1 | tee "$batch_job/environment.log" || {
-      echo 'environment capture failed; nothing else can run' >&2
-      exit 1
-    }
+  if [ -e "$batch_result/environment" ]; then
+    echo "environment directory exists without environment.json: $batch_result/environment" >&2
+    exit 1
+  fi
+  set -o pipefail
+  if ! "$batch_python" "$batch_root/scripts/record_acceleration_environment.py" \
+    --output-dir "$batch_result/environment" \
+    --phase recreated \
+    --image-reference "${FLUXBIN_IMAGE_REFERENCE:-runpod-default-unresolved}" \
+    --require-cuda 2>&1 | tee "$batch_job/environment.log"; then
+    set +o pipefail
+    echo 'environment capture failed; nothing else can run' >&2
+    exit 1
+  fi
+  set +o pipefail
 fi
 
 # Nsight has been blocked by ERR_NVGPUCTRPERM on every host so far. Recheck it
@@ -62,7 +71,7 @@ fi
   command -v ncu || echo 'ncu not on PATH'
   ncu --version 2>&1 | head -3 || true
   echo "== minimal counter smoke =="
-  ncu --metrics sm__cycles_elapsed.avg --target-processes application \
+  ncu --metrics sm__cycles_elapsed.avg --target-processes application-only \
     "$batch_python" -c 'import torch; torch.zeros(8, device="cuda").sum().cpu()' 2>&1 | tail -20
 } > "$batch_job/nsight-recheck.log" 2>&1 || true
 

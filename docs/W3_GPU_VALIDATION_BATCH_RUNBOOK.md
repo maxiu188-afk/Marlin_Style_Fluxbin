@@ -50,11 +50,13 @@ gate/up 与 down 的 R=2048 和 gps 1/2/4/8。这很重要,因为 09-17 的 `obs
 ```bash
 export FLUXBIN_PYTHON=/workspace/environments/<env-id>/venv/bin/python
 export FLUXBIN_SNAPSHOT_ROOT=/workspace/cache/huggingface/hub/models--Qwen--Qwen3-8B/snapshots/b968826d9c46dd6066d109eabc6255188de91218
-export FLUXBIN_GPTQ_ROOT=/workspace/models/fluxbin/qwen3-8b-gptq-w3
+export FLUXBIN_GPTQ_ROOT=/workspace/models/fluxbin/qwen3-8b-gptq-w3-g128-sym-v1
 export FLUXBIN_W3_LAYOUT_ROOT=/workspace/models/fluxbin/qwen3-8b-gptq-w3-lut-planar-v1
 export FLUXBIN_W3_LAYOUT_MANIFEST_SHA256=f2825dda33d77491364fc857f3c4e36be114be859cf26aa76d142e0e2441edf8
+export FLUXBIN_IMAGE_REFERENCE=runpod-default-unresolved
 export TORCH_EXTENSIONS_DIR=/workspace/cache/torch-extensions/w3-batch-$(git rev-parse --short HEAD)-cu128-sm80
 export TORCH_CUDA_ARCH_LIST=8.0
+export PATH="$(dirname "$FLUXBIN_PYTHON"):/usr/local/cuda-12.8/bin:$PATH"
 ```
 
 在 tmux 里:
@@ -71,6 +73,10 @@ bash scripts/run_w3_gpu_validation_batch.sh \
 **必须先固定解释器。** 2026-09-17 retry1 的首次启动因 quoting 选到 system Python,
 在模型加载前就失败。脚本因此在跑任何作业前先验证 `FLUXBIN_PYTHON` 存在且
 `torch.cuda.is_available()`,并拒绝脏 worktree。
+
+环境记录使用当前 recorder 的 `--output-dir/--phase/--image-reference` 接口，并在
+recorder 失败时立即终止批次；`FLUXBIN_IMAGE_REFERENCE` 不清楚时保持上述非秘密
+占位值即可，不能因此跳过 CUDA readiness 检查。
 
 批次还会做一次 **Nsight 复检**并写入 `nsight-recheck.log`。如果这台实例允许硬件
 计数器,那么 profile kernel 的价值高于批次里的任何一项,应当在租期结束前补上。
