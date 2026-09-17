@@ -97,6 +97,9 @@ def main():
     cuda_root = Path(shutil.which('nvcc')).resolve().parents[1]
     exports = {'CUDA_HOME':str(cuda_root), 'TORCH_CUDA_ARCH_LIST':identity['cuda_arch'],
                'TORCH_EXTENSIONS_DIR':str(root/'cache/torch-extensions'/key),
+               'FLUXBIN_EXTENSION_CACHE_ROOT':str(root/'cache/torch-extensions/fluxbin-content'),
+               'TORCHINDUCTOR_CACHE_DIR':str(root/'cache/torchinductor'),
+               'TRITON_CACHE_DIR':str(root/'cache/triton'),
                'PIP_CACHE_DIR':str(root/'cache/pip'), 'MAX_JOBS':'2',
                'HF_HOME':str(root/'cache/huggingface')}
     lines = ['# Generated runtime for this fingerprint and fixed mount path.',

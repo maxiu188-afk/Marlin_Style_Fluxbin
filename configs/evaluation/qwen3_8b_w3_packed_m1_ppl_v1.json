@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "experiment_id": "qwen3-8b-w3-packed-m1-ppl-v1",
+  "scope": "Matched fused BF16, fused decoded-W3 BF16, and fused packed-W3 structural teacher-forced M=1 WikiText-2 PPL; quality only, no speed claim",
+  "seed": 20260917,
+  "model": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "checkpoint_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 36,
+    "expected_linear_count": 252,
+    "model_preflight_files": {
+      "config.json": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+      "model-00001-of-00005.safetensors": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+      "model-00002-of-00005.safetensors": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+      "model-00003-of-00005.safetensors": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+      "model-00004-of-00005.safetensors": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+      "model-00005-of-00005.safetensors": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+      "model.safetensors.index.json": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc",
+      "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+    }
+  },
+  "accepted_protocol": {
+    "id": "qbb-new-wt2-2048-qwen3-8b-v1",
+    "protocol_manifest_sha256": "8b61cbeaba8809b94bc6b7568cb45ede0d941d046c812f57f3156163e42069ae",
+    "token_artifact_sha256": "252938697260d7f7241f26a05b9822c1a2fd5e9ae0168a87e0d5345d4a111ee0",
+    "token_artifact_tensor_sha256": "d5f7bbfcee9855ebfeddf25bb0c7e483220d6bdb6631923c7bebf2002d61ca59",
+    "token_artifact_dtype": "torch.int32",
+    "sequence_length": 2048,
+    "token_count": 299078,
+    "tokens_sha256": "c7a8c41e587561b93c8dd0b17224e6f20aa4270c9dab62151357cca88651ad9e",
+    "tokenizer_files_sha256": {
+      "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+      "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+      "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    "full_block_count": 146,
+    "blocks_sha256": "8c5206620a0cf76d8cdf5fb6332b2356f91cebe957ec026a2524d7069dd3ccec",
+    "scored_transition_count": 298862
+  },
+  "evaluation": {
+    "arms": [
+      "original_bf16",
+      "decoded_w3_bf16",
+      "packed_w3_inline"
+    ],
+    "packed_route": "structural",
+    "fused_nonlinear_modules": {
+      "rms_norm": true,
+      "rope": true
+    },
+    "batch_size": 1,
+    "tokens_per_model_call": 1,
+    "teacher_forcing": true,
+    "use_cache": true,
+    "cache_reset_each_block": true,
+    "logits_to_keep": 1,
+    "nll_logits_dtype": "torch.float32",
+    "attention_implementation": "sdpa",
+    "tf32_allowed": false,
+    "dense_reference_ppl_report_only": {
+      "bf16": 9.724944980689296,
+      "decoded_w3_bf16": 11.266114819687326,
+      "reason": "historical dense use_cache=false measurements are context only; the packed M=1 comparison is same-run"
+    }
+  },
+  "execution": {
+    "quality_device_names": [
+      "NVIDIA A100 80GB PCIe",
+      "NVIDIA A100-SXM4-80GB"
+    ],
+    "compute_capability": [8, 0],
+    "torch": "2.8.0+cu128",
+    "transformers": "5.14.1",
+    "datasets": "5.0.0",
+    "safetensors": "0.8.0"
+  },
+  "acceptance": {
+    "required_valid_arms": 3,
+    "required_scored_transition_count_per_arm": 298862,
+    "required_packed_linear_count": 252,
+    "quality_effect_threshold": null,
+    "decision": "manual_effect_size_review",
+    "backend_auto_launch": false,
+    "kernel_auto_change": false
+  }
+}

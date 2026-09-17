@@ -1,7 +1,16 @@
 # W3 GPU 验证批次：一次租卡跑完的四个作业
 
-更新：2026-09-17。GPU 按小时租,所以把当前所有待验证项打包成一次会话。本页是
-执行手册;批次尚未运行,这里没有任何结果。
+更新：2026-09-17。GPU 按小时租,所以把当时所有待验证项打包成一次会话。本页同时
+保留执行协议与正式批次结果。
+
+正式 `retry2` 已在 A100 SXM4 80GB、源码提交 `91ebc49` 上完成，四个作业均为
+`exit 0`。结果目录为 `results/w3-validation-batch-v2-91ebc49-retry2/`，汇总 JSON 的
+SHA-256 为 `5e6cbb33c3fc5b856570d60cd9384ea4ee9e40e9833d4da1b04bc2a6864b9b2a`。
+融合把 BF16 从约 14.62 降至 12.26 ms/token（约 1.19x），把 packed W3 从约
+10.07 降至 7.56 ms/token（约 1.33x）；稳定的 packed-vs-BF16 点为 stock 1.452x、
+fused 1.622x。bank-conflict 成本下界为 q/o 10.8%、k/v 3.4%、gate/up 18.5%、
+down 17.3%。split sweep 的计时/不变量通过，但相对 NRMSE 为控制基线的
+1.18--1.49x，因此数值门不通过，按负面结果保留。
 
 入口:`scripts/run_w3_gpu_validation_batch.sh`,汇总
 `scripts/summarize_w3_gpu_validation_batch.py`。
@@ -54,10 +63,15 @@ export FLUXBIN_GPTQ_ROOT=/workspace/models/fluxbin/qwen3-8b-gptq-w3-g128-sym-v1
 export FLUXBIN_W3_LAYOUT_ROOT=/workspace/models/fluxbin/qwen3-8b-gptq-w3-lut-planar-v1
 export FLUXBIN_W3_LAYOUT_MANIFEST_SHA256=f2825dda33d77491364fc857f3c4e36be114be859cf26aa76d142e0e2441edf8
 export FLUXBIN_IMAGE_REFERENCE=runpod-default-unresolved
-export TORCH_EXTENSIONS_DIR=/workspace/cache/torch-extensions/w3-batch-$(git rev-parse --short HEAD)-cu128-sm80
+export FLUXBIN_EXTENSION_CACHE_ROOT=/workspace/cache/torch-extensions/fluxbin-content
+export TORCH_EXTENSIONS_DIR=/workspace/cache/torch-extensions/runtime-cu128-sm80
 export TORCH_CUDA_ARCH_LIST=8.0
 export PATH="$(dirname "$FLUXBIN_PYTHON"):/usr/local/cuda-12.8/bin:$PATH"
 ```
+
+`FLUXBIN_EXTENSION_CACHE_ROOT` 使用 CUDA source/flags/Torch/CUDA/ABI/SM 的内容
+hash；不要再把 Git commit 写进缓存目录。只改文档、runner 或数值门时会复用同一
+`.so`，修改 `.cu`、编译宏或运行时 ABI 时才自动进入新目录。
 
 在 tmux 里:
 

@@ -55,14 +55,20 @@ NRMSE 已经是 **0.01431 / 0.01153**，max-logprob error 是 **0.6875 / 0.7827*
 Linear 层面有效却让端到端指标变差。详见
 [数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)。
 
-据此已实现但**尚未在 GPU 上验证**：自校准的 NRMSE 与 max-logprob 相对数值门及其
-fail-closed 复合验收（shape/finite、forced/greedy token）、鲁棒化计时门、Qwen3
-RMSNorm/RoPE 融合路径（CPU 实测 decode step compute op 降 49%，CUDA 预期 56%，
-外推整模约 1.71x 与约 139 tok/s）、shared-memory bank conflict 计时探针。四个待验证
-作业已打包为一次租卡会话，见
-[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。本轮 stock/fused 使用
-独立 v2 protocol；融合路径与 stock 不是逐位一致，也不与 frozen structural v1 的历史
-数字并表。
+上述四项 GPU 批次已在 A100 SXM4 80GB 完成。融合把 BF16 从约
+14.62 降到 12.26 ms/token（约 1.19x），把 packed W3 从约 10.07 降到
+7.56 ms/token（约 1.33x）；同配置下稳定的 packed-vs-BF16 点由 stock 1.452x
+提高到 fused 1.622x。bank-conflict 成本下界在 q/o、k/v、gate/up、down 分别为
+10.8%、3.4%、18.5%、17.3%。split sweep 含不稳定 cell，不能选 winner；stock/fused
+的 token/shape/finite 与 relative log-prob 门通过，但 relative NRMSE 为 control 的
+1.18--1.49x，packed backend 尚未 accepted。见
+[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。
+
+下一轮不再用 logits gate 猜质量：已经准备冻结 WikiText-2 146×2048、298,862
+transitions 的 fused BF16 / decoded-W3 / packed-W3 三臂 M=1 teacher-forced PPL。
+同时 CUDA extension 改为 source/flags/runtime/SM 内容寻址缓存并加入预热 manifest，
+仅改文档、runner 或 gate 不再重编译。见
+[packed M=1 PPL 手册](docs/W3_PACKED_M1_PPL_RUNBOOK.md)。
 
 GPTQ W3 的有效存储为 3.154552 bit/weight，相对 BF16 的理论存储优势约 **5.07x**，
 但相对理想 W4 只有约 **1.27x**。当前 W3 还承担 3 个 bitplane 解码、activation LUT、
@@ -100,7 +106,8 @@ A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DIST
 - [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：structural 约 1.49x、corrected 约 1.34x/1.27x，以及失败的数值门与逐层归因。
 - [非 Linear 路径融合](docs/NONLINEAR_FUSION.md)：62/38 开销分解、约 2.0x 的硬上限与已实现的 RMSNorm/RoPE 融合。
 - [数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门为何不可达、放大链条与重做后的门。
-- [GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)：一次租卡跑完的四个待验证作业。
+- [GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)：四项批次协议、完成结果与复现入口。
+- [packed M=1 PPL 手册](docs/W3_PACKED_M1_PPL_RUNBOOK.md)：冻结全量 WT2、断点续跑与内容寻址编译缓存。
 - [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
 - [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
 - [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
@@ -115,6 +122,8 @@ QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置�
 `configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json`；v2 stock/fused 除融合开关与
 protocol id 外保持一致，并共同使用新复合数值门。批次入口为
 `scripts/run_w3_gpu_validation_batch.sh`。
+下一轮 packed PPL 入口为 `scripts/run_qwen3_8b_w3_packed_m1_ppl_job.sh`，协议为
+`configs/evaluation/qwen3_8b_w3_packed_m1_ppl_v1.json`。
 上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
 不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。
 

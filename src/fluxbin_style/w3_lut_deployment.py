@@ -8,6 +8,7 @@ import torch
 from torch import nn
 from torch.nn import functional as F
 
+from .extension_cache import extension_load_kwargs
 from .gptq_deployment import FIELDS, restore_planar_w3, validate_planar_w3
 
 
@@ -45,6 +46,27 @@ QWEN3_W3_ROUTE_POLICIES = {
 }
 
 
+def w3_lut_extension_build(row_tile: int, uniform_index_probe: bool = False):
+    """Return load kwargs and the content-addressed build contract."""
+    if row_tile not in EXPERIMENTAL_ROW_TILES:
+        raise ValueError(f"row_tile must be one of {EXPERIMENTAL_ROW_TILES}")
+    root = Path(__file__).resolve().parent / "csrc"
+    name = f"fluxbin_w3_lut_r{row_tile}" + ("_uniformprobe" if uniform_index_probe else "")
+    return extension_load_kwargs(
+        name=name,
+        sources=[root / "w3_lut.cu"],
+        content_dependencies=[root / "lut8_unsigned.cuh"],
+        extra_cuda_cflags=[
+            "-O3",
+            "--fmad=false",
+            "-lineinfo",
+            "--ptxas-options=-v",
+            f"-DW3_LUT_ROWS={row_tile}",
+            f"-DW3_LUT_UNIFORM_INDEX_PROBE={int(bool(uniform_index_probe))}",
+        ],
+    )
+
+
 @lru_cache(maxsize=2 * len(EXPERIMENTAL_ROW_TILES))
 def load_w3_lut_extension(row_tile: int, uniform_index_probe: bool = False):
     """Build the W3 LUT extension for one row tile.
@@ -54,26 +76,12 @@ def load_w3_lut_extension(row_tile: int, uniform_index_probe: bool = False):
     therefore returns wrong values. It gets its own extension name so it can
     never share a build cache entry, or a loaded module, with the real kernel.
     """
-    if row_tile not in EXPERIMENTAL_ROW_TILES:
-        raise ValueError(f"row_tile must be one of {EXPERIMENTAL_ROW_TILES}")
     if not torch.cuda.is_available():
         raise RuntimeError("W3 LUT requires NVIDIA CUDA; no CPU/MPS substitution")
     from torch.utils.cpp_extension import load
 
-    root = Path(__file__).resolve().parent / "csrc"
-    return load(
-        name=f"fluxbin_w3_lut_r{row_tile}" + ("_uniformprobe" if uniform_index_probe else ""),
-        sources=[str(root / "w3_lut.cu")],
-        extra_cuda_cflags=[
-            "-O3",
-            "--fmad=false",
-            "-lineinfo",
-            "--ptxas-options=-v",
-            f"-DW3_LUT_ROWS={row_tile}",
-            f"-DW3_LUT_UNIFORM_INDEX_PROBE={int(bool(uniform_index_probe))}",
-        ],
-        verbose=True,
-    )
+    kwargs, _ = w3_lut_extension_build(row_tile, uniform_index_probe)
+    return load(**kwargs)
 
 
 def workspace_shape(

@@ -21,8 +21,12 @@ from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
 W3_CONTRACT_FILES=(
     'configs/acceleration/w3_lut_candidates_v1.json',
+    'configs/evaluation/qwen3_8b_w3_packed_m1_ppl_v1.json',
+    'scripts/prewarm_w3_extensions.py',
     'scripts/record_acceleration_environment.py',
     'scripts/prepare_qwen3_8b_w3_lut_artifacts.py',
+    'scripts/run_qwen3_8b_w3_packed_m1_ppl.py',
+    'scripts/run_qwen3_8b_w3_packed_m1_ppl_job.sh',
     'scripts/run_w3_lut_server_preflight.py',
     'scripts/run_w3_lut_benchmark.py',
 )

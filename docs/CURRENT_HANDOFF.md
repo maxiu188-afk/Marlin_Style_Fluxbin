@@ -53,14 +53,14 @@ vLLM 仅保留接口、尚未接入。
   kernel 算错**，也解释了 `±3`
   修正为何 Linear 层面有效而端到端更差。详见
   [数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)。
-- **已实现、尚未在 GPU 验证**：(a) 自校准相对数值门
+- **已实现并在最新 GPU 批次执行**：(a) 自校准相对数值门
   `packed_vs_decoded_relative_check`（以同轮 `original_bf16` 的 dyn-vs-static 为控制
   基线，limit 由 protocol 声明、默认 1.0）；max-logprob 也使用同轮控制比值门，并与
   shape/finite、forced/greedy token 不变量组成正式 backend 验收；旧 0.005/0.05 绝对门
   只保留为 legacy 审计字段；另有逐步 NRMSE `stepwise_normalized_rmse`；
   (b) 鲁棒化计时门 `trimmed_relative_range`（去首尾各一样本，median 仍用全样本，
   故加速比数值不变）；(c) Qwen3 RMSNorm/RoPE 融合；(d) shared-memory bank conflict
-  计时探针。170 项测试通过。
+  计时探针。进入该批次前的本地回归为 170 项测试通过；最新 GPU 结果见下方“当前结论”。
 - 用新门重放归档结果：09-16 structural 的判定与加速比**完全不变**；09-17 的三个
   cell 从 void 恢复为可发布的负面性能结果，`fast_corrected` p1 因 wall-time 有两个
   尖峰仍判不稳。复合相对门下所有 cell 仍不通过：NRMSE ratio 1.18--1.91；structural
@@ -182,6 +182,13 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 本次是 RTX 同卡质量对照，不是 A100 精确复现或性能结果；旧 A100 两个 anchor
 仅 report-only。默认 `formal-a100` 路径仍保留，除非明确要求复现，否则不再重跑。
 
+最新 A100 SXM4 批次 revision 为 `91ebc49`，四个 job 均退出 0，2026-09-17
+07:23:37Z 完成。summary SHA256 为
+`5e6cbb33c3fc5b856570d60cd9384ea4ee9e40e9833d4da1b04bc2a6864b9b2a`；远端目录为
+`/workspace/results/w3-validation-batch-v2-91ebc49-retry2/`，本地私有备份为
+`results/w3-validation-batch-v2-91ebc49-retry2/`。关机前逐文件 checksum dry-run 无
+差异，GPU/实验进程和 tmux 均为空；实际电源状态仍由用户确认。
+
 ## 下一步边界
 
 已完成的 RTX PRO 4500 诊断 46/46 cell 通过 correctness、repeat 与 Graph 检查。
@@ -195,22 +202,28 @@ arithmetic 相同故可干净归因到 gps：gate/up 的 grid 从 (12,32)=384 �
 (12,8)=96 个，低于 108 个 SM，省下的 12 个百分点 partial 流量补不回 occupancy 损失。
 中间点 gate/up gps2（192 blocks）尚未测过。
 
-**下一步是跑已准备好的 GPU 验证批次**，而不是继续改 kernel。按 62/38 分解，非 Linear
-是比 kernel 更大的杠杆，且两者独立；在拿到真机数据前不宜再猜。批次含四个作业
-（bank conflict 探针、A100 上的 46-cell split/row-tile sweep、同会话 stock 与 fused
-全模型对照），fail-soft 且可续跑，约 90 分钟，见
-[GPU 验证批次运行手册](W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。批次还会复检 Nsight：
-若该实例允许硬件计数器，profile 的价值高于批次内任何一项。
+GPU 批次已经完成。融合在 CUDA Graph 下确实生效：BF16 约 14.62 → 12.26 ms/token，
+packed W3 约 10.07 → 7.56 ms/token；稳定的 packed-vs-BF16 点为 stock 1.452x、
+fused 1.622x。bank-conflict 下界 q/o、k/v、gate/up、down 分别为 10.8%、3.4%、
+18.5%、17.3%；split sweep 含不稳定 cell，不能选 winner。两条 full-model 路线的
+trace 不变量与 relative log-prob 通过，但 relative NRMSE 为 control 的 1.18--1.49x，
+因此仍不是 accepted backend。
 
-批次最关键的两个风险点：融合是否在 CUDA Graph capture 下真的生效（若 fused 与 stock
-的 `original_bf16` 每 token 基本相同，说明 torch.compile 未生效），以及 CUDA 上每次
-compiled RMSNorm 实际几个 kernel（CPU 为 2，外推的 -56% 依赖它等于 1）。
+**下一步改为直接测 packed M=1 PPL，不再从 logits gate 推断质量。** 新协议冻结同一
+WikiText-2 146×2048 token blocks、298,862 transitions，三臂均启用 RMSNorm/RoPE
+融合，依次测 original BF16、decoded W3 BF16、packed W3 structural。每次 forward
+严格一个 token 并携带 KV cache，packed 臂 252 个 Linear 都必须走 M=1 backend；结果
+只做同轮 effect-size review，没有人为 PPL threshold，也不自动启动后续修改。入口与
+断点续跑说明见 [packed M=1 PPL 手册](W3_PACKED_M1_PPL_RUNBOOK.md)。
 
-批次之后按结果择一：探针若显示 conflict 占比高，kernel 重写针对查表结构而非 LUT
-构建；否则转查 DRAM 访存与 occupancy。更远的两项尚未做——lm_head 量化（约省
-0.66 ms/token，但该层对量化最敏感，建议先试 W8），以及把整个 `Qwen3DecoderLayer`
-交给 torch.compile（53 → 约 12 kernel/层，前提是把 `PYBIND11_MODULE` 绑定的 W3 op
-注册为 `torch.library.custom_op`，否则每 token 在 252 个 packed Linear 上 graph break）。
+为缩短后续租卡准备，CUDA extension 已改为内容寻址缓存：键包含 `.cu/.cuh`、flags、
+Torch/CUDA/ABI、Python 与 SM，不含 Git revision；正式任务先预热 R256/R512/R1024，
+绑定 `.so` SHA256 manifest。Inductor/Triton 缓存也放到持久卷。只改文档、runner 或
+gate 不再冷编译，真正改 kernel/header/flags/runtime 时仍自动失效。
+
+PPL 完成前不继续 kernel 重写、lm_head W8 或 decoder-layer compile。PPL 若显示 packed
+与 decoded W3 的差异可忽略，性能路线再按 bank-conflict 证据优先处理 gate/up 与 down；
+若差异实质性恶化，则先处理 backend arithmetic，不能用性能结果覆盖质量失败。
 
 3.154552-bit W3 相对 BF16 的存储优势约 5.07x，但相对理想 W4 只有约 1.27x；A100
 没有原生 INT3 MMA。若 W3 的 bitplane decode、LUT、同步和 reduction 开销超过 27%，

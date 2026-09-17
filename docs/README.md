@@ -20,6 +20,7 @@
 - [完整模型 logits 数值门的标定](W3_NUMERICAL_GATE_CALIBRATION.md)
 - [非 Linear 路径融合：分析、实现与预期](NONLINEAR_FUSION.md)
 - [W3 GPU 验证批次运行手册](W3_GPU_VALIDATION_BATCH_RUNBOOK.md)
+- [W3 packed M=1 PPL 运行手册](W3_PACKED_M1_PPL_RUNBOOK.md)
 - [候选批次及全模型运行手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)
 - [加速实验合同与恢复交接](ACCELERATION_HANDOFF.md)
 - [M=1 初始准备](M1_ACCELERATION_PREPARATION.md)

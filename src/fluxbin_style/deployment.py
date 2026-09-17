@@ -13,6 +13,7 @@ from torch import nn
 from torch.nn import functional as F
 
 from .evaluation import materialize_hybrid_s8_weight, tensor_sha256
+from .extension_cache import extension_load_kwargs
 
 FORMAT = 'fluxbin-hybrid-g128-s8-m1-v1'
 PLANAR_KERNELS = ('v5_p256', 'v5_p512', 'v5_p1024')
@@ -148,8 +149,10 @@ def _load_extension(kernel):
     if kernel == 'v3' or kernel in FACTORED_KERNELS:flags += ['--ptxas-options=-v']
     if kernel in PLANAR_KERNELS:
         flags += ['-DPLANAR_CODES=1', f'-DLUT_ROWS={kernel[4:]}']
-    return load(name=f'fluxbin_m1_{kernel}', sources=[str(root / filename)],
-                extra_cuda_cflags=flags, verbose=True)
+    dependencies=[root/'lut8.cuh'] if filename=='m1_v5.cu' else []
+    kwargs,_=extension_load_kwargs(name=f'fluxbin_m1_{kernel}',sources=[root / filename],
+                                   content_dependencies=dependencies,extra_cuda_cflags=flags)
+    return load(**kwargs)
 
 
 def workspace_shape(out_features: int, in_features: int, groups_per_split=8, *, kernel='v1'):
