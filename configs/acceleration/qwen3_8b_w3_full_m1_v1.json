@@ -11,6 +11,8 @@
   "max_prompt_tokens": 128,
   "logprob_max_abs_tolerance": 0.05,
   "max_relative_timing_range": 0.05,
+  "timing_trim_per_side": 1,
+  "packed_vs_decoded_relative_limit": 1.0,
   "arms": [
     "original_bf16",
     "decoded_w3_bf16",

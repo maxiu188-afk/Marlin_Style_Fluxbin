@@ -4,7 +4,7 @@ import time
 import torch
 from .deployment import PackedHybridLinear
 from .w3_lut_deployment import PackedW3Linear
-from .acceleration_checks import numerical_gate
+from .acceleration_checks import numerical_gate, stepwise_nrmse
 
 
 def packed_modules(model):
@@ -84,7 +84,8 @@ def compare_trace(candidate, reference, *, logprob_tolerance):
     maximum=float(delta.max());finite=bool(torch.isfinite(delta).all())
     return {'passed':gate['passed'] and tokens_equal and contexts_equal and finite and maximum<=logprob_tolerance,
             'logits':gate,'greedy_tokens_equal':tokens_equal,'fed_tokens_equal':contexts_equal,
-            'max_abs_logprob_error':maximum,'logprob_tolerance':logprob_tolerance}
+            'max_abs_logprob_error':maximum,'logprob_tolerance':logprob_tolerance,
+            'stepwise_normalized_rmse':stepwise_nrmse(candidate['logits'],reference['logits'])}
 
 
 def validate_routes(trace, *, expected_linears, steps):

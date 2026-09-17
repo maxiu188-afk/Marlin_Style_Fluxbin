@@ -80,8 +80,53 @@ decode-only、prefill 两臂走同一条 dense 路径，**不构成 kernel 正�
 4. **质量门**：packed 后端能否部署是 PPL / 下游任务的问题，不是 bit 门能回答的。
    现有 PPL 仍来自 dense BF16 解码路径，不能代替 packed 后端质量验证。
 
-需要补的测量只有一项：**为对照组补测 step-0 的 dyn-vs-static NRMSE**，用来标定
-方案 2 的阈值。现有 JSON 只有 step-32 的对照值。
+## 已实现的门（2026-09-17）
+
+方案 1、2 的测量侧和计时门的鲁棒化已落地，未改动任何已发布数字。
+
+**相对门**：`runner.relative_backend_gate` 以同轮同 prompt 的
+`original_bf16.dynamic_static_check.logits.normalized_rmse` 为地板，逐比较写入
+`packed_vs_decoded_relative_check`（含 `noise_floor_nrmse`、`ratio`、`limit`、
+`passed`），并汇总为 `all_relative_backend_checks_passed` 与
+`candidate_acceptance[*].relative_backend_checks_passed`。limit 由 protocol 的
+`packed_vs_decoded_relative_limit` 声明，默认 **1.0**（严格读法：packed 的偏差不得
+超过 harness 对自身的偏差）。**这个默认值没有按“让当前结果通过”来选** —— 见下表，
+structural 在 1.18 / 1.26 处仍然不通过。
+
+**逐步 NRMSE**：`acceleration_checks.stepwise_nrmse` 沿 `[1,1+steps,vocab]` 的 step 轴
+逐位置计算，由 `compare_trace` 以 `stepwise_normalized_rmse` 报告（report-only，不参与
+`passed`）。索引 0 是 prefill，1..32 是 decode step 0..31。因为 `dynamic_static_check`
+本身也走 `compare_trace`，本页原先列为「唯一待补测量」的**对照组 step-0
+dyn-vs-static 值，下一轮会自动产生**，方案 2 的阈值可直接由它标定。
+
+**计时门鲁棒化**：`statistics_row` 增加 `trim_per_side`（protocol 的
+`timing_trim_per_side`，默认 1），以去掉首尾各一个样本后的 `trimmed_relative_range`
+作为 `stable` 判据；`median` 仍用全样本，所以**加速比数值不变**。原始
+`relative_range` 与 `stability_rule` 一并保留，尖峰不会被藏起来。样本数不足以施加
+声明的 trim 时回退到原始极差，且 `validate_protocol` 对此 fail-closed，不做静默降级。
+
+### 对已归档结果的重放
+
+用新门重算两轮已归档 JSON（不重跑 GPU）：
+
+| 轮次 | route | prompt | 旧 stable | 新 stable | 加速比 | 相对门 ratio |
+|---|---|---|---|---|---:|---:|
+| 09-16 | `structural` | 0 | True | True | 1.4880x | 1.176 FAIL |
+| 09-16 | `structural` | 1 | True | True | 1.4892x | 1.264 FAIL |
+| 09-17 | `fast_corrected` | 0 | False | **True** | 1.3436x | 1.451 FAIL |
+| 09-17 | `fast_corrected` | 1 | False | False | — | 1.908 FAIL |
+| 09-17 | `observed_exact` | 0 | False | **True** | 1.2701x | 1.379 FAIL |
+| 09-17 | `observed_exact` | 1 | False | **True** | 1.2698x | 1.476 FAIL |
+
+09-16 两个 cell 的判定与加速比**完全不变**，即新门不追溯改写已发布结果。09-17 有
+三个 cell 从 void 恢复为可发布的负面性能结果。仍然失败的
+`fast_corrected` p1 是 wall-time 上有**两个**尖峰（390.1 与 434.0 ms，中位数 355.1），
+trim 一个之后仍有 9.89% > 5%；同 cell 的 device timing 为 0.23%，稳定。这正是期望
+行为：单次宿主干扰可以豁免，反复干扰不行。
+
+相对门下所有 cell 仍然不通过，ratio 落在 1.18--1.91。这是一个**有意义的**负面结果：
+它说明 packed 后端的偏差确实高于 harness 自身地板 18%--91%，而不是像旧门那样报告
+一个相对不可达阈值的 3.4 倍。
 
 ## 边界
 

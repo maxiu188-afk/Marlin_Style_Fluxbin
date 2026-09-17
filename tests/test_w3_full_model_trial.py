@@ -60,6 +60,69 @@ class W3FullModelTrialTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             RUNNER.exact_trace({**trace, "logits": torch.zeros(1)}, trace)
 
+    def test_trimmed_stability_tolerates_one_spike_but_not_two(self):
+        # Reproduces the 2026-09-17 A100 pattern: nine samples within 0.1% and a
+        # single host-side spike, which the raw (max-min)/median rule voided.
+        spiked = [476.7] * 9 + [558.4]
+        raw = RUNNER.statistics_row(spiked, 0.05, trim_per_side=0)
+        trimmed = RUNNER.statistics_row(spiked, 0.05, trim_per_side=1)
+        self.assertFalse(raw["stable"])
+        self.assertTrue(trimmed["stable"])
+        self.assertEqual(trimmed["stability_rule"], "trimmed_relative_range")
+        self.assertEqual(trimmed["trim_per_side"], 1)
+        self.assertEqual(trimmed["trimmed_sample_count"], 8)
+        # Median and the raw range stay reported so the spike remains auditable.
+        self.assertEqual(raw["median"], trimmed["median"])
+        self.assertEqual(raw["relative_range"], trimmed["relative_range"])
+        # Two spikes must still fail: trimming removes one sample per side only.
+        twice = [476.7] * 8 + [558.4, 557.1]
+        self.assertFalse(RUNNER.statistics_row(twice, 0.05, trim_per_side=1)["stable"])
+        # Genuine wide spread is not rescued by trimming.
+        spread = [10.0, 10.4, 10.8, 11.2, 11.6, 12.0]
+        self.assertFalse(RUNNER.statistics_row(spread, 0.05, trim_per_side=1)["stable"])
+        # Too few samples fall back to the raw range instead of passing freely.
+        short = RUNNER.statistics_row([10.0, 12.0], 0.05, trim_per_side=1)
+        self.assertEqual(short["trim_per_side"], 0)
+        self.assertEqual(short["stability_rule"], "relative_range")
+        self.assertFalse(short["stable"])
+        with self.assertRaises(ValueError):
+            RUNNER.statistics_row([10.0] * 10, 0.05, trim_per_side=-1)
+
+    def test_relative_backend_gate_uses_measured_noise_floor(self):
+        # Measured 2026-09-16/17 A100 values; see docs/W3_NUMERICAL_GATE_CALIBRATION.md.
+        floor = 0.01431  # original_bf16 dynamic-vs-static, zero quantization
+        structural = RUNNER.relative_backend_gate(0.01683, floor, 1.0)
+        self.assertAlmostEqual(structural["ratio"], 0.01683 / floor, places=9)
+        self.assertFalse(structural["passed"])
+        # The absolute 0.005 limit rejects the zero-quantization control itself,
+        # so the relative gate must accept anything at or below that floor.
+        self.assertTrue(RUNNER.relative_backend_gate(floor, floor, 1.0)["passed"])
+        self.assertTrue(RUNNER.relative_backend_gate(0.004, floor, 1.0)["passed"])
+        self.assertFalse(RUNNER.relative_backend_gate(0.0144, floor, 1.0)["passed"])
+        for bad in (float("nan"), float("inf")):
+            self.assertFalse(RUNNER.relative_backend_gate(bad, floor, 1.0)["passed"])
+            self.assertIsNone(RUNNER.relative_backend_gate(bad, floor, 1.0)["ratio"])
+        degenerate = RUNNER.relative_backend_gate(0.001, 0.0, 1.0)
+        self.assertFalse(degenerate["passed"])
+        self.assertIsNone(degenerate["ratio"])
+        self.assertFalse(RUNNER.relative_backend_gate(None, floor, 1.0)["passed"])
+
+    def test_protocol_declares_gate_parameters_fail_closed(self):
+        config = json.loads(RUNNER.PROTOCOL.read_text(encoding="utf-8"))
+        self.assertEqual(config["timing_trim_per_side"], 1)
+        self.assertEqual(config["packed_vs_decoded_relative_limit"], 1.0)
+        RUNNER.validate_protocol(config)
+        for bad in ({"timing_trim_per_side": -1}, {"timing_trim_per_side": 3},
+                    {"timing_trim_per_side": True}, {"timing_trim_per_side": 1.0},
+                    {"packed_vs_decoded_relative_limit": 0},
+                    {"packed_vs_decoded_relative_limit": -1.0},
+                    {"packed_vs_decoded_relative_limit": "1"}):
+            with self.assertRaises(ValueError):
+                RUNNER.validate_protocol({**config, **bad})
+        # A declared trim that cannot apply must fail rather than degrade quietly.
+        with self.assertRaises(ValueError):
+            RUNNER.validate_protocol({**config, "repeats": 4, "timing_trim_per_side": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

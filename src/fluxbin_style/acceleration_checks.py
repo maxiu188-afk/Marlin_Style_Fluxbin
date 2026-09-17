@@ -22,6 +22,23 @@ def numerical_gate(actual, expected):
             'elementwise_tolerance_factor':tol,'normalized_rmse_limit':tol/4}
 
 
+def stepwise_nrmse(actual, expected):
+    """Per-step NRMSE along the step axis of a [1,steps,vocab] logits tensor.
+
+    Report-only. Separates depth amplification (step 0) from autoregressive
+    amplification (later steps); the frozen combined gate stays in
+    numerical_gate. Returns None when the shape is not a step-indexed batch-1
+    logits tensor.
+    """
+    if actual.shape!=expected.shape or actual.ndim!=3 or actual.shape[0]!=1:
+        return None
+    a,b=actual.detach().double(),expected.detach().double()
+    if not torch.isfinite(a).all() or not torch.isfinite(b).all():
+        return None
+    rms=b.square().mean(dim=-1).sqrt().clamp_min(1e-12)
+    return [float(v) for v in ((a-b).square().mean(dim=-1).sqrt()/rms)[0]]
+
+
 def paired_cuda_timing(functions, *, warmup=20, repeats=100, rounds=7):
     if warmup<1 or repeats<1 or rounds<3:
         raise ValueError('positive warmup/repeats and at least three rounds required')
