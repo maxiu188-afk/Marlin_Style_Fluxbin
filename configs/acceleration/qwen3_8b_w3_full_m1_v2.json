@@ -1,0 +1,39 @@
+{
+  "id": "qwen3-8b-w3-inline-prepared-full-m1-v2",
+  "seed": 20260914,
+  "decode_steps": 32,
+  "warmup": 8,
+  "repeats": 10,
+  "prompts": [
+    "Explain why the sky appears blue in simple terms.",
+    "Describe three practical ways to save water at home."
+  ],
+  "max_prompt_tokens": 128,
+  "logprob_max_abs_tolerance": 0.05,
+  "max_relative_timing_range": 0.05,
+  "timing_trim_per_side": 1,
+  "backend_acceptance_policy": "relative_nrmse_logprob_plus_trace_invariants_v1",
+  "packed_vs_decoded_relative_limit": 1.0,
+  "packed_vs_decoded_logprob_relative_limit": 1.0,
+  "fused_nonlinear_modules": {
+    "rms_norm": false,
+    "rope": false
+  },
+  "arms": [
+    "original_bf16",
+    "decoded_w3_bf16",
+    "packed_w3_inline"
+  ],
+  "modes": [
+    "prepared_eager",
+    "sequence_graph"
+  ],
+  "primary_mode": "sequence_graph",
+  "row_tile_by_shape": {
+    "4096x4096": 256,
+    "1024x4096": 512,
+    "12288x4096": 1024,
+    "4096x12288": 1024
+  },
+  "prepare_candidate": false
+}

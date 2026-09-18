@@ -1,0 +1,110 @@
+{
+  "schema_version": 2,
+  "seed": 20260902,
+  "scope": "Matched Qwen3-8B BF16/pure/hybrid-s8 dense fake-quant WikiText-2 PPL on RunPod A100; no packed performance claim",
+  "model": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "model_type": "qwen3",
+    "checkpoint_dtype": "torch.bfloat16",
+    "evaluation_dtype": "torch.bfloat16",
+    "expected_hidden_layers": 36,
+    "expected_tensor_count": 252,
+    "expected_parameter_count": 6945767424,
+    "expected_weight_shards": 4
+  },
+  "decomposition": {
+    "artifact_id": "qwen3-8b-full-hessian-obq-s8-v1",
+    "payload_format": "fluxbin-two-base-interleaved-2bit-v1",
+    "group_size": 128,
+    "columns_per_group": 8,
+    "arms_share_global_payload": false,
+    "accepted_config_sha256": "596c85f9e5e5427598eb039c9a5a5210860cc421f640ce6c7c70d93a51066d7f",
+    "accepted_implementation_sha256": "6047684680ba3d71a90677abf8b34e42a81d3c0db0d2f4996260e5c7fc29dbaa",
+    "accepted_calibration_manifest_sha256": "fe554afbd625b7746b0295d3a269825fca869bb7a7c159aaf469f1b122f387f9",
+    "arms": {
+      "pure": {
+        "accepted_result_sha256": "3ab11878c60616523f122f7d11816378c29618a2c75b4f863823543c24e2702f",
+        "accepted_source_manifest_sha256": "beca7e770afcadb335e073a33a21efd49eebe00c6d0630774dfd104f42b45e95",
+        "expected_layer_count": 36,
+        "expected_payload_tensor_count_per_layer": 21
+      },
+      "hybrid_s8": {
+        "accepted_result_sha256": "e484b9350c68827f129d1724264a08d54c968286793ec45063964a60d821d65b",
+        "accepted_source_manifest_sha256": "beca7e770afcadb335e073a33a21efd49eebe00c6d0630774dfd104f42b45e95",
+        "expected_layer_count": 36,
+        "expected_payload_tensor_count_per_layer": 49
+      }
+    }
+  },
+  "accepted_protocol": {
+    "id": "qbb-new-wt2-2048-qwen3-8b-v1",
+    "protocol_manifest_sha256": "8b61cbeaba8809b94bc6b7568cb45ede0d941d046c812f57f3156163e42069ae",
+    "token_artifact_sha256": "252938697260d7f7241f26a05b9822c1a2fd5e9ae0168a87e0d5345d4a111ee0",
+    "token_artifact_tensor_sha256": "d5f7bbfcee9855ebfeddf25bb0c7e483220d6bdb6631923c7bebf2002d61ca59",
+    "token_artifact_dtype": "torch.int32",
+    "sequence_length": 2048,
+    "token_count": 299078,
+    "tokens_sha256": "c7a8c41e587561b93c8dd0b17224e6f20aa4270c9dab62151357cca88651ad9e",
+    "tokenizer_files_sha256": {
+      "merges.txt": "8831e4f1a044471340f7c0a83d7bd71306a5b867e95fd870f74d0c5308a904d5",
+      "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+      "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101",
+      "vocab.json": "ca10d7e9fb3ed18575dd1e277a2579c16d108e32f27439684afa0e10b1440910"
+    },
+    "full_block_count": 146,
+    "blocks_sha256": "8c5206620a0cf76d8cdf5fb6332b2356f91cebe957ec026a2524d7069dd3ccec",
+    "scored_transition_count": 298862
+  },
+  "evaluation": {
+    "arms": [
+      "bf16",
+      "pure",
+      "hybrid_s8"
+    ],
+    "attention_implementation": "sdpa",
+    "use_cache": false,
+    "batch_size": 1,
+    "logit_chunk_tokens": 128,
+    "tf32_allowed": false
+  },
+  "execution": {
+    "compute_capability": [
+      8,
+      0
+    ],
+    "datasets": "5.0.0",
+    "device_name": "NVIDIA A100-SXM4-80GB",
+    "environment": "RunPod A100; existing template + container-disk venv",
+    "safetensors": "0.8.0",
+    "torch": "2.8.0+cu128",
+    "transformers": "5.14.1"
+  },
+  "acceptance": {
+    "require_exact_accepted_token_artifact": true,
+    "require_identical_scored_transition_count": true,
+    "require_all_metrics_finite": true,
+    "require_bf16_reference_reproduction": false,
+    "require_all_layer_payload_hashes": true,
+    "quantized_improvement_required_for_valid_execution": false,
+    "backend_auto_launch": false,
+    "distillation_auto_launch": false
+  },
+  "model_preflight_files": {
+    "config.json": "f7c4eadfbbf522470667b797a3c89be2524832d2d599797248dc304fff447c30",
+    "model-00001-of-00005.safetensors": "31d6a825ae35f11fb85b195b4c42c146c051e446433125a215336abdf95cbf5f",
+    "model-00002-of-00005.safetensors": "5991236cea6fe21f3d43cab0f0e84448734fbbe0789816202989f2ddc9d18282",
+    "model-00003-of-00005.safetensors": "c5185c4794be2d8a9784d5753c9922db38df478ce11f9ed0b415b7304d896836",
+    "model-00004-of-00005.safetensors": "b5ee7de71fbf17db3d5704e0c8f2bc7d005ca9e1d7ca2aeb19827b0cfcaa917a",
+    "model-00005-of-00005.safetensors": "20c2d6366ab85c90786ccdd829cd2b9e7d30ef3b2ebbb998280e7e4014b542ff",
+    "model.safetensors.index.json": "f9fdbcb91c23971c13ec5d5f2573d2349e8f61f2f049371ec699281748fdb1bc",
+    "tokenizer.json": "aeb13307a71acd8fe81861d94ad54ab689df773318809eed3cbe794b4492dae4",
+    "tokenizer_config.json": "d5d09f07b48c3086c508b30d1c9114bd1189145b74e982a265350c923acd8101"
+  },
+  "accepted_full_review_sha256": "7a8a858f5fc33bbc42eebe3db1b51ff14a696e1aa0b788385d2f8bf218254ea8",
+  "baseline_policy": "measure_same_run_on_current_model_and_runtime",
+  "quality_gate": {
+    "max_relative_gap": 0.05,
+    "deployment_block_relative_gap": 0.1
+  }
+}

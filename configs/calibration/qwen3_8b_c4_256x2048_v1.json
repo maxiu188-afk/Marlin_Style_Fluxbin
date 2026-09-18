@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "seed": 20260902,
+  "artifact_id": "qwen3-8b-c4-calibration-256x2048-v1",
+  "dataset": {
+    "repo_id": "allenai/c4",
+    "revision": "1588ec454efa1a09f29cd18ddd04fe05fc8653a2",
+    "configuration": "en",
+    "split": "train",
+    "data_files": [
+      "en/c4-train.00000-of-01024.json.gz"
+    ]
+  },
+  "sampling": {
+    "method": "random_document_then_random_contiguous_span_with_replacement",
+    "sequences": 256,
+    "sequence_length": 2048,
+    "minimum_document_tokens": 2049,
+    "special_tokens": false
+  },
+  "tokenizer": {
+    "repo_id": "Qwen/Qwen3-8B",
+    "revision": "b968826d9c46dd6066d109eabc6255188de91218",
+    "use_fast": true
+  },
+  "provenance_notes": {
+    "paper_specified": [
+      "dataset=C4",
+      "calibration_sequences=256"
+    ],
+    "project_frozen_because_paper_unspecified": [
+      "sequence_length=2048",
+      "single_en_training_shard",
+      "sampling_seed=20260902"
+    ]
+  }
+}

@@ -1,11 +1,140 @@
 # Marlin-Style FluxBin
 
-This repository studies a calibrated two-base rank-one binary weight
-representation for Qwen3-32B. Algorithm quality is evaluated first; a packed
-CUDA backend is a separate later phase and is not implemented or authorized by
-the current results.
+面向 Qwen3 的低比特权重表示与 packed CUDA decode 研究。当前 QBB M=1
+性能链已冻结；同码率质量实验选择 Case A，后续优先评估 uniform 3-bit
+backend / solver。vLLM 保留接口但尚未接入。
 
-## Current accepted result
+## 当前结果（2026-09-17）
+
+Qwen3-8B GPTQ W3 inline LUT 的 A100 PCIe 4×3 Linear trial 已完成。按同轮
+CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k/v
+**0.982x**、gate/up **2.678x**、down **2.616x**。12/12 cell 正确且稳定，
+但 k/v 尚未超过 BF16；当前实例又因 `ERR_NVGPUCTRPERM` 无法采集 Nsight Compute
+硬件计数器，所以 prepare 分支仍未授权。详见
+[W3 inline 结果](docs/W3_LUT_INLINE_RESULTS.md)。
+
+四个最佳 row tile 随后接入完整 Qwen3-8B：A100 PCIe、batch1、真实前缀 KV、
+32-token full-sequence CUDA Graph 相对原始 BF16 为 **1.4880x / 1.4892x**，
+相对 decoded W3 BF16 为 **1.4923x / 1.4886x**，两组主计时稳定。但
+packed-vs-decoded logits NRMSE 为 **0.01683 / 0.01457**，超过 0.005 门限；
+正式状态是 `completed_with_backend_numerical_differences`，不能写成 correctness
+accepted。
+
+随后在同型 A100 PCIe 上完成两条 decoded-BF16 corrected 路线。按 10 次 CUDA event
+中位数，`fast_corrected` 相对原始 BF16 为 **1.3441x / 1.3427x**，
+`observed_exact` 为 **1.2703x / 1.2699x**；两者都慢于历史 structural 路线的约
+1.49x，也没有达到 1.5x。协议的全比较稳定性门因三个 arm/prompt 中各一个离群样本
+未通过，因此这些是可复核的 raw median 性能观测，不是 formal-stable acceptance；
+`fast_corrected` 自身两组 CUDA device timing 都稳定，但 wall-time 仍有 host-side
+outlier。两条 corrected 路线的完整模型 correctness
+仍未通过，说明 `±3` 修正只能复现显式 FP32 grouped matvec 的逐权重 BF16 物化语义，
+不能复现 cuBLAS BF16 GEMM 的归约顺序。按“性能优先”口径，当前 W3 性能主线仍是
+structural 路线，corrected 路线保留为负面诊断。详见
+[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)和
+[A100 corrected 运行记录](docs/W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
+
+对已有结果 JSON 的重新分析给出两个当前最重要的结论，都不是新的 GPU 运行。
+
+**加速的主要障碍已不在 Linear。** 用 Linear 级 BF16 臂逐 shape 反推，252 个 Linear
+只占 batch-1 decode 的 **62.1%**（9.263 ms/token），lm_head 占 5.8%，其余 **32.1%**
+（4.787 ms/token）是小算子的 kernel 数量乘固定延迟，不是带宽。把每层 Linear 2.205x
+代入可预测整模 1.514x，实测 1.488x，误差 1.8%，分解自洽。由此得到硬上限：**Linear
+时间归零也只有 2.64x，Linear 打到 BF16 同等带宽约 1.98x**。stock
+`Qwen3RMSNorm.forward` 每次调用发 8 个 elementwise/reduction kernel、每层 4 个，
+在小 Qwen3 上实测占一个 decode step 全部 compute op 的 55%。详见
+[非 Linear 路径融合](docs/NONLINEAR_FUSION.md)。
+
+**0.005 NRMSE / 0.05 max-logprob 两道绝对门都低于本 harness 的整段 trace 放大基线。**
+零量化的 `original_bf16` 臂在一次数学等价的注意力 mask 改写下，整段 logits trace
+NRMSE 已经是 **0.01431 / 0.01153**，max-logprob error 是 **0.6875 / 0.7827**，同样
+无法通过旧门；QBB 线在不同 GPU、不同量化方案上独立复现相近 NRMSE 基线
+（0.01167--0.01359）。
+因此上文几处 packed-vs-decoded 的失败**不能读作“kernel 算错了”**——这道门在 0.005 处
+没有分辨力，32 步自回归把 0.002 量级的逐 Linear 差异放大到 0.017。kernel 正确性的
+现有证据是 Linear 级 structural 逐位一致，与该门独立。这也解释了 `±3` 修正为何在
+Linear 层面有效却让端到端指标变差。详见
+[数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)。
+
+上述四项 GPU 批次已在 A100 SXM4 80GB 完成。融合把 BF16 从约
+14.62 降到 12.26 ms/token（约 1.19x），把 packed W3 从约 10.07 降到
+7.56 ms/token（约 1.33x）；同配置下稳定的 packed-vs-BF16 点由 stock 1.452x
+提高到 fused 1.622x。bank-conflict 成本下界在 q/o、k/v、gate/up、down 分别为
+10.8%、3.4%、18.5%、17.3%。split sweep 含不稳定 cell，不能选 winner；stock/fused
+的 token/shape/finite 与 relative log-prob 门通过，但 relative NRMSE 为 control 的
+1.18--1.49x，packed backend 尚未 accepted。见
+[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。
+
+下一轮不再用 logits gate 猜质量：已经准备冻结 WikiText-2 146×2048、298,862
+transitions 的 fused BF16 / decoded-W3 / packed-W3 三臂 M=1 teacher-forced PPL。
+同时 CUDA extension 改为 source/flags/runtime/SM 内容寻址缓存并加入预热 manifest，
+仅改文档、runner 或 gate 不再重编译。见
+[packed M=1 PPL 手册](docs/W3_PACKED_M1_PPL_RUNBOOK.md)。
+
+GPTQ W3 的有效存储为 3.154552 bit/weight，相对 BF16 的理论存储优势约 **5.07x**，
+但相对理想 W4 只有约 **1.27x**。当前 W3 还承担 3 个 bitplane 解码、activation LUT、
+shared-memory 同步、split-G FP32 workspace 和 finish reduction；A100 又没有原生 INT3
+Tensor Core MMA。因此“对 BF16 的 5x 带宽优势”不会直接变成相对成熟 W4A16 的
+5x 加速，额外开销超过约 27% 就足以吃掉 W3 相对 W4 的存储优势。
+
+在 A100 SXM4 80GB 上，`v5_p1024/gps1` + prepared v2.1 的完整模型
+32-step CUDA Graph 相对原始 BF16 达到 **1.381x / 1.383x 加速**。
+
+| 固定 prompt | 原始 BF16，32 token | packed，32 token | 速度比 |
+|---|---:|---:|---:|
+| 0 | 467.513 ms | 338.539 ms | **1.380972x** |
+| 1 | 467.919 ms | 338.269 ms | **1.383276x** |
+
+Graph 两组计时均稳定；同轮 eager 超过 5% 波动门槛，不发布加速比，整体记录为
+`completed_unstable`。113 项 GPU 测试全部通过，同静态 KV 下包装与 Graph 输出
+精确一致。packed/decoded 和动态/静态注意力差异仍 report-only，不宣称数值等价。
+这是固定 continuation、真实前缀 KV 的缓存就绪 decode 测量，不是 prefill、自由生成或服务吞吐。
+
+当前 step400 WT2 test PPL 为 **13.169788495**（原始 BF16 **9.724944981**），
+较未蒸馏父版本改善 11.9173%，原质量门槛仍未通过。PPL 来自 dense BF16 解码路径，
+不能代替 packed 后端的质量验证。完整数值、历史负面结果与证据边界见[结果总览](docs/RESULTS_OVERVIEW.md)。
+
+同协议四臂质量/码率实验进一步得到：GPTQ W3 g128 为 **3.154552 bit/weight、
+PPL 11.266115**，当前 QBB 为 **3.138184 bit/weight、PPL 13.167910**。GPTQ
+仅多 0.5216% 存储，PPL 低 1.9018（14.4426%），因此当前 QBB point 基本被
+uniform W3 支配。QBB FP16-scales 为 2.631687 bit/weight、PPL 13.168951，
+保留为低码率 trade-off。该实验在 RTX PRO 4500 上进行，是同卡质量对照而非
+A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+
+## 阅读与运行入口
+
+- [当前交接](docs/CURRENT_HANDOFF.md)：有效状态、代码入口、服务器与下一步。
+- [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：structural 约 1.49x、corrected 约 1.34x/1.27x，以及失败的数值门与逐层归因。
+- [非 Linear 路径融合](docs/NONLINEAR_FUSION.md)：62/38 开销分解、约 2.0x 的硬上限与已实现的 RMSNorm/RoPE 融合。
+- [数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门为何不可达、放大链条与重做后的门。
+- [GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)：四项批次协议、完成结果与复现入口。
+- [packed M=1 PPL 手册](docs/W3_PACKED_M1_PPL_RUNBOOK.md)：冻结全量 WT2、断点续跑与内容寻址编译缓存。
+- [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
+- [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
+- [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
+- [文档索引](docs/README.md)：质量、算法、环境和历史归档。
+
+QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置文件
+`configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。W3 完整模型入口为
+`scripts/run_qwen3_8b_w3_full_m1_trial.py`。历史结果绑定冻结的
+`configs/acceleration/qwen3_8b_w3_full_m1_v1.json`；新 GPU batch 的 stock 对照使用
+`configs/acceleration/qwen3_8b_w3_full_m1_v2.json`。旧 v1 路径和结果保留。
+非 Linear 融合入口为 `src/fluxbin_style/fused_modules.py`，配置文件
+`configs/acceleration/qwen3_8b_w3_fused_full_m1_v2.json`；v2 stock/fused 除融合开关与
+protocol id 外保持一致，并共同使用新复合数值门。批次入口为
+`scripts/run_w3_gpu_validation_batch.sh`。
+下一轮 packed PPL 入口为 `scripts/run_qwen3_8b_w3_packed_m1_ppl_job.sh`，协议为
+`configs/evaluation/qwen3_8b_w3_packed_m1_ppl_v1.json`。
+上一轮 PCIe 的 v1 全模型只有 0.87696x / 0.86674x；GPU 和协议同时变化，
+不能将与本轮的差距全部归因为某个 kernel 或 Python 开销。
+
+最后一次 corrected A100 服务器验收已完成，任务退出 0，证据备份且 GPU/tmux/实验
+进程均为空，可以停止计算实例并保留网络卷；当前电源状态需下次连接时核验。容器本地环境按 lock 恢复，持久保存模型、
+包缓存和兼容的编译缓存，最近恢复约 40 秒。基础镜像 digest 未确认，自建镜像暂缓。
+镜像配置及早期构建失败记录见 [RunPod 说明](infra/runpod/README.md)。
+
+以下为历史 32B 算法证据，当前不新增该模型的实验。
+
+## Historical accepted Qwen3-32B result
 
 The assignment-overhead repair, the complete 64-layer v3 reconstruction, and
 the matched WikiText-2 PPL execution have been accepted after structured-result,
@@ -133,13 +262,18 @@ The bundle's `provenance/SHA256SUMS` file has SHA-256
 
 ## Evidence ladder
 
-1. Synthetic Hessian, saliency, OBQ propagation, packing, and payload tests.
-2. Hash-pinned 256x2048 C4 calibration artifact.
-3. Real Qwen3-32B single-Linear pure/hybrid gate.
-4. Exact pre/post-repair replay comparison.
-5. Complete independently propagated 64-layer reconstruction.
-6. Matched dense fake-quant WikiText-2 PPL.
-7. Packed CUDA correctness/performance only after a separate quality decision.
+The historical Qwen3-32B ladder is complete through dense fake-quant PPL. The
+new active Qwen3-8B ladder is:
+
+1. Port/preflight and synthetic algorithm checks.
+2. Representative real-Linear pure/hybrid gates.
+3. Complete independently propagated 36-layer, 252-Linear quantization.
+4. Matched BF16/pure/hybrid WikiText-2 PPL and the frozen quality decision.
+5. Versioned deployment-layout conversion and exact correctness.
+6. CUDA correctness, then real-shape operator performance.
+7. Block integration and direct block timing.
+8. Full-model and serving latency, throughput, memory, and correctness on H20
+   during development, with final H200 and A100 80GB evaluation.
 
 No runner automatically launches its successor.
 
@@ -150,10 +284,11 @@ PYTHONPATH=src python3 -m unittest discover -s tests -v
 python3 -m compileall -q src scripts tests
 ```
 
-macOS/Apple Silicon is used for source review and local tests. The accepted
-real-weight, full-model, and PPL evidence was produced on Isambard GH200.
-Isambard remains available through 2026-09-05; access is expected to end from
-2026-09-06. Scheduler `COMPLETED` alone is never treated as acceptance.
+macOS/Apple Silicon is used for source review and local tests. The historical
+accepted real-weight, full-model, and PPL evidence was produced on Isambard
+GH200. New real-model and CUDA work must run on the NVIDIA environment named by
+the active plan. Scheduler/process completion alone is never treated as
+acceptance.
 
 For the full operational record and exact acceptance boundaries, see
-[`CURRENT_HANDOFF.md`](CURRENT_HANDOFF.md).
+[`CURRENT_HANDOFF.md`](docs/CURRENT_HANDOFF.md).

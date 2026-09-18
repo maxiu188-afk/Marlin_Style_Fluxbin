@@ -15,5 +15,14 @@ dependencies = [
   "transformers>=5.14",
 ]
 
+[project.optional-dependencies]
+acceleration = ["ninja>=1.11"]
+
+[tool.setuptools]
+license-files = ["licenses/Marlin-LICENSE"]
+
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.setuptools.package-data]
+fluxbin_style = ["csrc/*.cu", "csrc/*.cuh"]

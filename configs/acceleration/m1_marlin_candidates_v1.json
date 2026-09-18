@@ -1,0 +1,15 @@
+{
+  "id": "m1-marlin-mma-candidates-v1",
+  "dtype": "bf16",
+  "layer": 0,
+  "modes": ["eager", "graph"],
+  "timeout_seconds_per_trial": 300,
+  "candidates": [
+    {"id": "baseline", "kernel": "v1", "groups_per_split": 8},
+    {"id": "simt_rows4", "kernel": "v2", "groups_per_split": 8},
+    {"id": "mma_split4", "kernel": "v3", "groups_per_split": 4},
+    {"id": "mma_split8", "kernel": "v3", "groups_per_split": 8},
+    {"id": "mma_split16", "kernel": "v3", "groups_per_split": 16},
+    {"id": "mma_unsplit", "kernel": "v3", "groups_per_split": 1024}
+  ]
+}

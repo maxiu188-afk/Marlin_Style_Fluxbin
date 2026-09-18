@@ -1,0 +1,40 @@
+{
+  "id": "qwen3-8b-w3-corrected-prepared-full-m1-v1",
+  "seed": 20260914,
+  "decode_steps": 32,
+  "warmup": 8,
+  "repeats": 10,
+  "prompts": [
+    "Explain why the sky appears blue in simple terms.",
+    "Describe three practical ways to save water at home."
+  ],
+  "max_prompt_tokens": 128,
+  "logprob_max_abs_tolerance": 0.05,
+  "max_relative_timing_range": 0.05,
+  "arms": [
+    "original_bf16",
+    "decoded_w3_bf16",
+    "packed_w3_fast_corrected",
+    "packed_w3_observed_exact"
+  ],
+  "packed_routes": {
+    "packed_w3_fast_corrected": "fast_corrected",
+    "packed_w3_observed_exact": "observed_exact"
+  },
+  "modes": [
+    "prepared_eager",
+    "sequence_graph"
+  ],
+  "primary_mode": "sequence_graph",
+  "row_tile_by_shape": {
+    "4096x4096": 256,
+    "1024x4096": 512,
+    "12288x4096": 1024,
+    "4096x12288": 1024
+  },
+  "target_gpu_family": "NVIDIA A100",
+  "target_compute_capability": [8, 0],
+  "target_min_vram_bytes": 75000000000,
+  "linear_evidence_sha256": "4f567a9adf28d80eb2f7d08f08146a08a855d80f3c9589f02d5bd845f51460ca",
+  "prepare_candidate": false
+}
