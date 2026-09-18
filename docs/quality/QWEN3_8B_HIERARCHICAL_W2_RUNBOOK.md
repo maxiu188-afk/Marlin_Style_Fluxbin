@@ -35,11 +35,13 @@ started. Neither is a result row. No rotation, distillation, mixed precision,
 kernel work, or `lm_head` change was launched.
 
 The result supports the offline diagnosis: relative-scale code width is not
-the current bottleneck. The next algorithmic attempt, if authorized, should
-first replace the log-domain `q^2` residual fit with an objective aligned to
-linear-domain reconstruction MSE, then repeat a cheap projection/endpoint
-gate. Do not automatically resume H2.625/H2.75 or launch rotation or
-scale-only distillation.
+the current bottleneck. At endpoint review time, the proposed follow-up was to
+replace the log-domain `q^2` residual fit with an objective aligned to
+linear-domain reconstruction MSE. That proposal has not been implemented.
+On 2026-09-18 the user instead authorized a separate, low-cost offline-rotation
+probe as the current next step. This does not change the endpoint result and
+does not authorize H2.625/H2.75 or scale-only distillation. See the
+[rotation probe runbook](QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md).
 
 The authoritative artifacts remain on network volume `34au39ljvf`:
 
@@ -76,7 +78,8 @@ The original design was a four-point GPTQ quality experiment only. It quantizes 
 transformer-block Linears, leaves `lm_head` unchanged, evaluates dense BF16
 materializations on the frozen WikiText2 protocol, and stops. It does not
 build a kernel or launch rotation, QuaRot, SpinQuant, mixed precision, or
-distillation.
+distillation. This paragraph describes the completed endpoint experiment, not
+the separately versioned rotation probe prepared on 2026-09-18.
 
 ## Frozen comparison
 
@@ -189,8 +192,10 @@ accuracy metric under this protocol, so this run does not invent one.
 
 ## Decision boundary
 
-The endpoint review is now complete: the relative-scale budget is flat and
-neither endpoint approaches W3. Do not complete the two intermediate arms,
-add a fifth arm, or automatically launch rotation, scale-only distillation,
-kernel work, or a different `lm_head` policy. A new experiment requires a new
-projection objective and a separately reviewed protocol.
+The endpoint review is complete: the relative-scale budget is flat and neither
+endpoint approaches W3. Do not complete the two intermediate arms or add a
+fifth scale-budget arm. The separately versioned offline-rotation probe is now
+the authorized next quality diagnostic and has its own reviewed protocol and
+gates; it must not launch the full model automatically. Scale-fitting changes,
+scale-only distillation, kernel work, and a different `lm_head` policy remain
+outside this follow-up.

@@ -107,8 +107,10 @@ PPL 为 **11.266808**，H2.50/H2.875 分别为 **27.932835 / 27.898930**。
 两个 W2 端点只差 **0.033906 PPL**，低于冻结的 0.05 平坦性阈值；
 额外 0.375 bpw 没有产生可判读改善，两档均远未接近 W3。这是负面端点
 证据，不是完整四点曲线：H2.625 仅有 10 个 partial layers 且未评分，
-H2.75 未启动。后续若继续 W2，应先改 relative-scale 的拟合目标，而不是
-增加位宽。详见
+H2.75 未启动。端点复核曾据此建议下一轮先改 relative-scale 的拟合目标，而不是
+增加位宽；该建议只针对 scale-bit 路线，当前没有实施。2026-09-18 已授权的实际
+下一步是先用低成本 offline-rotation probe 检查旋转是否值得继续，而不是直接修改
+scale fitting 或启动完整模型。详见
 [hierarchical W2 结果与运行手册](docs/quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。
 offline rotation 后续采用分级门：先测 layer 0，再新增 layer 17/35 并合并成
 0/17/35 判定；通过后仍需人工决定是否启动完整模型。详见

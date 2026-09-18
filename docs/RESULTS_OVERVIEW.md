@@ -1,6 +1,6 @@
 # 当前结果总览
 
-更新：2026-09-17。速度比均为原始 BF16 / packed，大于 1 表示加速；
+更新：2026-09-18。速度比均为原始 BF16 / packed，大于 1 表示加速；
 以下是不同硬件与协议的历史结果，不是可直接归因的单因素消融。
 
 ## 近期完整模型结果
@@ -135,6 +135,22 @@ layers 且未评分，H2.75 未启动；本轮不是完整四点曲线。详见
 本次有界端点 job 未重放 BF16；表中 9.724945 是相同 token/block 协议的
 已验收 A100 冻结值，只作 reference-only，不写成 same-run arm。相对它，W3
 PPL 高 15.85%，H2.50/H2.875 分别高 187.23%/186.88%。
+
+### 当前后续：offline rotation 分级 probe（尚无结果）
+
+2026-09-18 已完成 offline-fusible R1/R2 rotation 的实现、复核和分级测试准备，
+但尚未启动 GPU 实验，因此这里不新增 PPL 或精度结果行。当前先运行两个本地
+DecoderLayer 质量门：layer 0 作为便宜否决门；通过后只新增 layer 17/35，并与
+第一阶段合并形成 0/17/35 的跨深度判定。两阶段均比较 unrotated/rotated H2.50，
+使用冻结 C4 calibration token 的前 32 条；probe 不保存量化 payload，不增加
+rotated-BF16 PPL arm，也不自动启动完整模型。
+
+第二阶段要求 block error 汇总至少改善 15%、至少 2/3 层改善、任一层回退不超过
+5%，并满足 Linear/down-proj 子门。只有结构化状态
+`completed_probe_passed_pending_manual_full_model` 才允许人工评审后另行启动
+36-layer GPTQ/PPL。该 probe 独立于尚未实施的 scale-fitting 改写，不改变上面的
+端点结论。协议、命令和精确阈值见
+[offline rotation 分级运行手册](quality/QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md)。
 
 ## Qwen3-8B test PPL
 

@@ -29,11 +29,11 @@ partial layers，未评分；H2.75 未启动，两者都不是结果点。本轮
 kernel、rotation、QuaRot/SpinQuant、蒸馏、mixed precision 或 `lm_head`
 改动。详见 [hierarchical W2 结果与运行手册](quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。
 
-结论是 relative-scale 位宽不是当前瓶颈。若继续 W2，先将 log-domain
-`q^2` residual fit 改为与线性域重建 MSE 对齐的目标，再做便宜的
-projection/endpoint gate；**不自动补跑 H2.625/H2.75**，不自动加
-rotation 或 scale-only distillation。服务器已由用户确认关闭，结果保留在
-网络卷 `34au39ljvf`。
+结论是 relative-scale 位宽不是当前瓶颈。端点复核原本建议后续将 log-domain
+`q^2` residual fit 改为与线性域重建 MSE 对齐，但该候选方向当前没有实施。
+2026-09-18 用户选择先走独立的 offline-rotation 分级 probe；这才是当前已授权的
+W2 下一步。**不自动补跑 H2.625/H2.75**，也不自动加 scale-only distillation。
+服务器已由用户确认关闭，结果保留在网络卷 `34au39ljvf`。
 
 更新：2026-09-17。M=1 decode 的现有 QBB 加速结果已经冻结。Qwen3-8B uniform
 symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率四臂对照已完成并验收，
@@ -224,7 +224,15 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 `results/w3-validation-batch-v2-91ebc49-retry2/`。关机前逐文件 checksum dry-run 无
 差异，GPU/实验进程和 tmux 均为空；实际电源状态仍由用户确认。
 
-## 下一步边界
+## 当前 W2 质量线的下一步边界
+
+只运行 [offline rotation 分级 probe](quality/QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md)：
+先过 layer-0 否决门，再新增 layer 17/35。任一门失败即停止；第二门通过也只进入
+人工评审，不自动运行 36-layer GPTQ/PPL。H2.625/H2.75、scale-fitting 改写、
+SpinQuant、蒸馏、mixed precision、kernel 和 `lm_head` 量化均不随 probe 自动启动。
+截至本文更新时没有 rotation GPU 结果，不能把“已准备”写成“旋转有效”。
+
+## M=1 性能线的下一步边界
 
 已完成的 RTX PRO 4500 诊断 46/46 cell 通过 correctness、repeat 与 Graph 检查。
 `fast_corrected` 的四类 shape 均选 gps1；`observed_exact` 选 gps1/1/4/2。诊断结果
