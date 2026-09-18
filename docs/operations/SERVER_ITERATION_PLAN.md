@@ -134,5 +134,5 @@ wheelhouse，启动后新建本机独立 venv 并从本地 wheel 安装，避免
 
 已准备固定 6 组候选（含基线）、12 个 Linear trial，以及显式继承 kernel/split 的
 block 和完整 8B cached-decode 入口。见
-[M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)。
+[M1_CANDIDATES_FULL_MODEL_RUNBOOK.md](../performance/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)。
 重点是提高每次上机可检验的假设数量；暂不新增镜像自动化。CUDA 结果待验证。

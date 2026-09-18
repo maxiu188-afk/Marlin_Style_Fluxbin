@@ -80,7 +80,7 @@ def relative_backend_gate(packed_nrmse, control_nrmse, limit):
     over the complete 32-step logits trace. This gate therefore asks whether the
     packed backend deviates more than the harness deviates from itself, which is
     self-calibrating and needs no fixed absolute threshold. See
-    docs/W3_NUMERICAL_GATE_CALIBRATION.md. It does not erase the frozen
+    docs/performance/W3_NUMERICAL_GATE_CALIBRATION.md. It does not erase the frozen
     absolute gate: v1 retains it for historical acceptance, while calibrated
     v2 reports it without using it to accept or reject a candidate.
     """

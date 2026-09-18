@@ -639,7 +639,7 @@ v5 byte planes
 - CUDA source：`src/fluxbin_style/csrc/m1_v3.cu`、`m1_v4.cu`、
   `m1_v4_late.cu`、`m1_v5.cu`、`lut8.cuh`
 - artifact/layout：`src/fluxbin_style/deployment.py`
-- 当前 Linear/full-model 数据：`docs/QWEN3_8B_M1_LINEAR_RESULTS.md`
+- 当前 Linear/full-model 数据：`docs/performance/QWEN3_8B_M1_LINEAR_RESULTS.md`
 - PCIe candidate 数据：
   `server_results/runpod_m1_inner_pcie_2026-09-15/local-summary/summary.md`
 - ptxas resource log：`server_results/runpod_m1_inner_pcie_2026-09-15/tests.log`

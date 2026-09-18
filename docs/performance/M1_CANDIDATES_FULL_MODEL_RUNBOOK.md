@@ -303,7 +303,7 @@ Nsight replay、cache control 与 profiling overhead 的边界见
 ## 持久环境复用
 
 2026-09-15 已实测：本次卷的持久 venv 导入约 30 秒，本地仅约 3 秒；
-默认改用本地 venv，持久保存依赖和编译缓存。详见 [环境结果](RUNPOD_M1_SETUP_RESULTS.md)。
+默认改用本地 venv，持久保存依赖和编译缓存。详见 [环境结果](../operations/RUNPOD_M1_SETUP_RESULTS.md)。
 下述为可选持久 venv 入口，不能保证比本地重建更快。
 
 `scripts/prepare_persistent_runtime.py` 在持久卷创建新的 Linux venv，而非搬迁

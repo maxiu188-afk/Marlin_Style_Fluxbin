@@ -2,7 +2,7 @@
 
 > 2026-09-13：用户已改为先使用 RunPod 现成 PyTorch/CUDA 模板，按实际缺项补依赖。
 > 以下自定义镜像流程暂缓，不再是开服务器或验证 Linear 的前提。
-> 当前操作入口请看 [8B Linear 指引](../../docs/QWEN3_8B_LINEAR_GUIDE.md)。
+> 当前操作入口请看 [8B Linear 指引](../../docs/quality/QWEN3_8B_LINEAR_GUIDE.md)。
 
 更新：2026-09-12。以下是操作指引，不代表其中的构建、发布或实验已经执行。
 

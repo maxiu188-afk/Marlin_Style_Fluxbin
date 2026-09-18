@@ -11,7 +11,7 @@ CUDA Graph total，各 shape 最佳点相对原始 BF16 为：q/o **1.731x**、k
 **0.982x**、gate/up **2.678x**、down **2.616x**。12/12 cell 正确且稳定，
 但 k/v 尚未超过 BF16；当前实例又因 `ERR_NVGPUCTRPERM` 无法采集 Nsight Compute
 硬件计数器，所以 prepare 分支仍未授权。详见
-[W3 inline 结果](docs/W3_LUT_INLINE_RESULTS.md)。
+[W3 inline 结果](docs/performance/W3_LUT_INLINE_RESULTS.md)。
 
 四个最佳 row tile 随后接入完整 Qwen3-8B：A100 PCIe、batch1、真实前缀 KV、
 32-token full-sequence CUDA Graph 相对原始 BF16 为 **1.4880x / 1.4892x**，
@@ -30,8 +30,8 @@ outlier。两条 corrected 路线的完整模型 correctness
 仍未通过，说明 `±3` 修正只能复现显式 FP32 grouped matvec 的逐权重 BF16 物化语义，
 不能复现 cuBLAS BF16 GEMM 的归约顺序。按“性能优先”口径，当前 W3 性能主线仍是
 structural 路线，corrected 路线保留为负面诊断。详见
-[W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)和
-[A100 corrected 运行记录](docs/W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
+[W3 完整模型结果](docs/performance/W3_LUT_FULL_MODEL_RESULTS.md)和
+[A100 corrected 运行记录](docs/performance/W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
 对已有结果 JSON 的重新分析给出两个当前最重要的结论，都不是新的 GPU 运行。
 
@@ -42,7 +42,7 @@ structural 路线，corrected 路线保留为负面诊断。详见
 时间归零也只有 2.64x，Linear 打到 BF16 同等带宽约 1.98x**。stock
 `Qwen3RMSNorm.forward` 每次调用发 8 个 elementwise/reduction kernel、每层 4 个，
 在小 Qwen3 上实测占一个 decode step 全部 compute op 的 55%。详见
-[非 Linear 路径融合](docs/NONLINEAR_FUSION.md)。
+[非 Linear 路径融合](docs/performance/NONLINEAR_FUSION.md)。
 
 **0.005 NRMSE / 0.05 max-logprob 两道绝对门都低于本 harness 的整段 trace 放大基线。**
 零量化的 `original_bf16` 臂在一次数学等价的注意力 mask 改写下，整段 logits trace
@@ -53,7 +53,7 @@ NRMSE 已经是 **0.01431 / 0.01153**，max-logprob error 是 **0.6875 / 0.7827*
 没有分辨力，32 步自回归把 0.002 量级的逐 Linear 差异放大到 0.017。kernel 正确性的
 现有证据是 Linear 级 structural 逐位一致，与该门独立。这也解释了 `±3` 修正为何在
 Linear 层面有效却让端到端指标变差。详见
-[数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)。
+[数值门标定](docs/performance/W3_NUMERICAL_GATE_CALIBRATION.md)。
 
 上述四项 GPU 批次已在 A100 SXM4 80GB 完成。融合把 BF16 从约
 14.62 降到 12.26 ms/token（约 1.19x），把 packed W3 从约 10.07 降到
@@ -62,13 +62,13 @@ Linear 层面有效却让端到端指标变差。详见
 10.8%、3.4%、18.5%、17.3%。split sweep 含不稳定 cell，不能选 winner；stock/fused
 的 token/shape/finite 与 relative log-prob 门通过，但 relative NRMSE 为 control 的
 1.18--1.49x，packed backend 尚未 accepted。见
-[GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。
+[GPU 验证批次运行手册](docs/performance/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)。
 
 下一轮不再用 logits gate 猜质量：已经准备冻结 WikiText-2 146×2048、298,862
 transitions 的 fused BF16 / decoded-W3 / packed-W3 三臂 M=1 teacher-forced PPL。
 同时 CUDA extension 改为 source/flags/runtime/SM 内容寻址缓存并加入预热 manifest，
 仅改文档、runner 或 gate 不再重编译。见
-[packed M=1 PPL 手册](docs/W3_PACKED_M1_PPL_RUNBOOK.md)。
+[packed M=1 PPL 手册](docs/performance/W3_PACKED_M1_PPL_RUNBOOK.md)。
 
 GPTQ W3 的有效存储为 3.154552 bit/weight，相对 BF16 的理论存储优势约 **5.07x**，
 但相对理想 W4 只有约 **1.27x**。当前 W3 还承担 3 个 bitplane 解码、activation LUT、
@@ -98,20 +98,53 @@ PPL 11.266115**，当前 QBB 为 **3.138184 bit/weight、PPL 13.167910**。GPTQ
 仅多 0.5216% 存储，PPL 低 1.9018（14.4426%），因此当前 QBB point 基本被
 uniform W3 支配。QBB FP16-scales 为 2.631687 bit/weight、PPL 13.168951，
 保留为低码率 trade-off。该实验在 RTX PRO 4500 上进行，是同卡质量对照而非
-A100 复现或性能测试；详见[W3/QBB 状态页](docs/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+A100 复现或性能测试；详见[W3/QBB 状态页](docs/quality/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+
+Hierarchical-scale W2 的 A100 PCIe 端点实验也已完成。同轮 W3-g128
+PPL 为 **11.266808**，H2.50/H2.875 分别为 **27.932835 / 27.898930**。
+冻结的同协议 A100 BF16 reference 为 **9.724945**，但本次有界 endpoint job
+没有重放 BF16，因此它是 historical reference-only，不是 same-run arm。
+两个 W2 端点只差 **0.033906 PPL**，低于冻结的 0.05 平坦性阈值；
+额外 0.375 bpw 没有产生可判读改善，两档均远未接近 W3。这是负面端点
+证据，不是完整四点曲线：H2.625 仅有 10 个 partial layers 且未评分，
+H2.75 未启动。端点复核曾据此建议下一轮先改 relative-scale 的拟合目标，而不是
+增加位宽；该建议只针对 scale-bit 路线，当前没有实施。2026-09-18 已授权的实际
+下一步是先用低成本 offline-rotation probe 检查旋转是否值得继续，而不是直接修改
+scale fitting 或启动完整模型。详见
+[hierarchical W2 结果与运行手册](docs/quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。
+offline rotation 后续采用分级门：先测 layer 0，再新增 layer 17/35 并合并成
+0/17/35 判定；通过后仍需人工决定是否启动完整模型。详见
+[offline rotation 分级 probe 手册](docs/quality/QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md)。
 
 ## 阅读与运行入口
 
+文档已按层级整理：从本 README 进入 [文档总索引](docs/README.md)，再进入
+[算法与质量](docs/quality/README.md)、[性能与部署](docs/performance/README.md) 或
+[服务器与运维](docs/operations/README.md)，最后到具体结果/手册。
+
 - [当前交接](docs/CURRENT_HANDOFF.md)：有效状态、代码入口、服务器与下一步。
-- [W3 完整模型结果](docs/W3_LUT_FULL_MODEL_RESULTS.md)：structural 约 1.49x、corrected 约 1.34x/1.27x，以及失败的数值门与逐层归因。
-- [非 Linear 路径融合](docs/NONLINEAR_FUSION.md)：62/38 开销分解、约 2.0x 的硬上限与已实现的 RMSNorm/RoPE 融合。
-- [数值门标定](docs/W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门为何不可达、放大链条与重做后的门。
-- [GPU 验证批次运行手册](docs/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)：四项批次协议、完成结果与复现入口。
-- [packed M=1 PPL 手册](docs/W3_PACKED_M1_PPL_RUNBOOK.md)：冻结全量 WT2、断点续跑与内容寻址编译缓存。
-- [加速详细结果](docs/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
-- [实验运行手册](docs/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
-- [加速合同](docs/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
+- [W3 完整模型结果](docs/performance/W3_LUT_FULL_MODEL_RESULTS.md)：structural 约 1.49x、corrected 约 1.34x/1.27x，以及失败的数值门与逐层归因。
+- [非 Linear 路径融合](docs/performance/NONLINEAR_FUSION.md)：62/38 开销分解、约 2.0x 的硬上限与已实现的 RMSNorm/RoPE 融合。
+- [数值门标定](docs/performance/W3_NUMERICAL_GATE_CALIBRATION.md)：0.005 门为何不可达、放大链条与重做后的门。
+- [GPU 验证批次运行手册](docs/performance/W3_GPU_VALIDATION_BATCH_RUNBOOK.md)：四项批次协议、完成结果与复现入口。
+- [packed M=1 PPL 手册](docs/performance/W3_PACKED_M1_PPL_RUNBOOK.md)：冻结全量 WT2、断点续跑与内容寻址编译缓存。
+- [hierarchical W2 结果与运行手册](docs/quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)：A100 端点 PPL、平坦性结论与后续边界。
+- [offline rotation 分级 probe 手册](docs/quality/QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md)：layer-0 与 0/17/35 低成本门；不自动启动全模型。
+- [加速详细结果](docs/performance/QWEN3_8B_M1_LINEAR_RESULTS.md)：版本对照、Linear/block/全模型及哈希。
+- [实验运行手册](docs/performance/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)：当前 prepared v2.1 和历史协议。
+- [加速合同](docs/performance/ACCELERATION_HANDOFF.md)：固定输入、数值参照与测量边界。
 - [文档索引](docs/README.md)：质量、算法、环境和历史归档。
+
+## 仓库目录入口
+
+- [`src/fluxbin_style/`](src/fluxbin_style/)：量化、payload、部署包装、CUDA kernel 和融合实现。
+- [`configs/`](configs/)：`evaluation/`、`acceleration/`、`calibration/`和 `experiments/` 的冻结配置。
+- [`scripts/`](scripts/)：量化、PPL、GPU 批次、恢复和结果汇总入口。
+- [`tests/`](tests/)：本地与 GPU 回归测试。
+- [`docs/`](docs/)：[总索引](docs/README.md)及 `quality/`、`performance/`、`operations/`、`archive/` 四级分类。
+- [`infra/runpod/`](infra/runpod/)：RunPod 环境、容器和持久缓存恢复。
+- `results/`、`logs/`、`server_results/`：本地忽略的运行证据/私有备份；不是 GitHub 发布入口，也不应为了整洁随意删除。
+- `.venv/`、`build/`、`tmp/`和 `__pycache__/`：本机可再生成状态，不是实验结果来源。
 
 QBB 冻结基线入口为 `scripts/run_qwen3_8b_prepared_m1_trial.py`，配置文件
 `configs/acceleration/qwen3_8b_full_m1_v2.json`（协议 ID v2.1）。W3 完整模型入口为

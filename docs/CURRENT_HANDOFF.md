@@ -1,22 +1,39 @@
 # 当前进度与交接
 
-## 2026-09-17：hierarchical-scale W2 PPL 曲线已准备，尚未运行
+## 2026-09-18：offline rotation 分级 probe 已准备，尚未运行
 
-更新：离线数值复核确认四种 relative-scale 位宽的投影误差几乎平坦且非单调，
-四臂任务已在 H2.50 完成、H2.625 仅保存 10 个 partial layers 时按用户授权停止。
-当前边界改为只补跑 H2.875，并只比较 W3/H2.50/H2.875 PPL；端点差 `<0.05`
-即确认平坦性，不再完成 H2.625/H2.75。真实 H2.50 的 252 个 Linear 均为
-`dead_columns=0`，因此现有端点有效；dead-column fail-closed 在端点产物完成后
-单独修复，避免改变两端实现哈希。
+为避免直接支付完整 36 层 GPTQ/PPL 成本，新增两级配对门。第一阶段只测
+layer 0；通过后第二阶段只新增 layer 17/35，并复用第一阶段结果形成 layer
+0/17/35 的跨深度 gate。两阶段都复用 H2.50、
+冻结 calibration token 的前 32 条、原 GPTQ/hierarchical projection 控制，并比较
+unrotated/rotated DecoderLayer 的局部输出相对平方误差。probe 不保存 payload，
+不增加 rotated-BF16 PPL arm，也不会自动启动完整模型或 PPL。
 
-下一项已授权的质量任务是固定四臂 GPTQ-only hierarchical W2
-（H2.50/H2.625/H2.75/H2.875），直接对照现有 W3-g128。kernel、rotation、
-QuaRot/SpinQuant、蒸馏、layer-wise mixed precision 和 `lm_head` 改动均不在
-范围内。实现、冻结配置、可续跑持久卷包装和判读边界见
-[hierarchical W2 runbook](QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。本次准备没有
-启动 GPU 实验。若 A100 无可用卡，这组纯精度实验可显式选择已固定的 RTX PRO
-4500 Blackwell `same-device-quality` 路径；四个 W2 臂与 W3 必须在同一设备上
-完成，结果标为 cross-device，不冒充 A100 reproduction。
+只有状态 `completed_probe_passed_pending_manual_full_model` 才允许人工评审后另行
+启动正式 A100 全模型；任一 `completed_probe_stopped_*` 都是有效负面结论。入口见
+[offline rotation 分级运行手册](quality/QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md)。
+
+## 2026-09-17：hierarchical-scale W2 端点实验已完成
+
+A100 80GB PCIe 上的 GPTQ-only 端点任务已退出 0，结构化状态为
+`completed_endpoint_pending_review`，现已验收为**负面端点证据**。同轮 W3-g128
+PPL 为 **11.266808**；H2.50 为 **27.932835**，H2.875 为
+**27.898930**。两个 W2 端点只差 **0.033906 PPL**，低于冻结的
+0.05 平坦性阈值；多用 0.375 bpw 没有产生可判读改善，两档也都远未接近 W3。
+冻结的同协议 A100 BF16 reference 为 **9.724945**；该值没有在本次有界
+endpoint job 中重放，因此只作 historical reference，不写成同轮 arm。
+
+H2.50/H2.875 均覆盖 36 layers / 252 Linears / 6,945,767,424 weights
+和 298,862 个 WT2 transitions；`lm_head` 保持 BF16。H2.625 只有 10 个
+partial layers，未评分；H2.75 未启动，两者都不是结果点。本轮没有启动
+kernel、rotation、QuaRot/SpinQuant、蒸馏、mixed precision 或 `lm_head`
+改动。详见 [hierarchical W2 结果与运行手册](quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。
+
+结论是 relative-scale 位宽不是当前瓶颈。端点复核原本建议后续将 log-domain
+`q^2` residual fit 改为与线性域重建 MSE 对齐，但该候选方向当前没有实施。
+2026-09-18 用户选择先走独立的 offline-rotation 分级 probe；这才是当前已授权的
+W2 下一步。**不自动补跑 H2.625/H2.75**，也不自动加 scale-only distillation。
+服务器已由用户确认关闭，结果保留在网络卷 `34au39ljvf`。
 
 更新：2026-09-17。M=1 decode 的现有 QBB 加速结果已经冻结。Qwen3-8B uniform
 symmetric GPTQ W3 g128 与当前 QBB 的同协议质量/码率四臂对照已完成并验收，
@@ -28,7 +45,7 @@ vLLM 仅保留接口、尚未接入。
 - **GPTQ W3 inline LUT 第一轮 4×3 Linear trial 已完成**：A100 80GB PCIe，
   同轮 CUDA Graph total，12/12 cell 正确且稳定。最佳 q/o R256、k/v R512、
   gate/up R1024、down R1024 相对原始 BF16 分别为 1.731x、0.982x、2.678x、
-  2.616x；详见 [W3 inline 结果](W3_LUT_INLINE_RESULTS.md)。
+  2.616x；详见 [W3 inline 结果](performance/W3_LUT_INLINE_RESULTS.md)。
 - **W3 完整模型性能约 1.49x，但 correctness gate 未通过**：A100 PCIe、batch1、
   真实前缀 StaticCache、32-token full-sequence Graph 相对原始 BF16 为
   1.4880x / 1.4892x，相对 decoded W3 为 1.4923x / 1.4886x；主计时稳定。
@@ -39,7 +56,7 @@ vLLM 仅保留接口、尚未接入。
   structural reference 逐位一致；问题已缩小到 kernel 的“FP32 integer dot 后乘
   scale”与 decoded 路径“先物化 BF16 权重再 GEMM”之间的有限精度差异，但现有
   四-shape 对照尚未通过逐舍入点因果消融确定主导项。详见
-  [W3 完整模型结果与误差归因](W3_LUT_FULL_MODEL_RESULTS.md)。
+  [W3 完整模型结果与误差归因](performance/W3_LUT_FULL_MODEL_RESULTS.md)。
 - 当前服务器的 Nsight Compute 计数器权限被宿主拒绝（`ERR_NVGPUCTRPERM`）；
   尚不能归因 LUT build、occupancy、HBM 或 shared bank conflict。prepare 诊断分支
   仍未授权、未实现。
@@ -54,14 +71,14 @@ vLLM 仅保留接口、尚未接入。
   prepared wrapper、Graph 和 252 条 packed route 全部精确且无 dense fallback，
   因而失败不是路由问题。`±3` 修正复现显式 FP32 grouped matvec 的 decoded-BF16
   物化语义，但不能复现 cuBLAS BF16 GEMM 的归约树；36 层传播后仍会放大差异。
-  详见 [A100 corrected full-model 记录](W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
+  详见 [A100 corrected full-model 记录](performance/W3_CORRECTED_FULL_MODEL_RUNBOOK.md)。
 
 - **加速的主要障碍已不在 Linear（重读已有 JSON，非新运行）**：252 个 Linear 占
   batch-1 decode 的 62.1%（9.263 ms/token），lm_head 5.8%，其余 32.1%
   （4.787 ms/token）是小算子 kernel 数量乘固定延迟。代入每层 Linear 2.205x 预测整模
   1.514x，实测 1.488x，误差 1.8%。硬上限：Linear 归零 2.64x，Linear 达 BF16 同等
   带宽约 1.98x。**不动这 32% 就到不了 2x 以上。** 详见
-  [非 Linear 路径融合](NONLINEAR_FUSION.md)。
+  [非 Linear 路径融合](performance/NONLINEAR_FUSION.md)。
 - **0.005 NRMSE / 0.05 max-logprob 门都低于 harness 整段 trace 放大基线（重读已有
   JSON，非新运行）**：
   零量化的 `original_bf16` 臂在数学等价的 mask 改写下，整段 logits trace NRMSE 已是
@@ -70,7 +87,7 @@ vLLM 仅保留接口、尚未接入。
   位置放大）整段 trace 聚合 NRMSE 0.01683。**上述几处 correctness 失败因此不能读作
   kernel 算错**，也解释了 `±3`
   修正为何 Linear 层面有效而端到端更差。详见
-  [数值门标定](W3_NUMERICAL_GATE_CALIBRATION.md)。
+  [数值门标定](performance/W3_NUMERICAL_GATE_CALIBRATION.md)。
 - **已实现并在最新 GPU 批次执行**：(a) 自校准相对数值门
   `packed_vs_decoded_relative_check`（以同轮 `original_bf16` 的 dyn-vs-static 为控制
   基线，limit 由 protocol 声明、默认 1.0）；max-logprob 也使用同轮控制比值门，并与
@@ -108,7 +125,7 @@ vLLM 仅保留接口、尚未接入。
   按冻结规则属于 Case A：停止继续为当前 QBB format 做深度 kernel 优化。
 
 近期各版本对照与证据：[结果总览](RESULTS_OVERVIEW.md)、
-[Linear / block / 全模型详细结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
+[Linear / block / 全模型详细结果](performance/QWEN3_8B_M1_LINEAR_RESULTS.md)。
 
 ## 有效代码与协议
 
@@ -178,7 +195,7 @@ GPU 无剩余实验进程；已完成关机准备，**尚无用户确认本实�
 - 环境：torch 2.8.0+cu128、CUDA 12.8、Transformers 5.14.1；容器本地 venv，
   持久保存包/模型/兼容编译缓存。本轮依赖恢复约 40 秒。基础镜像 digest 仍未知。
 
-详见[恢复手册](M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)与[关机交接](SERVER_SHUTDOWN_READY.md)。
+详见[恢复手册](performance/M1_CANDIDATES_FULL_MODEL_RUNBOOK.md)与[关机交接](operations/SERVER_SHUTDOWN_READY.md)。
 原始结果、权重、缓存不提交 GitHub。
 
 质量实验服务器最后一次观测：`213.173.105.8:48380`，A100 80GB PCIe。
@@ -187,7 +204,7 @@ GPTQ 首次量化完成后因 GPTQModel 7.4.0 禁用 `split_by='layer'` 而在�
 5-shard checkpoint，并成功走标准 GPTQModel reload 和 36-layer BF16 decode。
 recovery 退出 0，GPU/实验进程和 tmux 均为空，可关闭计算实例并保留网络卷。
 精确路径、哈希和恢复边界见
-[W3/QBB artifact 状态](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+[W3/QBB artifact 状态](quality/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 质量实验服务器最后一次观测：`213.173.109.240:44534`，RTX PRO 4500
 Blackwell 32GB、CC 12.0、torch 2.8.0+cu128。作业 revision `f979f6b`，退出 0，
@@ -195,7 +212,7 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 结果、作业记录及关机归档均保存在网络卷 `34au39ljvf`；私有本地备份位于
 `server_results/runpod_w3_rate_distortion_rtx4500_2026-09-16/`，归档 SHA256
 为 `812ba530...49bfe7`。可关闭计算实例并保留网络卷。精确哈希和路径见
-[W3/QBB artifact 状态](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+[W3/QBB artifact 状态](quality/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 本次是 RTX 同卡质量对照，不是 A100 精确复现或性能结果；旧 A100 两个 anchor
 仅 report-only。默认 `formal-a100` 路径仍保留，除非明确要求复现，否则不再重跑。
@@ -207,7 +224,15 @@ summary JSON SHA256 为 `de5e12f...e88e8cd`；tmux、GPU 和实验进程均为�
 `results/w3-validation-batch-v2-91ebc49-retry2/`。关机前逐文件 checksum dry-run 无
 差异，GPU/实验进程和 tmux 均为空；实际电源状态仍由用户确认。
 
-## 下一步边界
+## 当前 W2 质量线的下一步边界
+
+只运行 [offline rotation 分级 probe](quality/QWEN3_8B_HIERARCHICAL_W2_ROTATED_RUNBOOK.md)：
+先过 layer-0 否决门，再新增 layer 17/35。任一门失败即停止；第二门通过也只进入
+人工评审，不自动运行 36-layer GPTQ/PPL。H2.625/H2.75、scale-fitting 改写、
+SpinQuant、蒸馏、mixed precision、kernel 和 `lm_head` 量化均不随 probe 自动启动。
+截至本文更新时没有 rotation GPU 结果，不能把“已准备”写成“旋转有效”。
+
+## M=1 性能线的下一步边界
 
 已完成的 RTX PRO 4500 诊断 46/46 cell 通过 correctness、repeat 与 Graph 检查。
 `fast_corrected` 的四类 shape 均选 gps1；`observed_exact` 选 gps1/1/4/2。诊断结果
@@ -232,7 +257,7 @@ WikiText-2 146×2048 token blocks、298,862 transitions，三臂均启用 RMSNor
 融合，依次测 original BF16、decoded W3 BF16、packed W3 structural。每次 forward
 严格一个 token 并携带 KV cache，packed 臂 252 个 Linear 都必须走 M=1 backend；结果
 只做同轮 effect-size review，没有人为 PPL threshold，也不自动启动后续修改。入口与
-断点续跑说明见 [packed M=1 PPL 手册](W3_PACKED_M1_PPL_RUNBOOK.md)。
+断点续跑说明见 [packed M=1 PPL 手册](performance/W3_PACKED_M1_PPL_RUNBOOK.md)。
 
 为缩短后续租卡准备，CUDA extension 已改为内容寻址缓存：键包含 `.cu/.cuh`、flags、
 Torch/CUDA/ABI、Python 与 SM，不含 Git revision；正式任务先预热 R256/R512/R1024，

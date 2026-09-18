@@ -117,7 +117,7 @@ class W3FullModelTrialTest(unittest.TestCase):
             RUNNER.statistics_row([10.0] * 10, 0.05, trim_per_side=-1)
 
     def test_relative_backend_gate_uses_measured_amplification_control(self):
-        # Measured 2026-09-16/17 A100 values; see docs/W3_NUMERICAL_GATE_CALIBRATION.md.
+        # Measured 2026-09-16/17 A100 values; see docs/performance/W3_NUMERICAL_GATE_CALIBRATION.md.
         floor = 0.01431  # original_bf16 dynamic-vs-static, zero quantization
         structural = RUNNER.relative_backend_gate(0.01683, floor, 1.0)
         self.assertAlmostEqual(structural["ratio"], 0.01683 / floor, places=9)
