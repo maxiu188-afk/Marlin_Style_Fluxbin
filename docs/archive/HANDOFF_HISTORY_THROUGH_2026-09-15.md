@@ -3,7 +3,7 @@
 从当前交接中归档的早期 8B/32B 执行记录。下文的“当前”“下一步”、服务器状态和
 暂停条件均为当时快照，不作为现在的操作指令。最新状态见
 [当前交接](../CURRENT_HANDOFF.md)，近期加速证据见
-[加速结果](../QWEN3_8B_M1_LINEAR_RESULTS.md)。
+[加速结果](../performance/QWEN3_8B_M1_LINEAR_RESULTS.md)。
 
 ## Historical 8B execution chronology
 
@@ -20,11 +20,11 @@ deployment. The canonical staged contract is
 
 As of 2026-09-13, the pinned Qwen3-8B snapshot and new C4 calibration artifact
 have passed preflight. All five layer-0 representative Linears passed independent
-review on RunPod A100-SXM4-80GB; see [QWEN3_8B_LINEAR_RESULTS.md](../QWEN3_8B_LINEAR_RESULTS.md).
+review on RunPod A100-SXM4-80GB; see [QWEN3_8B_LINEAR_RESULTS.md](../quality/QWEN3_8B_LINEAR_RESULTS.md).
 All 45 tests passed locally and on the server before submission. Full-model
 pure/hybrid artifacts from clean revision
 `d8a2eff231dee7f0f4c4822179685672d60e10f9` are now **accepted_with_notes**
-for integrity and weight reconstruction; see [QWEN3_8B_FULL_RESULTS.md](../QWEN3_8B_FULL_RESULTS.md).
+for integrity and weight reconstruction; see [QWEN3_8B_FULL_RESULTS.md](../quality/QWEN3_8B_FULL_RESULTS.md).
 Both arms contain 36 layers / 252 Linears. Independent CPU replay covered all
 504 targets; maximum relative SSE discrepancy was 3.2544e-16. Hybrid aggregate
 weight SSE is 12.4301% lower; 249/252 targets improve, with three small o_proj
@@ -142,7 +142,7 @@ have finished; the separate PPL job also completed and has been reviewed.
 - Private local archive: `server_results/runpod_qwen3_8b_2026-09-13/`;
   full acceptance metadata, audit source and portable manifest retained, no weights downloaded.
 
-See [QWEN3_8B_LINEAR_GUIDE.md](../QWEN3_8B_LINEAR_GUIDE.md) for the input/algorithm
+See [QWEN3_8B_LINEAR_GUIDE.md](../quality/QWEN3_8B_LINEAR_GUIDE.md) for the input/algorithm
 contract. The 8B PPL port and 48 local/server tests are complete. PPL ran in
 tmux `qwen3-8b-ppl-v1`; job records live under `/workspace/jobs/qwen3-8b-ppl-v1/`
 and the output is checkout `results/qwen3-8b-ppl-v1/result.json`.

@@ -37,7 +37,7 @@ prompt 0 上，packed 的 0.01683 是 BF16 自身控制基线 0.01431 的 **1.18
 
 这不是 W3 专有现象。完全独立的 QBB `v5_p1024/gps1` + prepared v2.1 线（A100 SXM4、
 不同量化方案、不同 kernel）记录的是 packed/decoded NRMSE 0.0125357 / 0.0129711、
-动态/静态注意力 NRMSE 0.01167--0.01359（见[结果总览](RESULTS_OVERVIEW.md)）。
+动态/静态注意力 NRMSE 0.01167--0.01359（见[结果总览](../RESULTS_OVERVIEW.md)）。
 两条线、两块卡、两套算术，四个数字全部落在同一个 0.012--0.014 区间。
 
 因此这个量级是 **harness 的性质**（prefill 加 32 步 decode 的整段 logits trace 敏感度），

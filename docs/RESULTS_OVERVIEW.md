@@ -57,7 +57,7 @@ FP32 输出层面对照中的归约顺序差异仅 1e-7 量级。现有证据将
 grouped matvec 与 cuBLAS reduction tree 的浮点执行顺序不同。本次失败不是已观察到的
 `g_idx/desc_act`、packing、Graph 或 fallback 错误；两条 corrected 路线同样不是
 correctness accepted。完整数据、哈希和后续边界见
-[W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)。
+[W3 完整模型结果](performance/W3_LUT_FULL_MODEL_RESULTS.md)。
 
 ## Linear、block 与协议边界
 
@@ -83,7 +83,7 @@ packed 两组审计/capture 均覆盖 252 个 Linear，每个执行 32 次、dec
 严格参照，保留前次失败记录，不把缓存路径差异解释成包装或 Graph 错误。
 
 完整版本表、每轮原始状态、运行提交与 SHA256 见
-[加速详细结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。最新运行代码 `3c996ab`；
+[加速详细结果](performance/QWEN3_8B_M1_LINEAR_RESULTS.md)。最新运行代码 `3c996ab`；
 本地私有备份 `server_results/runpod_prepared_sxm4_2026-09-15/` 已完成哈希、
 源码、120 次样本统计与路由核验，不提交原始大文件到 GitHub。
 
@@ -104,12 +104,37 @@ GPTQ 仅多 0.5216% 存储，PPL 比当前 QBB 低 14.4426%，符合预先定义
 **Case A**。当前约 3.14-bit QBB point 基本被 uniform W3 支配，后续优先
 uniform 3-bit backend / solver，不再深挖当前 QBB format 的 kernel。FP16 scales
 证明 QBB 可压到 2.6317 bit/weight 而几乎不损失质量，但它是较低码率、较差质量的
-另一个 trade-off 点，不改变主决策。详见[专门状态页](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+另一个 trade-off 点，不改变主决策。详见[专门状态页](quality/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 该证据不等于 A100 `1e-6` 复现，也不是 latency 结果。旧 A100 BF16/QBB anchor
 只作 report-only；其跨设备偏移约 0.0015--0.0019 PPL，远小于 1.9018 的同卡
 effect size。结果源码 `f979f6b`，summary JSON SHA256 为
 `de5e12fcd7c1db5da1952717dd15a01c9c230b34a3d2b254e64d0fc05e88e8cd`。
+
+## Hierarchical-scale W2 端点结果
+
+2026-09-17 在 A100 80GB PCIe 上完成了 H2.50/H2.875 两个端点与
+W3-g128 同轮重放。所有数值使用冻结的 146 x 2048 WikiText-2 blocks、
+298,862 transitions，量化范围是同样的 36 layers / 252 Linears /
+6,945,767,424 weights。
+
+| Arm | Nominal bpw | Actual tensor bpw | WT2 PPL | 与同轮 W3 的差距 |
+|---|---:|---:|---:|---:|
+| BF16（冻结 A100 参考，非同轮） | 16.000 | 16.000000 | **9.724945** | -1.541863 |
+| GPTQ W3 g128 | 3.125 | 3.154552 | **11.266808** | - |
+| H2.50 (U4/U4) | 2.500 | 2.506115 | 27.932835 | +16.666027 (+147.92%) |
+| H2.875 (U8/U8) | 2.875 | 2.881115 | 27.898930 | +16.632121 (+147.62%) |
+
+H2.50/H2.875 的绝对差是 **0.033906 PPL**，小于事先固定的 0.05
+平坦性阈值。因此额外 0.375 bpw 只带来 0.121% 的 PPL 下降，且两档
+仍显著落后 W3。该结果验收为**负面端点证据**：当前 relative-scale
+拟合目标是主要问题，不是 U4/U8 位宽。H2.625 只保存 10 个 partial
+layers 且未评分，H2.75 未启动；本轮不是完整四点曲线。详见
+[hierarchical W2 结果与运行手册](quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。
+
+本次有界端点 job 未重放 BF16；表中 9.724945 是相同 token/block 协议的
+已验收 A100 冻结值，只作 reference-only，不写成 same-run arm。相对它，W3
+PPL 高 15.85%，H2.50/H2.875 分别高 187.23%/186.88%。
 
 ## Qwen3-8B test PPL
 
@@ -120,10 +145,10 @@ effect size。结果源码 `f979f6b`，summary JSON SHA256 为
 | 权重版本 | WT2 test PPL | 结果记录 |
 | --- | ---: | --- |
 | BF16 | 9.724944981 | 各轮精确复现，本轮同测 |
-| 原 pure | 1149.470624707 | [原始 PPL 验收](QWEN3_8B_PPL_RESULTS.md) |
-| 原 hybrid | 16.142104443 | [原始 PPL 验收](QWEN3_8B_PPL_RESULTS.md) |
-| 修复补偿 hybrid，未蒸馏 | 14.951611048 | [修复版 PPL 验收](QWEN3_8B_CONDITIONED_PPL_RESULTS.md) |
-| 修复补偿 hybrid，蒸馏 step400 | **13.169788495** | [最终 test 验收](QWEN3_8B_DISTILLED_TEST_RESULTS.md) |
+| 原 pure | 1149.470624707 | [原始 PPL 验收](quality/QWEN3_8B_PPL_RESULTS.md) |
+| 原 hybrid | 16.142104443 | [原始 PPL 验收](quality/QWEN3_8B_PPL_RESULTS.md) |
+| 修复补偿 hybrid，未蒸馏 | 14.951611048 | [修复版 PPL 验收](quality/QWEN3_8B_CONDITIONED_PPL_RESULTS.md) |
+| 修复补偿 hybrid，蒸馏 step400 | **13.169788495** | [最终 test 验收](quality/QWEN3_8B_DISTILLED_TEST_RESULTS.md) |
 
 各轮使用相同冻结 token/block 协议：146 个非重叠 2048-token 块，298862 个预测位置。
 表格汇总多个运行；最终一轮只同测 BF16 和 step400。原始 pure/hybrid 在 A100 SXM4，
@@ -151,18 +176,18 @@ WT2 validation 使用 128 个 2048-token 块、262016 个预测位置，PPL 改�
 固定保留最终 step400；step300 的 validation PPL 13.664953 略低，但没有保存，
 也未据此选点。训练期间未评估 test，最终 test 是后续独立任务。
 训练脚本记录模型装载/替换后的耗时 66.20 分钟、峰值 allocated 26.19 GiB；
-这些数值不是推理加速测量。详见 [蒸馏验收](QWEN3_8B_DISTILLATION_RESULTS.md)。
+这些数值不是推理加速测量。详见 [蒸馏验收](quality/QWEN3_8B_DISTILLATION_RESULTS.md)。
 
 ## 验收与来源
 
 | 阶段 | 已完成范围 | 证据 |
 | --- | --- | --- |
-| 代表性 Linear | 5 个目标通过 | [Linear 结果](QWEN3_8B_LINEAR_RESULTS.md) |
-| 原始全模型 | pure/hybrid 各 36 层、252 Linear；完整性与重建 accepted_with_notes | [全模型结果](QWEN3_8B_FULL_RESULTS.md) |
-| 修复补偿 | 3 个 Linear 诊断；6 项指标一致性通过 | [诊断记录](QWEN3_8B_HYBRID_PROBE_GUIDE.md) |
-| 修复版全模型 | 252 个重建通过，最大相对 SSE 差异 3.2879e-16 | [修复全模型](QWEN3_8B_CONDITIONED_FULL_RESULTS.md) |
-| 蒸馏 | 400 步、36 层导出；固定张量一致、1008 个 scales 更新 | [训练验收](QWEN3_8B_DISTILLATION_RESULTS.md) |
-| 最终 test | 执行验收通过，原数值质量门槛未通过 | [test 验收](QWEN3_8B_DISTILLED_TEST_RESULTS.md) |
+| 代表性 Linear | 5 个目标通过 | [Linear 结果](quality/QWEN3_8B_LINEAR_RESULTS.md) |
+| 原始全模型 | pure/hybrid 各 36 层、252 Linear；完整性与重建 accepted_with_notes | [全模型结果](quality/QWEN3_8B_FULL_RESULTS.md) |
+| 修复补偿 | 3 个 Linear 诊断；6 项指标一致性通过 | [诊断记录](quality/QWEN3_8B_HYBRID_PROBE_GUIDE.md) |
+| 修复版全模型 | 252 个重建通过，最大相对 SSE 差异 3.2879e-16 | [修复全模型](quality/QWEN3_8B_CONDITIONED_FULL_RESULTS.md) |
+| 蒸馏 | 400 步、36 层导出；固定张量一致、1008 个 scales 更新 | [训练验收](quality/QWEN3_8B_DISTILLATION_RESULTS.md) |
+| 最终 test | 执行验收通过，原数值质量门槛未通过 | [test 验收](quality/QWEN3_8B_DISTILLED_TEST_RESULTS.md) |
 
 原始 pure 日志曾被审计误导入 job-local `queue.py` 后的失败重试覆盖；原权重和
 result 保持完整，历史 `accepted_with_notes` 的限制仍保留。
@@ -188,10 +213,10 @@ PPL 审计复核哈希、清单、计数、有限值和 NLL→PPL 算术，没�
 Manifest SHA256：`253ab448797ef4d798522875014b7e47a4edb84c5c3c1ca5cf6179edfd339fec`。
 完整模型恢复还依赖原 pinned HF snapshot；最终 optimizer state 留在训练作业目录。
 大权重按用户决定不下载本机。服务器关闭由用户确认，未在关闭后重新核验远端存储。
-恢复路径和环境锁见 [服务器保存记录](SERVER_SHUTDOWN_READY.md)。
+恢复路径和环境锁见 [服务器保存记录](operations/SERVER_SHUTDOWN_READY.md)。
 
 上述加速链条已执行；后续以固定 step400 和 prepared v2.1 为基线评估新候选，
-单 block 速度不作为完整模型启动条件。具体约束见 [加速交接](ACCELERATION_HANDOFF.md)。在格式、形状、索引、
+单 block 速度不作为完整模型启动条件。具体约束见 [加速交接](performance/ACCELERATION_HANDOFF.md)。在格式、形状、索引、
 dtype、执行路径和环境不变且无数值依赖分支时，后续只更新 scales 不改变运算和访存规模；
 仍为新权重重做正确性检查，并保留每次计时绑定的权重及代码版本。
 

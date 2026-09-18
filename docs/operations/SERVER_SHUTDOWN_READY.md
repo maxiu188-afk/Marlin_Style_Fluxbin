@@ -1,5 +1,25 @@
 # 服务器关机准备与恢复记录
 
+## 2026-09-17：hierarchical-scale W2 端点实验已关机
+
+质量服务器 `213.173.105.10:49356` 上的 A100 80GB PCIe 端点任务已
+退出 0。关机前已核验结构化结果、job-produced hashes、finite metrics、
+36 层/252 Linear 覆盖、无剩余 GPU/experiment 进程，并执行 `sync`。
+用户已确认自行关闭服务器；本轮不再重连推断电源状态。
+
+- 执行源码：`457008a`。
+- 最终作业：`/workspace/jobs/hierarchical-w2-endpoints-20260917T104245Z/`。
+- 结果根目录：`/workspace/results/qwen3-8b-hierarchical-w2-v1/`。
+- 有效端点：H2.50 PPL `27.9328351515`，H2.875 PPL `27.8989296368`；
+  同轮 W3 PPL `11.2668082541`。
+- H2.625 的 10 个 partial layers 是中止现场，H2.75 未启动；不得将它们
+  写成已完成结果。
+- 持久卷：`34au39ljvf`，挂载 `/workspace`；已保留，未删除。
+- 小型原始 JSON 在关机前未复制到 Mac；权威原始产物仍位于网络卷。
+
+结论与恢复边界见
+[hierarchical W2 结果与运行手册](../quality/QWEN3_8B_HIERARCHICAL_W2_RUNBOOK.md)。
+
 ## 2026-09-16：W3 完整模型与误差诊断已收尾
 
 W3 性能服务器 `213.173.105.10:43680` 为 A100 80GB PCIe。正式 full-model
@@ -23,14 +43,14 @@ Git 工作区干净且为 `fc76b75802d57e238eaf258ab85f3803588e92c8`。
 
 可以关闭该计算实例，但必须保留 `/workspace` 网络卷。正式结果、环境、日志和诊断
 JSON 已下载并核对哈希；大模型和 W3 artifact 继续只保存在网络卷。完整结论见
-[W3 完整模型结果](W3_LUT_FULL_MODEL_RESULTS.md)。
+[W3 完整模型结果](../performance/W3_LUT_FULL_MODEL_RESULTS.md)。
 
 ## 2026-09-16：RTX PRO 4500 质量实验已收尾
 
 质量服务器 `213.173.109.240:44534` 上的 W3/QBB 四臂 PPL 作业退出 0，状态为
 `completed_cross_device_pending_review`。每个 arm 均覆盖 36 layers、252 Linears、
 146 blocks 和 298,862 positions；最终 Case A 决策见
-[W3/QBB 状态页](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+[W3/QBB 状态页](../quality/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 - 执行源码：`f979f6b3f64aa7ccabd2d96cc5e953a83e2d7080`；结果整理与关机说明另行
   提交到 `codex/runpod-bootstrap`。

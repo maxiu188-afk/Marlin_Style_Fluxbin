@@ -1,20 +1,78 @@
 # Qwen3-8B hierarchical-scale W2 quality runbook
 
-## 2026-09-17 endpoint pivot
+## 2026-09-17 endpoint result
+
+The bounded endpoint run completed on one NVIDIA A100 80GB PCIe with source
+revision `457008a`. The job exited 0 with status
+`completed_endpoint_pending_review`; all three scored arms used the frozen
+146 x 2048 WikiText-2 protocol and each scored 298,862 transitions.
+
+| Arm | Nominal bpw | Actual tensor bpw | WikiText-2 PPL | PPL gap vs W3 |
+|---|---:|---:|---:|---:|
+| BF16 frozen A100 reference (not same-run) | 16.000 | 16.000000 | **9.724945** | -1.541863 |
+| GPTQ W3 g128 reference | 3.125 | 3.154552 | **11.266808** | - |
+| H2.50 (U4/U4) | 2.500 | 2.506115 | 27.932835 | +16.666027 (+147.92%) |
+| H2.875 (U8/U8) | 2.875 | 2.881115 | 27.898930 | +16.632121 (+147.62%) |
+
+The absolute H2.50/H2.875 endpoint difference is **0.033906 PPL**, below the
+frozen 0.05 flat-curve threshold. Spending another 0.375 bpw on the relative
+scales therefore produced no decision-relevant quality improvement: H2.875 is
+only 0.121% lower in PPL and both W2 endpoints remain far from W3. This is
+accepted negative endpoint evidence, not a completed four-point curve.
+
+Coverage passed for 36 layers, 252 Linears, 6,945,767,424 quantized weights,
+and finite decoded weights in both W2 arms. `lm_head` remained BF16. The
+same-run W3 replay differs from the historical same-protocol value 11.266115
+by only 0.000693 PPL; comparisons above use the same-run value.
+
+BF16 was not replayed by the bounded endpoint job. The 9.724945 row is the
+accepted frozen A100 value from the identical token/block protocol and is
+shown only as a reference, not as a same-run arm. Against that reference, W3
+is 15.85% higher in PPL, while H2.50/H2.875 are 187.23%/186.88% higher.
+
+H2.625 was stopped after 10 partial layers and was never scored. H2.75 was not
+started. Neither is a result row. No rotation, distillation, mixed precision,
+kernel work, or `lm_head` change was launched.
+
+The result supports the offline diagnosis: relative-scale code width is not
+the current bottleneck. The next algorithmic attempt, if authorized, should
+first replace the log-domain `q^2` residual fit with an objective aligned to
+linear-domain reconstruction MSE, then repeat a cheap projection/endpoint
+gate. Do not automatically resume H2.625/H2.75 or launch rotation or
+scale-only distillation.
+
+The authoritative artifacts remain on network volume `34au39ljvf`:
+
+```text
+/workspace/results/qwen3-8b-hierarchical-w2-v1/H2.50/result.json
+/workspace/results/qwen3-8b-hierarchical-w2-v1/H2.875/result.json
+/workspace/results/qwen3-8b-hierarchical-w2-v1/ppl-endpoints-result.json
+/workspace/jobs/hierarchical-w2-endpoints-20260917T104245Z/
+```
+
+The job-produced hashes, structured-result coverage, finite metrics, exit code,
+and absence of remaining experiment/GPU processes were checked before shutdown.
+The small raw JSON files were not copied to the Mac before the user closed the
+server, so this repository records the reviewed decision fields but is not a
+second raw-artifact backup. Optional quantization-time and reconstruction-MSE
+fields remain in the network-volume JSON and were not used for the decision.
+
+## Endpoint pivot rationale
 
 Offline numerical review found the four relative-scale bit allocations nearly
 flat and sometimes non-monotonic. The live four-arm wrapper was therefore
 cancelled after H2.50 completed and H2.625 had committed 10 partial layers.
-The authorized diagnostic now runs only H2.875 and scores W3, H2.50, and
-H2.875. An absolute endpoint PPL difference below 0.05 confirms the flat-curve
-hypothesis; H2.625/H2.75 are intentionally not completed or scored.
+The authorized diagnostic then ran only H2.875 and scored W3, H2.50, and
+H2.875. Its absolute endpoint PPL difference was below 0.05, confirming the
+flat-curve hypothesis; H2.625/H2.75 remain intentionally incomplete/unscored.
 
-Use `scripts/run_qwen3_8b_hierarchical_w2_endpoint_job.sh` for this bounded
-route. The dead-column fail-closed fix is deferred until both endpoint
-artifacts are produced with the same implementation hash; the completed
-H2.50 artifact had zero dead columns in all 252 Linears.
+`scripts/run_qwen3_8b_hierarchical_w2_endpoint_job.sh` is the bounded route
+used for the final endpoint. The dead-column fail-closed fix was deliberately
+not mixed into the two endpoint artifacts; the completed H2.50 artifact had
+zero dead columns in all 252 Linears. That defensive fix remains separate
+future code work and does not invalidate the reviewed endpoint result.
 
-This is a four-point GPTQ quality experiment only. It quantizes the 252
+The original design was a four-point GPTQ quality experiment only. It quantizes the 252
 transformer-block Linears, leaves `lm_head` unchanged, evaluates dense BF16
 materializations on the frozen WikiText2 protocol, and stops. It does not
 build a kernel or launch rotation, QuaRot, SpinQuant, mixed precision, or
@@ -131,7 +189,8 @@ accuracy metric under this protocol, so this run does not invent one.
 
 ## Decision boundary
 
-Review only whether PPL improves stably over the four budgets and where it
-approaches W3. Do not add a fifth arm or automatically launch rotation,
-scale-only distillation, kernel work, or a different `lm_head` policy. Those
-are separate decisions after this curve is reviewed.
+The endpoint review is now complete: the relative-scale budget is flat and
+neither endpoint approaches W3. Do not complete the two intermediate arms,
+add a fifth arm, or automatically launch rotation, scale-only distillation,
+kernel work, or a different `lm_head` policy. A new experiment requires a new
+projection objective and a separately reviewed protocol.

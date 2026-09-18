@@ -2,7 +2,7 @@
 
 更新：2026-09-17。QBB 最新性能结果仍为 prepared v2.1 全模型 Graph 对原始 BF16
 1.381x / 1.383x，两组稳定；同轮 eager 不稳定。当前状态见
-[当前交接](CURRENT_HANDOFF.md)，逐轮证据见[加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
+[当前交接](../CURRENT_HANDOFF.md)，逐轮证据见[加速结果](QWEN3_8B_M1_LINEAR_RESULTS.md)。
 后续质量/码率决策已转向 uniform 3-bit；本页只保存冻结 QBB 性能合同，不再作为
 继续优化当前 QBB kernel 的指令。
 
@@ -25,7 +25,7 @@ RTX PRO 4500 同卡四臂结果中，GPTQ W3 g128 为 3.154552 bit/weight、PPL
 11.266115，当前 QBB 为 3.138184 bit/weight、PPL 13.167910。GPTQ 只增加
 0.5216% 存储而降低 1.9018 PPL，符合预先定义的 Case A。后续优先 uniform
 3-bit backend / solver；prepared v2.1 作为历史 QBB 性能基线保留。详见
-[W3/QBB 结果与决策](QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
+[W3/QBB 结果与决策](../quality/QWEN3_8B_W3_RATE_DISTORTION_STATUS.md)。
 
 ## 固定模型与权重
 
@@ -75,7 +75,7 @@ Linear、block、完整模型分别报告。单 block 不作为全模型启动�
 
 QBB 性能服务器任务已退出、无 GPU 进程，证据备份完成；其实际电源状态仍由用户确认。
 后续 RTX 质量服务器也已完成关机审计，路径与哈希见
-[关机记录](SERVER_SHUTDOWN_READY.md)。
+[关机记录](../operations/SERVER_SHUTDOWN_READY.md)。
 关闭计算实例时保留 `/workspace` 网络卷 `34au39ljvf`、模型、结果及缓存。
 `/opt/fluxbin-venv` 在容器盘，重启后按
 `infra/runpod/requirements-linear-a100-v1.lock` 建立本机独立环境，不跨机器复制 venv。
